@@ -1,4 +1,6 @@
-import { sql } from '@vercel/postgres';
+import { sql } from '@neondatabase/vercel-postgres-compat';
+
+export { sql };
 
 export const slots={"mon-0800":"Понедельник, 08:00 МСК","tue-0800":"Вторник, 08:00 МСК","wed-0800":"Среда, 08:00 МСК","thu-1800":"Четверг, 18:00 МСК","fri-1800":"Пятница, 18:00 МСК","sat-0600":"Суббота, 06:00 МСК"};
 const schedule={"mon-0800":[1,8],"tue-0800":[2,8],"wed-0800":[3,8],"thu-1800":[4,18],"fri-1800":[5,18],"sat-0600":[6,6]};
