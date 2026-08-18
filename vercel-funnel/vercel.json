@@ -1,0 +1,4 @@
+{
+  "functions": { "api/*.js": { "maxDuration": 30 } },
+  "crons": [{ "path": "/api/reminders", "schedule": "*/30 * * * *" }]
+}
