@@ -1,7 +1,9 @@
 const API='/api/operator';
 const statuses=[['new','Новый'],['interview_booked','Записан'],['interviewed','Собеседование'],['training','Обучение'],['internship','Стажировка'],['hired','Принят'],['rejected','Отказ'],['cancelled','Отменил']];
 const slots={'mon-0800':'Пн 08:00','tue-0800':'Вт 08:00','wed-0800':'Ср 08:00','thu-1800':'Чт 18:00','fri-1800':'Пт 18:00','sat-0600':'Сб 06:00'};
-let key=sessionStorage.getItem('operatorKey')||'',all=[],selected=null,details=null,messages=[];
+const accessFromLink=new URLSearchParams(location.hash.slice(1)).get('access')||'';
+let key=sessionStorage.getItem('operatorKey')||accessFromLink,all=[],selected=null,details=null,messages=[];
+if(accessFromLink)history.replaceState(null,'',location.pathname+location.search);
 const $=id=>document.getElementById(id), label=v=>statuses.find(x=>x[0]===v)?.[1]||v,esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 statuses.forEach(([v,l])=>$('filter').add(new Option(l,v)));
 async function api(method='GET',body,url=API){const r=await fetch(url,{method,headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'Ошибка соединения');return d}
@@ -15,5 +17,4 @@ async function sendReply(){const text=$('replyText').value.trim();if(!text)retur
 $('loginForm').onsubmit=e=>{e.preventDefault();login($('key').value.trim())};$('logout').onclick=()=>{sessionStorage.clear();location.reload()};$('refresh').onclick=load;$('search').oninput=renderList;$('filter').onchange=renderList;
 $('broadcastSend').onclick=async()=>{const text=$('broadcastText').value.trim();if(!text)return;const body={text,statusFilter:$('filter').value||undefined};const p=await api('POST',{...body,preview:true});if(!confirm(`Отправить сообщение ${p.recipientCount} кандидатам?`))return;const d=await api('POST',body);$('broadcastText').value='';showNotice(`Доставлено: ${d.sent}, ошибок: ${d.failed}`)};
 if(key)login(key);
-
 
