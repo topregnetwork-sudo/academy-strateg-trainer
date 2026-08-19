@@ -527,6 +527,25 @@ footer a {
 .videos .video-shell video {
   object-position: center center;
 }
+.rutube-fallback {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+  padding: 11px 17px;
+  border: 1px solid #126380;
+  border-radius: 10px;
+  color: #126380;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: none;
+}
+.rutube-fallback:hover {
+  background: #126380;
+  color: #fff;
+}
 @media (max-width: 600px) {
   .video-copy {
     min-height: 0;
