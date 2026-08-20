@@ -1,0 +1,28 @@
+name: Trainer interview reminders
+
+on:
+  schedule:
+    # 30 minutes before the configured Moscow interview slots, expressed in UTC.
+    - cron: '30 4 * * 1-3'
+    - cron: '30 14 * * 4-5'
+    - cron: '30 2 * * 6'
+  workflow_dispatch:
+
+concurrency:
+  group: trainer-interview-reminders
+  cancel-in-progress: false
+
+jobs:
+  send-due-reminders:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Trigger protected reminder endpoint
+        env:
+          REMINDER_CRON_SECRET: ${{ secrets.REMINDER_CRON_SECRET }}
+        run: |
+          test -n "$REMINDER_CRON_SECRET"
+          curl --fail-with-body --silent --show-error \
+            --retry 2 --retry-delay 5 \
+            -H "Authorization: Bearer $REMINDER_CRON_SECRET" \
+            https://academy-strateg-trainer.vercel.app/api/reminders
