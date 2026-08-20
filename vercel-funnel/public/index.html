@@ -431,14 +431,11 @@
           </details>
         </article>
         <div class="garcia-answer">
-          <h3>Вы такой человек?</h3>
-          <label class="garcia-confirm"
-            ><input
-              type="checkbox"
-              name="garciaConfirmed"
-              form="candidateForm"
-            /><strong>Да</strong></label
-          >
+          <h3>Вы прочитали статью полностью? <span class="required-marker" aria-label="обязательно">*</span></h3>
+          <div class="garcia-options" role="radiogroup" aria-label="Вы прочитали статью полностью?">
+            <label class="garcia-confirm"><input type="radio" name="garciaConfirmed" value="true" form="candidateForm" required /><strong>Да, прочитал(а)</strong></label>
+            <label class="garcia-confirm"><input type="radio" name="garciaConfirmed" value="false" form="candidateForm" required /><strong>Нет, ещё не прочитал(а)</strong></label>
+          </div>
         </div>
       </section>
       <section class="section form-section" id="form">

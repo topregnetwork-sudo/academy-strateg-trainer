@@ -467,6 +467,7 @@ footer a {
 .garcia-answer .garcia-confirm strong {
   font-size: 18px;
 }
+.garcia-options { display: flex; flex-wrap: wrap; gap: 12px; }
 
 .videos .video-grid {
   grid-template-columns: 1fr;
