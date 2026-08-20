@@ -4,4 +4,5 @@
 .garcia-status{display:inline-block;padding:9px 12px;border-radius:9px}.garcia-status.yes{background:#e6f7ec;color:#176b35}.garcia-status.no{background:#fff1f0;color:#9f2d26}
 
 .broadcast>div{flex:1 1 360px}.broadcast textarea{width:100%;min-width:360px;min-height:110px;flex:1.35 1 440px;resize:vertical}.broadcast button{flex:0 0 auto}@media(max-width:1100px){.broadcast{align-items:stretch;flex-wrap:wrap}.broadcast>div{flex-basis:100%}.broadcast textarea{min-width:0;flex-basis:520px}}
+nav{flex-wrap:wrap}nav input{flex:1 1 280px}
 
