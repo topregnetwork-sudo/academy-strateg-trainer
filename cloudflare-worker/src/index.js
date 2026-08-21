@@ -18,6 +18,8 @@ function upstreamUrl(requestUrl, origin) {
 
 function responseHeaders(response, pathname) {
   const headers = new Headers(response.headers);
+  headers.delete("Content-Length");
+  headers.delete("Content-Encoding");
   headers.set("X-Academy-Route", pathname.startsWith("/api/") ? "panel-api-fallback" : "fallback");
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
@@ -36,6 +38,10 @@ export default {
       return Response.json({ ok: true, route: "academy-strateg-fallback" }, {
         headers: { "Cache-Control": "no-store" },
       });
+    }
+
+    if (!incoming.pathname.startsWith("/api/")) {
+      return env.ASSETS.fetch(request);
     }
 
     const origin = targetOrigin(incoming.pathname, env);
