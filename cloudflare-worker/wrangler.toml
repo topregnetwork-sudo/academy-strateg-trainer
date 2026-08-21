@@ -1,0 +1,8 @@
+name = "academy-strateg-trainer-fallback"
+main = "src/index.js"
+compatibility_date = "2026-08-21"
+workers_dev = true
+
+[vars]
+PUBLIC_ORIGIN = "https://topregnetwork-sudo.github.io/academy-strateg-trainer"
+PANEL_ORIGIN = "https://academy-strateg-trainer.vercel.app"
