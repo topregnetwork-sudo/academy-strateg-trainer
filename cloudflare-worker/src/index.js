@@ -1,12 +1,7 @@
 const STATIC_EXTENSIONS = /\.(?:css|js|png|jpe?g|gif|svg|webp|ico|mp4|webm|woff2?|txt|map)$/i;
 
 function targetOrigin(pathname, env) {
-  if (
-    pathname === "/operator.html" ||
-    pathname === "/operator.css" ||
-    pathname === "/operator.js" ||
-    pathname.startsWith("/api/")
-  ) {
+  if (pathname.startsWith("/api/")) {
     return env.PANEL_ORIGIN;
   }
   return env.PUBLIC_ORIGIN;
@@ -16,7 +11,7 @@ function upstreamUrl(requestUrl, origin) {
   const source = new URL(requestUrl);
   const target = new URL(origin);
   const basePath = target.pathname.replace(/\/$/, "");
-  target.pathname = `${basePath}${source.pathname === "/" ? "/" : source.pathname}`;
+  target.pathname = `${basePath}${source.pathname === "/" ? "/index.html" : source.pathname}`;
   target.search = source.search;
   return target;
 }
