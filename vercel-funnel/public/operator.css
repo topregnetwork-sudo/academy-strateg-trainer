@@ -6,3 +6,37 @@
 .broadcast>div{flex:1 1 360px}.broadcast textarea{width:100%;min-width:360px;min-height:110px;flex:1.35 1 440px;resize:vertical}.broadcast button{flex:0 0 auto}@media(max-width:1100px){.broadcast{align-items:stretch;flex-wrap:wrap}.broadcast>div{flex-basis:100%}.broadcast textarea{min-width:0;flex-basis:520px}}
 nav{flex-wrap:wrap}nav input{flex:1 1 280px}
 
+/* PANEL-USABILITY-005: independent list/chat scrolling and compact controls. */
+.grid{grid-template-columns:350px minmax(0,1fr);height:clamp(590px,calc(100vh - 220px),760px);min-height:0}
+.grid aside{min-height:0;overflow:auto}
+.count{position:sticky;top:0;z-index:2;padding:10px 14px;background:#fff;border-bottom:1px solid #edf0f5}
+.row{grid-template-columns:minmax(0,1fr) auto;gap:3px 8px;padding:10px 12px}
+.grid article{min-width:0;min-height:0;overflow:hidden}
+.candidate-head{flex:0 0 auto;padding:16px 20px}
+.history{min-height:0;flex:1 1 auto}
+.reply{flex:0 0 auto;background:#fff;border-top:1px solid #edf0f5}
+
+@media(max-width:800px){
+  header{padding:15px}
+  header h1{font-size:24px}
+  nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:12px 0}
+  nav input{grid-column:1/-1;width:100%;min-width:0}
+  nav select,nav button{width:100%;min-width:0}
+  nav button{grid-column:1/-1}
+  .grid{grid-template-columns:1fr;height:auto;min-height:0}
+  .grid aside{height:min(36vh,300px);max-height:none}
+  .grid article{height:min(64vh,620px);min-height:500px}
+  .candidate-head{align-items:stretch;gap:8px;padding:12px}
+  .candidate-head h2{font-size:21px;margin-bottom:8px}
+  .candidate-head p{margin-bottom:8px}
+  .history{padding:12px}
+  .bubble{max-width:92%}
+  .reply{align-items:stretch;gap:8px;padding:10px;flex-direction:column}
+  .reply textarea{min-height:78px}
+}
+
+@media(max-width:430px){
+  nav{grid-template-columns:1fr}
+  nav input,nav button{grid-column:1}
+  .row{padding:9px 10px}
+}
