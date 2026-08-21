@@ -40,3 +40,19 @@ nav{flex-wrap:wrap}nav input{flex:1 1 280px}
   nav input,nav button{grid-column:1}
   .row{padding:9px 10px}
 }
+
+/* PANEL-USABILITY-006: a long application must never push chat out of view. */
+.candidate-head{
+  min-height:0;
+  max-height:42%;
+  flex:0 1 auto;
+  align-items:flex-start;
+  overflow-y:auto;
+  scrollbar-gutter:stable;
+}
+.history{min-height:150px}
+
+@media(max-width:800px){
+  .candidate-head{max-height:40%}
+  .history{min-height:140px}
+}
