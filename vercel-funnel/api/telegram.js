@@ -1,4 +1,4 @@
-import { body, init, json, nextInterview, slots, telegram, sql } from './_core.js';
+import { body, init, json, nextInterview, slots, telegram, telegramApi, sql } from './_core.js';
 
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
 
@@ -52,13 +52,28 @@ async function deliverHrBrief(candidate, destination, restored = false) {
 async function configureTrainerTopic(message) {
   const chatId = String(message.chat.id);
   const allowedChatId = process.env.HR_BRIEF_CHAT_ID && String(process.env.HR_BRIEF_CHAT_ID);
-  if (!allowedChatId || chatId !== allowedChatId || !TOPIC_COMMAND.test(message.text || '')) return false;
+  if (!TOPIC_COMMAND.test(message.text || '')) return false;
 
   const threadId = message.message_thread_id ? String(message.message_thread_id) : '';
+  const replyExtra = threadId ? { message_thread_id: Number(threadId) } : {};
   if (!threadId) {
     await telegram(chatId, 'Откройте тему «Тренеры собеседования» и отправьте команду /trainer_topic именно внутри неё.');
     return true;
   }
+
+  let isAdministrator = false;
+  try {
+    const member = await telegramApi('getChatMember', { chat_id: chatId, user_id: message.from?.id });
+    isAdministrator = member?.status === 'creator' || member?.status === 'administrator';
+  } catch (error) {
+    console.error('[telegram] admin verification failed', { chatId, userId: message.from?.id, message: String(error) });
+  }
+  if (chatId !== allowedChatId && !isAdministrator) {
+    await telegram(chatId, '⚠️ Настроить тему может только администратор этой группы. Если вы администратор, временно выдайте боту право видеть администраторов и повторите команду.', replyExtra);
+    return true;
+  }
+
+  await telegram(chatId, '⏳ Подключаю тему и переношу предыдущие уведомления. Пожалуйста, дождитесь итогового сообщения.', replyExtra);
 
   await sql`INSERT INTO app_settings(key,value,updated_at) VALUES('hr_brief_chat_id',${chatId},NOW()) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=NOW()`;
   await sql`INSERT INTO app_settings(key,value,updated_at) VALUES('hr_brief_thread_id',${threadId},NOW()) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=NOW()`;
@@ -78,7 +93,7 @@ async function configureTrainerTopic(message) {
     }
   }
 
-  await telegram(chatId, `✅ <b>Тема «Тренеры собеседования» подключена.</b>\n\nПеренесено уведомлений: <b>${sent}</b>\nУже были перенесены: <b>${skipped}</b>\nОшибок: <b>${failed}</b>\n\nВсе новые записи кандидатов будут приходить в эту тему.`, { message_thread_id: Number(threadId) });
+  await telegram(chatId, `✅ <b>Тема «Тренеры собеседования» подключена.</b>\n\nПеренесено уведомлений: <b>${sent}</b>\nУже были перенесены: <b>${skipped}</b>\nОшибок: <b>${failed}</b>\n\nВсе новые записи кандидатов будут приходить в эту тему.`, replyExtra);
   return true;
 }
 
@@ -112,17 +127,30 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { ok: false });
   if (process.env.TELEGRAM_WEBHOOK_SECRET && req.headers['x-telegram-bot-api-secret-token'] !== process.env.TELEGRAM_WEBHOOK_SECRET) return json(res, 401, { ok: false });
 
+  let update;
   try {
-    await init();
-    const update = await body(req);
+    update = await body(req);
     const message = update.message;
     if (!message) return json(res, 200, { ok: true });
 
     if (message.chat?.type && message.chat.type !== 'private') {
-      await configureTrainerTopic(message);
+      if (!TOPIC_COMMAND.test(message.text || '')) return json(res, 200, { ok: true });
+      try {
+        await init();
+        await configureTrainerTopic(message);
+      } catch (error) {
+        console.error('[telegram] trainer topic setup failed', { chatId: String(message.chat.id), threadId: message.message_thread_id, message: String(error), stack: error?.stack });
+        const extra = message.message_thread_id ? { message_thread_id: Number(message.message_thread_id) } : {};
+        try {
+          await telegram(String(message.chat.id), '❌ Не удалось подключить тему. Ошибка сохранена в журнале; повторять команду сейчас не нужно.', extra);
+        } catch (notifyError) {
+          console.error('[telegram] trainer topic error response failed', { message: String(notifyError) });
+        }
+      }
       return json(res, 200, { ok: true });
     }
 
+    await init();
     await handlePrivateStart(message);
     return json(res, 200, { ok: true });
   } catch (error) {
