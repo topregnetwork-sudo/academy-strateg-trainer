@@ -1,5 +1,9 @@
 {
-  "functions": { "api/*.js": { "maxDuration": 30 } },
+  "functions": {
+    "api/telegram.js": { "maxDuration": 60 },
+    "api/telegram-topic-resume-5a91c7.js": { "maxDuration": 60 },
+    "api/*.js": { "maxDuration": 30 }
+  },
   "rewrites": [
     { "source": "/media/trainer-story-1.mp4", "destination": "https://github.com/topregnetwork-sudo/academy-strateg-trainer/releases/download/trainer-media-v1/trainer-story-1.mp4" },
     { "source": "/media/trainer-story-2.mp4", "destination": "https://github.com/topregnetwork-sudo/academy-strateg-trainer/releases/download/trainer-media-v1/trainer-story-2.mp4" }

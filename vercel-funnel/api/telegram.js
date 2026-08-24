@@ -49,6 +49,37 @@ async function deliverHrBrief(candidate, destination, restored = false) {
   return true;
 }
 
+async function backfillTrainerTopic(destination) {
+  const candidates = await sql`SELECT id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status FROM candidates WHERE interview_at IS NOT NULL ORDER BY interview_at,id`;
+  let sent = 0;
+  let skipped = 0;
+  let failed = 0;
+  for (const candidate of candidates.rows) {
+    try {
+      if (await deliverHrBrief(candidate, destination, true)) sent += 1;
+      else skipped += 1;
+    } catch (error) {
+      failed += 1;
+      console.error('[telegram] HR brief backfill failed', { candidateId: candidate.id, message: String(error) });
+    }
+  }
+  return { sent, skipped, failed, total: candidates.rows.length };
+}
+
+async function sendTrainerTopicSummary(destination, result) {
+  const extra = destination.threadId ? { message_thread_id: Number(destination.threadId) } : {};
+  await telegram(destination.chatId, `✅ <b>Тема «Тренеры собеседования» подключена.</b>\n\nПеренесено сейчас: <b>${result.sent}</b>\nУже были перенесены: <b>${result.skipped}</b>\nОшибок: <b>${result.failed}</b>\nВсего записей проверено: <b>${result.total}</b>\n\nВсе новые записи кандидатов будут приходить в эту тему.`, extra);
+}
+
+export async function resumeTrainerTopic() {
+  await init();
+  const destination = await getHrDestination();
+  if (!destination?.threadId) throw new Error('Trainer topic destination is not configured');
+  const result = await backfillTrainerTopic(destination);
+  await sendTrainerTopicSummary(destination, result);
+  return result;
+}
+
 async function configureTrainerTopic(message) {
   const chatId = String(message.chat.id);
   const allowedChatId = process.env.HR_BRIEF_CHAT_ID && String(process.env.HR_BRIEF_CHAT_ID);
@@ -79,21 +110,8 @@ async function configureTrainerTopic(message) {
   await sql`INSERT INTO app_settings(key,value,updated_at) VALUES('hr_brief_thread_id',${threadId},NOW()) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=NOW()`;
 
   const destination = { chatId, threadId };
-  const candidates = await sql`SELECT id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status FROM candidates WHERE interview_at IS NOT NULL ORDER BY interview_at,id`;
-  let sent = 0;
-  let skipped = 0;
-  let failed = 0;
-  for (const candidate of candidates.rows) {
-    try {
-      if (await deliverHrBrief(candidate, destination, true)) sent += 1;
-      else skipped += 1;
-    } catch (error) {
-      failed += 1;
-      console.error('[telegram] HR brief backfill failed', { candidateId: candidate.id, message: String(error) });
-    }
-  }
-
-  await telegram(chatId, `✅ <b>Тема «Тренеры собеседования» подключена.</b>\n\nПеренесено уведомлений: <b>${sent}</b>\nУже были перенесены: <b>${skipped}</b>\nОшибок: <b>${failed}</b>\n\nВсе новые записи кандидатов будут приходить в эту тему.`, replyExtra);
+  const result = await backfillTrainerTopic(destination);
+  await sendTrainerTopicSummary(destination, result);
   return true;
 }
 
