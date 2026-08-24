@@ -36,6 +36,16 @@ async function getHrDestination() {
   return { chatId: String(chatId), threadId: values.hr_brief_thread_id ? String(values.hr_brief_thread_id) : '' };
 }
 
+async function getZoomMeetingUrl() {
+  try {
+    const setting = await sql`SELECT value FROM app_settings WHERE key='zoom_meeting_url' LIMIT 1`;
+    if (setting.rows[0]?.value) return setting.rows[0].value;
+  } catch (error) {
+    console.error('[telegram] Zoom setting lookup failed; using environment fallback', { message: String(error) });
+  }
+  return process.env.ZOOM_MEETING_URL || '';
+}
+
 async function wasDelivered(candidate, destination) {
   const existing = await sql`SELECT 1 FROM hr_brief_deliveries WHERE candidate_id=${candidate.id} AND interview_at=${candidate.interview_at} AND chat_id=${destination.chatId} AND thread_id=${destination.threadId} LIMIT 1`;
   return existing.rows.length > 0;
@@ -129,7 +139,7 @@ async function handlePrivateStart(message) {
   const row = (await sql`INSERT INTO candidates(chat_id,username,first_name,last_name,phone,city,slot_id,interview_at,source_id,status) VALUES(${chatId},${message.from?.username || null},${message.from?.first_name || app.full_name},${message.from?.last_name || null},${app.phone || null},${app.city},${app.slot_id},${at},${app.source_id},'interview_booked') ON CONFLICT(chat_id) DO UPDATE SET username=EXCLUDED.username,first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,phone=COALESCE(EXCLUDED.phone,candidates.phone),city=EXCLUDED.city,slot_id=EXCLUDED.slot_id,interview_at=EXCLUDED.interview_at,source_id=EXCLUDED.source_id,status='interview_booked',reminded_30m=false,updated_at=NOW() RETURNING id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
   await sql`UPDATE applications SET candidate_id=${row.id} WHERE id=${app.id}`;
 
-  const zoom = process.env.ZOOM_MEETING_URL;
+  const zoom = await getZoomMeetingUrl();
   const reply = `✅ <b>Вы записаны на собеседование</b>\n\nДата: <b>${date}</b>\nВремя: <b>${slots[app.slot_id]}</b>\n\n${zoom ? 'Ссылка Zoom — по кнопке ниже.' : 'Координатор пришлёт ссылку Zoom в этот чат.'}\n\nЗа 30 минут до встречи придёт напоминание.`;
   const messageId = await telegram(chatId, reply, zoom ? { reply_markup: { inline_keyboard: [[{ text: 'Открыть Zoom', url: zoom }]] } } : {});
   await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${row.id},'out','text',${reply},'delivered',${String(messageId || '')})`;
