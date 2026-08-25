@@ -1,0 +1,5 @@
+import crypto from 'node:crypto';
+import { body, init, json, sql } from './_core.js';
+const EXPECTED_HASH='173c72fd5c04c904607d47d8f42d4eb97f2ad8230340f30ffcf90d1093fe6672';
+function authorized(req){const actual=crypto.createHash('sha256').update(String(req.headers['x-mobile-test-key']||'')).digest('hex');return actual.length===EXPECTED_HASH.length&&crypto.timingSafeEqual(Buffer.from(actual),Buffer.from(EXPECTED_HASH));}
+export default async function handler(req,res){if(req.method!=='POST')return json(res,405,{error:'Method not allowed'});if(!authorized(req))return json(res,404,{error:'Not found'});try{await init();const v=await body(req);if(!/^[a-zA-Z0-9]{20}$/.test(v.code||''))return json(res,400,{error:'Bad code'});const rows=(await sql`DELETE FROM applications WHERE code=${v.code} AND source_id='verification' AND candidate_id IS NULL RETURNING id`).rows;return json(res,200,{ok:true,deleted:rows.length})}catch(error){console.error('[mobile-test-cleanup] failed',{message:String(error)});return json(res,500,{error:'Cleanup failed'})}}
