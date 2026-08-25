@@ -1,6 +1,7 @@
 {
   "functions": {
     "api/telegram.js": { "maxDuration": 60 },
+    "api/candidate-group-config-8e2b4a.js": { "maxDuration": 30 },
     "api/*.js": { "maxDuration": 30 }
   },
   "rewrites": [

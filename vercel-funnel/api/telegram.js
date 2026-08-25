@@ -1,6 +1,7 @@
 import { body, init, json, nextInterview, slots, telegram, telegramApi, sql } from './_core.js';
 
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
+const CANDIDATE_GROUP_KEYWORD = /^\s*кандидат(?:ы)?[.!]?\s*$/iu;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -46,6 +47,11 @@ async function getZoomMeetingUrl() {
   return process.env.ZOOM_MEETING_URL || '';
 }
 
+async function getCandidateGroupInviteUrl() {
+  const setting = await sql`SELECT value FROM app_settings WHERE key='candidate_group_invite_url' LIMIT 1`;
+  return setting.rows[0]?.value || '';
+}
+
 async function wasDelivered(candidate, destination) {
   const existing = await sql`SELECT 1 FROM hr_brief_deliveries WHERE candidate_id=${candidate.id} AND interview_at=${candidate.interview_at} AND chat_id=${destination.chatId} AND thread_id=${destination.threadId} LIMIT 1`;
   return existing.rows.length > 0;
@@ -88,6 +94,43 @@ export async function resumeTrainerTopic() {
   const result = await backfillTrainerTopic(destination);
   await sendTrainerTopicSummary(destination, result);
   return result;
+}
+
+async function handleCandidateGroupKeyword(message) {
+  if (!CANDIDATE_GROUP_KEYWORD.test(message.text || '')) return false;
+  const chatId = String(message.chat.id);
+  const candidate = (await sql`SELECT id,chat_id,status FROM candidates WHERE chat_id=${chatId} LIMIT 1`).rows[0];
+  if (!candidate || !['interview_booked','interviewed'].includes(candidate.status)) {
+    await telegram(chatId, 'Приглашение в группу кандидатов доступно после записи и прохождения собеседования.');
+    return true;
+  }
+
+  const inviteUrl = await getCandidateGroupInviteUrl();
+  if (!inviteUrl) {
+    await telegram(chatId, 'Группа кандидатов сейчас настраивается. Напишите координатору, и мы пришлём ссылку.');
+    return true;
+  }
+
+  const previousStatus = candidate.status;
+  if (previousStatus === 'interview_booked') {
+    await sql`UPDATE candidates SET status='interviewed',updated_at=NOW() WHERE id=${candidate.id}`;
+  }
+
+  const text = '✅ <b>Код принят.</b>\n\nПереходите в группу кандидатов Академии Стратег. Там вы познакомитесь с проектом и получите дальнейшие материалы.';
+  try {
+    const messageId = await telegram(chatId, text, { reply_markup: { inline_keyboard: [[{ text: 'Перейти в группу кандидатов', url: inviteUrl }]] } });
+    try {
+      await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','candidate_group_invite',${text},'delivered',${String(messageId || '')})`;
+    } catch (historyError) {
+      console.error('[telegram] candidate group invite history failed', { candidateId: candidate.id, message: String(historyError) });
+    }
+  } catch (error) {
+    if (previousStatus === 'interview_booked') {
+      await sql`UPDATE candidates SET status='interview_booked',updated_at=NOW() WHERE id=${candidate.id}`;
+    }
+    throw error;
+  }
+  return true;
 }
 
 async function configureTrainerTopic(message) {
@@ -179,6 +222,7 @@ export default async function handler(req, res) {
     }
 
     await init();
+    if (await handleCandidateGroupKeyword(message)) return json(res, 200, { ok: true });
     await handlePrivateStart(message);
     return json(res, 200, { ok: true });
   } catch (error) {
