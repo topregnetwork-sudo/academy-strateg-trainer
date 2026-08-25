@@ -176,22 +176,64 @@ async function handlePrivateStart(message) {
     await telegram(chatId, 'Здравствуйте! Вернитесь на страницу вакансии Академии Стратег и сначала заполните анкету.');
     return;
   }
+  if (app.candidate_id) {
+    const linked = (await sql`SELECT id,chat_id,status,interview_at FROM candidates WHERE id=${app.candidate_id} LIMIT 1`).rows[0];
+    if (linked?.chat_id === chatId && linked.status === 'interview_booked' && linked.interview_at) {
+      await telegram(chatId, 'Вы уже записаны на собеседование. Подтверждение и ссылка Zoom находятся выше в этом чате.');
+      return;
+    }
+  }
 
-  const at = nextInterview(app.slot_id);
-  const date = interviewDate(at);
-  const row = (await sql`INSERT INTO candidates(chat_id,username,first_name,last_name,phone,city,slot_id,interview_at,source_id,status) VALUES(${chatId},${message.from?.username || null},${message.from?.first_name || app.full_name},${message.from?.last_name || null},${app.phone || null},${app.city},${app.slot_id},${at},${app.source_id},'interview_booked') ON CONFLICT(chat_id) DO UPDATE SET username=EXCLUDED.username,first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,phone=COALESCE(EXCLUDED.phone,candidates.phone),city=EXCLUDED.city,slot_id=EXCLUDED.slot_id,interview_at=EXCLUDED.interview_at,source_id=EXCLUDED.source_id,status='interview_booked',reminded_30m=false,updated_at=NOW() RETURNING id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
+  const experienced = app.trainer_experience_level === 'professional';
+  const row = (await sql`INSERT INTO candidates(chat_id,username,first_name,last_name,phone,city,slot_id,interview_at,source_id,status) VALUES(${chatId},${message.from?.username || null},${message.from?.first_name || app.full_name},${message.from?.last_name || null},${app.phone || null},${app.city},NULL,NULL,${app.source_id},${experienced ? 'experienced_not_target' : 'new'}) ON CONFLICT(chat_id) DO UPDATE SET username=EXCLUDED.username,first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,phone=COALESCE(EXCLUDED.phone,candidates.phone),city=EXCLUDED.city,slot_id=NULL,interview_at=NULL,source_id=EXCLUDED.source_id,status=EXCLUDED.status,reminded_30m=false,updated_at=NOW() RETURNING id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
   await sql`UPDATE applications SET candidate_id=${row.id} WHERE id=${app.id}`;
-
-  const zoom = await getZoomMeetingUrl();
-  const reply = `✅ <b>Вы записаны на собеседование</b>\n\nДата: <b>${date}</b>\nВремя: <b>${slots[app.slot_id]}</b>\n\n${zoom ? 'Ссылка Zoom — по кнопке ниже.' : 'Координатор пришлёт ссылку Zoom в этот чат.'}\n\nЗа 30 минут до встречи придёт напоминание.`;
-  const messageId = await telegram(chatId, reply, zoom ? { reply_markup: { inline_keyboard: [[{ text: 'Открыть Zoom', url: zoom }]] } } : {});
+  const reply = experienced
+    ? 'Спасибо, анкета получена. Нам нужно уточнить несколько моментов по вашему опыту. Если ваш профиль подойдёт к формату текущего набора, мы свяжемся с вами в Telegram.'
+    : 'Спасибо, анкета получена. Выберите удобное время собеседования:';
+  const keyboard = experienced ? {} : { reply_markup: { inline_keyboard: Object.entries(slots).map(([slotId, title]) => [{ text: title, callback_data: `trainer_slot_${app.code}_${slotId}` }]) } };
+  const messageId = await telegram(chatId, reply, keyboard);
   await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${row.id},'out','text',${reply},'delivered',${String(messageId || '')})`;
+}
 
+async function handleSlotChoice(callback) {
+  const match = callback.data?.match(/^trainer_slot_([a-zA-Z0-9]{20})_([a-z]{3}-[0-9]{4})$/);
+  if (!match || !slots[match[2]]) return false;
+  const chatId = String(callback.message?.chat?.id || callback.from?.id || '');
+  const app = (await sql`SELECT * FROM applications WHERE code=${match[1]} LIMIT 1`).rows[0];
+  if (!app || app.trainer_experience_level === 'professional' || !app.candidate_id) {
+    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Запись для этой анкеты недоступна.' });
+    return true;
+  }
+  const candidate = (await sql`SELECT * FROM candidates WHERE id=${app.candidate_id} AND chat_id=${chatId} LIMIT 1`).rows[0];
+  if (!candidate) {
+    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Не удалось найти анкету.' });
+    return true;
+  }
+  if (candidate.status === 'interview_booked' && candidate.interview_at) {
+    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Вы уже записаны.' });
+    return true;
+  }
+  const slotId = match[2], at = nextInterview(slotId), date = interviewDate(at);
+  const row = (await sql`UPDATE candidates SET slot_id=${slotId},interview_at=${at},status='interview_booked',reminded_30m=false,updated_at=NOW() WHERE id=${candidate.id} RETURNING id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
+  await sql`UPDATE applications SET slot_id=${slotId} WHERE id=${app.id}`;
+  const zoom = await getZoomMeetingUrl();
+  const reply = `✅ <b>Вы записаны на собеседование</b>\n\nДата: <b>${date}</b>\nВремя: <b>${slots[slotId]}</b>\n\n${zoom ? 'Ссылка Zoom — по кнопке ниже.' : 'Координатор пришлёт ссылку Zoom в этот чат.'}\n\nЗа 30 минут до встречи придёт напоминание.`;
+  let messageId;
+  try {
+    messageId = await telegram(chatId, reply, zoom ? { reply_markup: { inline_keyboard: [[{ text: 'Открыть Zoom', url: zoom }]] } } : {});
+  } catch (error) {
+    await sql`UPDATE candidates SET slot_id=NULL,interview_at=NULL,status='new',reminded_30m=false,updated_at=NOW() WHERE id=${candidate.id}`;
+    await sql`UPDATE applications SET slot_id=NULL WHERE id=${app.id}`;
+    throw error;
+  }
+  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${row.id},'out','booking_confirmation',${reply},'delivered',${String(messageId || '')})`;
+  await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Время сохранено' });
   try {
     await deliverHrBrief(row, await getHrDestination());
   } catch (error) {
     console.error('[telegram] HR brief delivery failed', { candidateId: row.id, message: String(error) });
   }
+  return true;
 }
 
 export default async function handler(req, res) {
@@ -201,6 +243,12 @@ export default async function handler(req, res) {
   let update;
   try {
     update = await body(req);
+    const callback = update.callback_query;
+    if (callback) {
+      await init();
+      await handleSlotChoice(callback);
+      return json(res, 200, { ok: true });
+    }
     const message = update.message;
     if (!message) return json(res, 200, { ok: true });
 

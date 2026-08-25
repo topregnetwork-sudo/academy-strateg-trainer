@@ -7,7 +7,7 @@ export default async function handler(req,res){
     const id=Number(req.query.candidate_id);
     if(req.method==='GET'){
       if(id){
-        const candidate=(await sql`SELECT c.*,a.full_name,a.age,a.motivation,a.garcia_confirmed,a.test_answer FROM candidates c LEFT JOIN applications a ON a.candidate_id=c.id WHERE c.id=${id}`).rows[0];
+        const candidate=(await sql`SELECT c.*,a.full_name,a.age,a.motivation,a.garcia_confirmed,a.test_answer,a.trainer_experience_level FROM candidates c LEFT JOIN applications a ON a.candidate_id=c.id WHERE c.id=${id}`).rows[0];
         const messages=(await sql`SELECT * FROM messages WHERE candidate_id=${id} ORDER BY created_at ASC`).rows;
         return json(res,200,{candidate,messages});
       }
@@ -17,7 +17,7 @@ export default async function handler(req,res){
     }
     const v=await body(req);
     if(req.method==='PATCH'){
-      const accepted=['new','interview_booked','interviewed','training','internship','hired','rejected','cancelled'];
+      const accepted=['new','experienced_not_target','interview_booked','interviewed','training','internship','hired','rejected','cancelled'];
       if(!accepted.includes(v.status))return json(res,400,{error:'Недопустимый статус'});
       await sql`UPDATE candidates SET status=${v.status},updated_at=NOW() WHERE id=${Number(v.candidateId)}`;
       return json(res,200,{ok:true});

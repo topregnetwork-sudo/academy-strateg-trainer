@@ -492,6 +492,15 @@
               placeholder="Расскажите, что вас заинтересовало и какой опыт хотите применить"
             ></textarea></label
           ><label
+            ><span class="field-label">Какой у вас опыт именно в роли бизнес-тренера?<span class="required-marker" aria-label="обязательно">*</span></span
+            ><select name="trainerExperienceLevel" required>
+              <option value="">Выберите вариант</option>
+              <option value="none">Такого опыта у меня нет</option>
+              <option value="occasional">Проводил(а) отдельные занятия, но постоянно бизнес-тренером не работал(а)</option>
+              <option value="under_one_year">Работал(а) бизнес-тренером менее одного года</option>
+              <option value="professional">Работал(а) бизнес-тренером один год или больше</option>
+            </select></label
+          ><label
             ><span class="field-label">Телефон</span
             ><input
               name="phone"
@@ -500,49 +509,8 @@
               placeholder="+7 900 000-00-00"
           /></label>
           <p>Прочитайте статью выше</p>
-          <div class="form-divider"><span>Время собеседования</span></div>
-          <fieldset>
-            <legend>
-              <span class="field-label"
-                >Выберите время
-                <span class="required-marker" aria-label="обязательно"
-                  >*</span
-                ></span
-              >
-            </legend>
-            <div class="slots">
-              <label
-                ><input
-                  type="radio"
-                  name="slotId"
-                  value="mon-0800"
-                  checked
-                /><span>Пн <b>08:00</b></span></label
-              ><label
-                ><input type="radio" name="slotId" value="tue-0800" /><span
-                  >Вт <b>08:00</b></span
-                ></label
-              ><label
-                ><input type="radio" name="slotId" value="wed-0800" /><span
-                  >Ср <b>08:00</b></span
-                ></label
-              ><label
-                ><input type="radio" name="slotId" value="thu-1800" /><span
-                  >Чт <b>18:00</b></span
-                ></label
-              ><label
-                ><input type="radio" name="slotId" value="fri-1800" /><span
-                  >Пт <b>18:00</b></span
-                ></label
-              ><label
-                ><input type="radio" name="slotId" value="sat-0600" /><span
-                  >Сб <b>06:00</b></span
-                ></label
-              >
-            </div>
-          </fieldset>
           <button class="button submit" type="submit">
-            Получить ссылку на собеседование в Telegram
+            Отправить анкету и продолжить в Telegram
           </button>
           <p id="notice" role="status"></p>
           <small
@@ -556,6 +524,6 @@
       Академия Стратег · Команда. Обучение. Внедрение.
       <a href="https://t.me/HRAcademyStrateg">Связаться с HR</a>
     </footer>
-    <script src="app.js"></script>
+    <script src="app.js?v=20260825-2"></script>
   </body>
 </html>
