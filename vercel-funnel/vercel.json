@@ -1,6 +1,7 @@
 {
   "functions": {
     "api/telegram.js": { "maxDuration": 60 },
+    "api/interview-brief-test-8b6e2f.js": { "maxDuration": 60 },
     "api/*.js": { "maxDuration": 30 }
   },
   "rewrites": [

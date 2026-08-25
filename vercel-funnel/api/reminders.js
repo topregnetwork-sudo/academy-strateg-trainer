@@ -1,37 +1,101 @@
-import { init, json, telegram, sql } from './_core.js';
+import { init, json, telegram, sql, slots } from './_core.js';
 
 const reminderText = '⏰ Напоминаем: ваше собеседование с Академией Стратег начнётся примерно через 30 минут. Пожалуйста, проверьте связь и подготовьтесь к встрече.';
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+const compact = (value, limit) => { const text = String(value || '').replace(/\s+/g, ' ').trim(); if (limit <= 0) return ''; return text.length > limit ? `${text.slice(0, limit - 1).trimEnd()}…` : text; };
+const moscowDate = value => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value));
+const moscowReadableDate = value => new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Moscow', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(value));
+
+async function briefDestination() {
+  const rows = (await sql`SELECT key,value FROM app_settings WHERE key IN ('hr_brief_chat_id','hr_brief_thread_id')`).rows;
+  const settings = Object.fromEntries(rows.map(row => [row.key, row.value]));
+  const chatId = settings.hr_brief_chat_id || process.env.HR_BRIEF_CHAT_ID || '';
+  const threadId = settings.hr_brief_thread_id || '';
+  if (!chatId) throw new Error('Interview brief chat is not configured');
+  return { chatId, threadId };
+}
+
+function panelLink(req, session) {
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || 'academy-strateg-trainer.vercel.app').split(',')[0].trim();
+  const access = process.env.OPERATOR_ACCESS_KEY || '';
+  if (!access) throw new Error('Operator access key is not configured');
+  const query = new URLSearchParams({ interview_date: moscowDate(session.interview_at), slot_id: session.slot_id }).toString();
+  return `https://${host}/operator.html?${query}#access=${encodeURIComponent(access)}`;
+}
+
+async function participantsFor(session) {
+  return (await sql`
+    SELECT c.id,c.first_name,c.last_name,c.username,c.city,c.slot_id,c.interview_at,a.full_name,a.age,a.motivation
+    FROM candidates c LEFT JOIN applications a ON a.candidate_id=c.id
+    WHERE c.status='interview_booked' AND c.consent=true AND c.interview_at=${session.interview_at} AND c.slot_id=${session.slot_id}
+    ORDER BY COALESCE(NULLIF(a.full_name,''),NULLIF(c.first_name,''),NULLIF(c.username,'')),c.id
+  `).rows;
+}
+
+function buildBrief(session, participants, { test = false } = {}) {
+  const heading = test ? '🧪 <b>ТЕСТОВЫЙ БРИФ НА ЗАВТРА</b>' : '📋 <b>Собеседование через 30 минут</b>';
+  const header = [heading, `Дата: <b>${escapeHtml(moscowReadableDate(session.interview_at))}</b>`, `Время: <b>${escapeHtml(slots[session.slot_id] || session.slot_id)}</b>`, `Участников: <b>${participants.length}</b>`].join('\n');
+  const render = limit => participants.map((person, index) => {
+    const name = person.full_name || [person.first_name, person.last_name].filter(Boolean).join(' ') || person.username || `Кандидат ${person.id}`;
+    const facts = [person.city || 'город не указан', person.age ? `возраст ${person.age}` : 'возраст не указан'].join(' · ');
+    const motivation = compact(person.motivation, limit);
+    return `${index + 1}. <b>${escapeHtml(name)}</b> — ${escapeHtml(facts)}${motivation ? `\nОпыт/ответ: ${escapeHtml(motivation)}` : ''}`;
+  }).join('\n\n');
+  let body = render(80), text = `${header}${body ? `\n\n${body}` : '\n\nНа этот слот пока нет зарегистрированных участников.'}`;
+  if (text.length > 3800) body = render(35), text = `${header}\n\n${body}`;
+  if (text.length > 3800) body = render(0), text = `${header}\n\n${body}`;
+  return text.length > 3900 ? `${text.slice(0, 3899).trimEnd()}…` : text;
+}
+
+async function sendBrief(req, session, { test = false } = {}) {
+  const destination = await briefDestination(), participants = await participantsFor(session), link = panelLink(req, session);
+  let claimed = false;
+  if (!test) {
+    const claim = (await sql`INSERT INTO interview_brief_deliveries(interview_at,slot_id,chat_id,thread_id) VALUES(${session.interview_at},${session.slot_id},${destination.chatId},${destination.threadId}) ON CONFLICT(interview_at,chat_id,thread_id) DO NOTHING RETURNING interview_at`).rows;
+    if (!claim.length) return { sent: false, skipped: true, participants: participants.length };
+    claimed = true;
+  }
+  try {
+    const messageId = await telegram(destination.chatId, buildBrief(session, participants, { test }), {
+      ...(destination.threadId ? { message_thread_id: Number(destination.threadId) } : {}),
+      reply_markup: { inline_keyboard: [[{ text: 'Открыть участников в панели', url: link }]] }
+    });
+    if (!test) await sql`UPDATE interview_brief_deliveries SET telegram_message_id=${String(messageId || '')} WHERE interview_at=${session.interview_at} AND chat_id=${destination.chatId} AND thread_id=${destination.threadId}`;
+    return { sent: true, skipped: false, participants: participants.length, messageId: String(messageId || '') };
+  } catch (error) {
+    if (claimed) await sql`DELETE FROM interview_brief_deliveries WHERE interview_at=${session.interview_at} AND chat_id=${destination.chatId} AND thread_id=${destination.threadId} AND telegram_message_id IS NULL`;
+    throw error;
+  }
+}
+
+export async function sendTomorrowTestBrief(req) {
+  await init();
+  const sessions = (await sql`SELECT interview_at,slot_id,COUNT(*)::int AS participant_count FROM candidates WHERE status='interview_booked' AND consent=true AND (interview_at AT TIME ZONE 'Europe/Moscow')::date=((NOW() AT TIME ZONE 'Europe/Moscow')::date + 1) GROUP BY interview_at,slot_id ORDER BY interview_at LIMIT 1`).rows;
+  let session = sessions[0];
+  if (!session) {
+    const tomorrow = new Date(Date.now() + 86400000), date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' }).format(tomorrow);
+    session = { interview_at: `${date}T05:00:00.000Z`, slot_id: 'wed-0800', participant_count: 0 };
+  }
+  const result = await sendBrief(req, session, { test: true });
+  return { ok: true, test: true, date: moscowDate(session.interview_at), slotId: session.slot_id, participants: result.participants, sent: result.sent, messageId: result.messageId };
+}
 
 export default async function handler(req, res) {
-  if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
-    return json(res, 401, { error: 'Unauthorized' });
-  }
-
+  if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return json(res, 401, { error: 'Unauthorized' });
   try {
     await init();
-    const due = (await sql`
-      UPDATE candidates
-      SET reminded_30m=true,updated_at=NOW()
-      WHERE id IN (
-        SELECT id FROM candidates
-        WHERE status='interview_booked'
-          AND consent=true
-          AND reminded_30m=false
-          AND interview_at BETWEEN NOW() + INTERVAL '20 minutes' AND NOW() + INTERVAL '40 minutes'
-        FOR UPDATE SKIP LOCKED
-      )
-      RETURNING *
-    `).rows;
-
-    let sent = 0;
-    let failed = 0;
+    const sessions = (await sql`SELECT interview_at,slot_id,COUNT(*)::int AS participant_count FROM candidates WHERE status='interview_booked' AND consent=true AND interview_at BETWEEN NOW() + INTERVAL '20 minutes' AND NOW() + INTERVAL '40 minutes' GROUP BY interview_at,slot_id ORDER BY interview_at`).rows;
+    let briefSent = 0, briefSkipped = 0, briefFailed = 0;
+    for (const session of sessions) {
+      try { const result = await sendBrief(req, session); if (result.skipped) briefSkipped++; else briefSent++; }
+      catch (error) { briefFailed++; console.error('[reminders] interview brief failed', { interviewAt: session.interview_at, slotId: session.slot_id, message: String(error) }); }
+    }
+    const due = (await sql`UPDATE candidates SET reminded_30m=true,updated_at=NOW() WHERE id IN (SELECT id FROM candidates WHERE status='interview_booked' AND consent=true AND reminded_30m=false AND interview_at BETWEEN NOW() + INTERVAL '20 minutes' AND NOW() + INTERVAL '40 minutes' FOR UPDATE SKIP LOCKED) RETURNING *`).rows;
+    let sent = 0, failed = 0;
     for (const candidate of due) {
       try {
         const messageId = await telegram(candidate.chat_id, reminderText);
-        await sql`
-          INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id)
-          VALUES(${candidate.id},'out','text',${reminderText},'delivered',${String(messageId || '')})
-        `;
+        await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','text',${reminderText},'delivered',${String(messageId || '')})`;
         sent++;
       } catch (error) {
         await sql`UPDATE candidates SET reminded_30m=false,updated_at=NOW() WHERE id=${candidate.id}`;
@@ -39,8 +103,7 @@ export default async function handler(req, res) {
         console.error('[reminders] candidate failed', { candidateId: candidate.id, message: String(error) });
       }
     }
-
-    return json(res, 200, { ok: true, due: due.length, sent, failed });
+    return json(res, briefFailed ? 500 : 200, { ok: briefFailed === 0, due: due.length, sent, failed, briefDue: sessions.length, briefSent, briefSkipped, briefFailed });
   } catch (error) {
     console.error('[reminders] run failed', { message: String(error) });
     return json(res, 500, { error: 'Reminder failed' });
