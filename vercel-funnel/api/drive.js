@@ -33,9 +33,9 @@ async function callBridge(folderName, files) {
   return result;
 }
 
-function candidateFolderName(candidate) {
+function candidateFolderName(candidate, createdAt = candidate.created_at) {
   const name = clean(candidate.full_name || [candidate.first_name, candidate.last_name].filter(Boolean).join(' ') || candidate.username || `Кандидат ${candidate.id}`);
-  const created = new Date(candidate.created_at || Date.now());
+  const created = new Date(createdAt || Date.now());
   const date = Number.isNaN(created.getTime()) ? 'дата не указана' : new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', year: 'numeric' }).format(created);
   return `${name} — ${date}`.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -68,7 +68,7 @@ export async function syncDriveCandidate(candidateId) {
   const questionnaireTwo = (await sql`SELECT * FROM candidate_questionnaire_two WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0] || null;
   const test = (await sql`SELECT * FROM candidate_tests WHERE candidate_id=${candidate.id} ORDER BY created_at DESC LIMIT 1`).rows[0] || null;
   if (!questionnaireTwo?.submitted_at || !test?.submitted_at) return { pending: true, message: 'Папка кандидата появится после заполнения Теста 1' };
-  const folderName = candidateFolderName(candidate);
+  const folderName = candidateFolderName(candidate, test.submitted_at);
   const files = [
     textFile('00 — Карточка кандидата.html', printableCard({ candidate, application, questionnaireTwo, test })),
     textFile('01 — Анкета 1.html', printableCard({ candidate, application, questionnaireTwo: null, test }).replace('<h2>Анкета 2</h2><table><tr><td colspan="2">Анкета 2 ещё не заполнена</td></tr></table>', '')),
@@ -90,7 +90,7 @@ export async function uploadDriveFile(candidateId, item) {
   const test = (await sql`SELECT submitted_at FROM candidate_tests WHERE candidate_id=${candidate.id} ORDER BY created_at DESC LIMIT 1`).rows[0] || null;
   if (!questionnaireTwo?.submitted_at || !test?.submitted_at) throw new Error('Папка доступна после заполнения Теста 1');
   if (!item?.fileName || !item?.fileData) throw new Error('Файл не передан');
-  const result = await callBridge(candidateFolderName(candidate), [{ name: clean(item.fileName), mimeType: clean(item.mimeType || 'application/octet-stream'), data: String(item.fileData) }]);
+  const result = await callBridge(candidateFolderName(candidate, test.submitted_at), [{ name: clean(item.fileName), mimeType: clean(item.mimeType || 'application/octet-stream'), data: String(item.fileData) }]);
   const file = result.files?.[0];
   if (file) await sql`INSERT INTO candidate_drive_files(candidate_id,file_kind,file_name,file_url,drive_file_id,mime_type,updated_at) VALUES(${candidate.id},${clean(item.fileKind || item.fileName)},${file.name},${file.url},${file.id},${file.mimeType || item.mimeType || 'application/octet-stream'},NOW()) ON CONFLICT(candidate_id,file_kind) DO UPDATE SET file_name=EXCLUDED.file_name,file_url=EXCLUDED.file_url,drive_file_id=EXCLUDED.drive_file_id,mime_type=EXCLUDED.mime_type,updated_at=NOW()`;
   await sql`INSERT INTO candidate_drive(candidate_id,folder_id,folder_url,folder_name,synced_at,updated_at) VALUES(${candidate.id},${result.folder.id},${result.folder.url},${result.folder.name},NOW(),NOW()) ON CONFLICT(candidate_id) DO UPDATE SET folder_id=EXCLUDED.folder_id,folder_url=EXCLUDED.folder_url,folder_name=EXCLUDED.folder_name,synced_at=NOW(),updated_at=NOW()`;
