@@ -1,10 +1,10 @@
 {
   "project": "academy-strateg-trainer",
-  "last_change": "GOOGLE-DRIVE-DOSSIER-005",
-  "commit": "91732ba",
+  "last_change": "GOOGLE-DRIVE-BRIDGE-006",
+  "commit": "e86b277",
   "baseline_commit": "5d493e7",
-  "rollback_branch": "rollback/google-drive-after-test1-before-005-20260826",
-  "status": "deployed_waiting_google_drive_bridge_configuration",
+  "rollback_branch": "rollback/google-drive-bridge-before-006-20260826",
+  "status": "deployed_waiting_apps_script_bridge_secret",
   "drive_parent_folder_url": "https://drive.google.com/drive/folders/1fpKRJQZIdFeqYCVQ6aWfN_4_xuLyMX4D",
   "behavior": {
     "candidate_card": "created only after questionnaire 1, questionnaire 2, and test 1 are submitted",
