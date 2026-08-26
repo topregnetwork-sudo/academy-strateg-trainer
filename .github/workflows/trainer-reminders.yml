@@ -2,9 +2,17 @@ name: Trainer interview reminders
 
 on:
   schedule:
-    # 30 minutes before the configured Moscow interview slots, expressed in UTC.
+    # Three redundant triggers cover GitHub-hosted scheduler delays up to 40 minutes.
+    # The API's 20–40 minute due window and database deduplication ensure that only
+    # the trigger which actually lands near the interview sends each notification.
+    - cron: '0 4 * * 1-3'
+    - cron: '15 4 * * 1-3'
     - cron: '30 4 * * 1-3'
+    - cron: '0 14 * * 4-5'
+    - cron: '15 14 * * 4-5'
     - cron: '30 14 * * 4-5'
+    - cron: '0 2 * * 6'
+    - cron: '15 2 * * 6'
     - cron: '30 2 * * 6'
   workflow_dispatch:
 
