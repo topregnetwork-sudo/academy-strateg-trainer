@@ -1,13 +1,13 @@
 {
   "project": "academy-strateg-trainer",
-  "last_change": "DRIVE-TIMELINE-OPERATOR-SUMMARY-010",
-  "commit": "ceb8105",
+  "last_change": "GARCIA-MARK-IN-DRIVE-011",
+  "commit": "pending",
   "baseline_commit": "5d493e7",
-  "rollback_branch": "rollback/drive-timeline-operator-summary-before-010-20260826",
+  "rollback_branch": "rollback/garcia-mark-in-drive-before-011-20260826",
   "status": "deployed_and_verified",
   "drive_parent_folder_url": "https://drive.google.com/drive/folders/1fpKRJQZIdFeqYCVQ6aWfN_4_xuLyMX4D",
   "behavior": {
-    "candidate_card": "one readable Google Drive card with the full five-stage timeline, total elapsed time, and both questionnaire answers shown as question then answer; separate questionnaire files are not created",
+    "candidate_card": "one readable Google Drive card with the full five-stage timeline, total elapsed time, the Garcia article confirmation, and both questionnaire answers shown as question then answer; separate questionnaire files are not created",
     "operator_link": "the operator information area shows first-questionnaire data, total elapsed time to Test 1, and one common Google Drive folder link; statuses and correspondence remain available",
     "tests": "test 1 answers are stored in an A4-like CSV table with five side-by-side blocks of 40 questions and + / М / − marks; ready result graphs are added later",
     "timeline": "the full timeline is stored in the Google Drive candidate card; the operator panel shows only total elapsed time"

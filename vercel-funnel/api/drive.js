@@ -60,6 +60,7 @@ function printableCard({ candidate, application, questionnaireTwo, test, message
     ['Возраст', application?.age || ''],
     ['Почему хотите стать бизнес-тренером?', application?.motivation || ''],
     ['Опыт бизнес-тренера', application?.trainer_experience_level || candidate.trainer_experience_level || ''],
+    ['Вы такой человек? — отметка после статьи «Послание к Гарсии»', application?.garcia_confirmed === true || application?.test_answer === 'Послание к Гарсии: да' ? '✓ Да' : application?.test_answer === 'Послание к Гарсии: нет' ? '○ Нет' : 'Не отмечено'],
     ['Источник кандидата', candidate.source_id || application?.source_id || ''],
     ['Статус', candidate.status || '']
   ].map(([label, value]) => question(label, value)).join('');
