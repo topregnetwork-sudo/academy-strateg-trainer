@@ -35,8 +35,9 @@ async function callBridge(folderName, files) {
 
 function candidateFolderName(candidate) {
   const name = clean(candidate.full_name || [candidate.first_name, candidate.last_name].filter(Boolean).join(' ') || candidate.username || `Кандидат ${candidate.id}`);
-  const city = clean(candidate.city || 'город не указан');
-  return `${String(candidate.id).padStart(4, '0')} — ${name} — ${city}`.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
+  const created = new Date(candidate.created_at || Date.now());
+  const date = Number.isNaN(created.getTime()) ? 'дата не указана' : new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', year: 'numeric' }).format(created);
+  return `${name} — ${date}`.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function printableCard({ candidate, application, questionnaireTwo, test }) {
@@ -65,15 +66,15 @@ export async function syncDriveCandidate(candidateId) {
   if (!candidate) throw new Error('Кандидат не найден');
   const application = (await sql`SELECT * FROM applications WHERE candidate_id=${candidate.id} ORDER BY created_at DESC LIMIT 1`).rows[0] || null;
   const questionnaireTwo = (await sql`SELECT * FROM candidate_questionnaire_two WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0] || null;
-  if (!questionnaireTwo?.submitted_at) return { pending: true, message: 'Папка и карточка появятся после получения обеих анкет' };
   const test = (await sql`SELECT * FROM candidate_tests WHERE candidate_id=${candidate.id} ORDER BY created_at DESC LIMIT 1`).rows[0] || null;
+  if (!questionnaireTwo?.submitted_at || !test?.submitted_at) return { pending: true, message: 'Папка кандидата появится после заполнения Теста 1' };
   const folderName = candidateFolderName(candidate);
   const files = [
     textFile('00 — Карточка кандидата.html', printableCard({ candidate, application, questionnaireTwo, test })),
     textFile('01 — Анкета 1.html', printableCard({ candidate, application, questionnaireTwo: null, test }).replace('<h2>Анкета 2</h2><table><tr><td colspan="2">Анкета 2 ещё не заполнена</td></tr></table>', '')),
     textFile('02 — Анкета 2.html', printableCard({ candidate, application: null, questionnaireTwo, test }).match(/<h2>Анкета 2<\/h2>[\s\S]*?<h2>Тестирование<\/h2>/)?.[0] || '<p>Анкета 2 заполнена</p>')
   ];
-  if (test?.submitted_at) files.push(textFile('03 — Тест 1 — ответы.json', JSON.stringify({ candidate_id: candidate.id, questionnaire_version: test.questionnaire_version || null, status: test.status || 'completed', submitted_at: test.submitted_at, answers: test.answers || [] }, null, 2), 'application/json'));
+  files.push(textFile('03 — Тест 1 — ответы.json', JSON.stringify({ candidate_id: candidate.id, questionnaire_version: test.questionnaire_version || null, status: test.status || 'completed', submitted_at: test.submitted_at, answers: test.answers || [] }, null, 2), 'application/json'));
   const result = await callBridge(folderName, files);
   const folder = result.folder;
   await sql`INSERT INTO candidate_drive(candidate_id,folder_id,folder_url,folder_name,synced_at,updated_at) VALUES(${candidate.id},${folder.id},${folder.url},${folder.name},NOW(),NOW()) ON CONFLICT(candidate_id) DO UPDATE SET folder_id=EXCLUDED.folder_id,folder_url=EXCLUDED.folder_url,folder_name=EXCLUDED.folder_name,synced_at=NOW(),updated_at=NOW()`;
@@ -86,7 +87,8 @@ export async function uploadDriveFile(candidateId, item) {
   const candidate = (await sql`SELECT c.*,a.full_name FROM candidates c LEFT JOIN applications a ON a.candidate_id=c.id WHERE c.id=${Number(candidateId)} LIMIT 1`).rows[0];
   if (!candidate) throw new Error('Кандидат не найден');
   const questionnaireTwo = (await sql`SELECT submitted_at FROM candidate_questionnaire_two WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0] || null;
-  if (!questionnaireTwo?.submitted_at) throw new Error('Сначала должны быть получены обе анкеты');
+  const test = (await sql`SELECT submitted_at FROM candidate_tests WHERE candidate_id=${candidate.id} ORDER BY created_at DESC LIMIT 1`).rows[0] || null;
+  if (!questionnaireTwo?.submitted_at || !test?.submitted_at) throw new Error('Папка доступна после заполнения Теста 1');
   if (!item?.fileName || !item?.fileData) throw new Error('Файл не передан');
   const result = await callBridge(candidateFolderName(candidate), [{ name: clean(item.fileName), mimeType: clean(item.mimeType || 'application/octet-stream'), data: String(item.fileData) }]);
   const file = result.files?.[0];
