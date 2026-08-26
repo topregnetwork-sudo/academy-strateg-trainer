@@ -64,6 +64,39 @@ async function getCandidateGroupInviteUrl() {
   return setting.rows[0]?.value || '';
 }
 
+async function getCandidateGroupChatId() {
+  const setting = await sql`SELECT value FROM app_settings WHERE key='candidate_group_chat_id' LIMIT 1`;
+  return setting.rows[0]?.value ? String(setting.rows[0].value) : '';
+}
+
+async function recordCandidateGroupJoin(user, unixTime = 0) {
+  if (!user?.id) return false;
+  const joinedAt = unixTime ? new Date(Number(unixTime) * 1000).toISOString() : new Date().toISOString();
+  const candidate = (await sql`UPDATE candidates SET group_joined_at=COALESCE(group_joined_at,${joinedAt}),updated_at=NOW() WHERE chat_id=${String(user.id)} AND group_joined_at IS NULL RETURNING id`).rows[0];
+  if (!candidate) return false;
+  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status) VALUES(${candidate.id},'in','candidate_group_joined','Вступил в группу кандидатов','received')`;
+  return true;
+}
+
+async function handleCandidateGroupMembership(update) {
+  const membership = update.chat_member;
+  if (!membership?.chat?.id) return false;
+  const groupChatId = await getCandidateGroupChatId();
+  if (!groupChatId || String(membership.chat.id) !== groupChatId) return false;
+  const active = ['member','administrator','creator'].includes(membership.new_chat_member?.status);
+  const wasOutside = ['left','kicked'].includes(membership.old_chat_member?.status);
+  if (active && wasOutside) await recordCandidateGroupJoin(membership.new_chat_member.user, membership.date);
+  return true;
+}
+
+async function handleNewCandidateGroupMembers(message) {
+  if (!Array.isArray(message.new_chat_members) || !message.new_chat_members.length) return false;
+  const groupChatId = await getCandidateGroupChatId();
+  if (!groupChatId || String(message.chat?.id) !== groupChatId) return false;
+  for (const user of message.new_chat_members) await recordCandidateGroupJoin(user, message.date);
+  return true;
+}
+
 async function wasDelivered(candidate, destination) {
   const existing = await sql`SELECT 1 FROM hr_brief_deliveries WHERE candidate_id=${candidate.id} AND interview_at=${candidate.interview_at} AND chat_id=${destination.chatId} AND thread_id=${destination.threadId} LIMIT 1`;
   return existing.rows.length > 0;
@@ -379,6 +412,11 @@ export default async function handler(req, res) {
   let update;
   try {
     update = await body(req);
+    if (update.chat_member) {
+      await init();
+      await handleCandidateGroupMembership(update);
+      return json(res, 200, { ok: true });
+    }
     const callback = update.callback_query;
     if (callback) {
       await init();
@@ -389,9 +427,10 @@ export default async function handler(req, res) {
     if (!message) return json(res, 200, { ok: true });
 
     if (message.chat?.type && message.chat.type !== 'private') {
+      await init();
+      if (await handleNewCandidateGroupMembers(message)) return json(res, 200, { ok: true });
       if (!TOPIC_COMMAND.test(message.text || '') && !CANDIDATE_GROUP_COMMAND.test(message.text || '')) return json(res, 200, { ok: true });
       try {
-        await init();
         if (!await configureCandidateGroup(message)) await configureTrainerTopic(message);
       } catch (error) {
         console.error('[telegram] trainer topic setup failed', { chatId: String(message.chat.id), threadId: message.message_thread_id, message: String(error), stack: error?.stack });

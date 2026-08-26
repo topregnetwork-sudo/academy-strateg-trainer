@@ -69,3 +69,21 @@ function downloadTestCsvFinal(){
 }
 const renderDetailWithCsvExportFinal=renderDetail;
 renderDetail=function(){renderDetailWithCsvExportFinal();const primary=$('openTestReport'),pdf=$('downloadTestReport');if(pdf)pdf.remove();if(primary){primary.textContent='Скачать таблицу CSV';primary.onclick=downloadTestCsvFinal}};
+
+/* Временная линия прохождения кандидата до завершения Теста 1. */
+function candidateTimelineBlock(){
+  const exactMessage=(predicate)=>messages.find(predicate)?.created_at||null;
+  const stages=[
+    {label:'Получена ссылка кандидата',at:details?.created_at},
+    {label:'Вход в группу',at:details?.group_joined_at||exactMessage(message=>message.kind==='candidate_group_joined')},
+    {label:'Анкета заполнена',at:questionnaireTwo?.submitted_at},
+    {label:'Слово «тест» в боте',at:exactMessage(message=>message.direction==='in'&&plain(message.text||'').trim().toLowerCase().replace(/[.!]/g,'')==='тест')},
+    {label:'Тест 1 заполнен',at:testDetails?.submitted_at}
+  ];
+  const format=at=>at?new Date(at).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'}):'Ещё не зафиксировано';
+  const start=stages[0].at,end=stages[4].at,total=start&&end?Math.max(0,new Date(end)-new Date(start)):null;
+  const duration=total===null?'Ожидаем завершения':(()=>{const minutes=Math.floor(total/60000),days=Math.floor(minutes/1440),hours=Math.floor((minutes%1440)/60),mins=minutes%60;return [days?days+' д.':'',hours?hours+' ч.':'',mins+' мин.'].filter(Boolean).join(' ')})();
+  return `<section class="candidate-timeline" style="margin:14px 0;padding:16px;border:1px solid #cbd5e1;border-radius:14px;background:#fff"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px"><div><b style="font-size:17px">Временная линия кандидата</b><p style="margin:4px 0 0;color:#64748b">От первого контакта до завершения Теста 1</p></div><div style="padding:8px 11px;border-radius:10px;background:#e8f5ee;color:#17623a;font-weight:700">Общее время: ${esc(duration)}</div></div><div style="display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:8px;overflow-x:auto;padding-bottom:4px">${stages.map((stage,index)=>`<div style="position:relative;min-width:120px;padding:12px 10px;border-radius:10px;background:${stage.at?'#eef7f2':'#f1f5f9'};border-top:4px solid ${stage.at?'#24a163':'#94a3b8'}"><div style="font-weight:700;margin-bottom:7px">${index+1}. ${esc(stage.label)}</div><div style="font-size:13px;color:${stage.at?'#334155':'#64748b'}">${esc(format(stage.at))}</div></div>`).join('')}</div>${!stages[1].at?'<p style="margin:10px 0 0;color:#64748b;font-size:13px">Точное время входа в группу начнёт фиксироваться автоматически для новых вступлений. У ранее вступивших оно могло не сохраниться.</p>':''}</section>`;
+}
+const renderDetailWithTimeline=renderDetail;
+renderDetail=function(){renderDetailWithTimeline();const host=$('detail');if(!host||host.querySelector('.candidate-timeline'))return;const section=document.createElement('div');section.innerHTML=candidateTimelineBlock();const head=host.querySelector('.candidate-head');if(head)head.insertAdjacentElement('afterend',section.firstElementChild);else host.prepend(section.firstElementChild)};

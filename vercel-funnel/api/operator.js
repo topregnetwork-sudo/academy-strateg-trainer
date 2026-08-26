@@ -1,4 +1,4 @@
-import { body, init, json, operator, sql, telegram } from './_core.js';
+import { body, ensureTelegramWebhook, init, json, operator, sql, telegram } from './_core.js';
 import { syncDriveCandidate, uploadDriveFile } from './drive.js';
 
 export default async function handler(req,res){
@@ -29,6 +29,10 @@ export default async function handler(req,res){
       return json(res,200,{ok:true});
     }
     if(req.method==='POST'){
+      if(v.action==='refresh_telegram_webhook'){
+        await ensureTelegramWebhook(req);
+        return json(res,200,{ok:true});
+      }
       if(v.action==='sync_drive_candidate'&&v.candidateId){
         return json(res,200,{ok:true,...(await syncDriveCandidate(v.candidateId))});
       }
