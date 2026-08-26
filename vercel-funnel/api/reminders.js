@@ -19,7 +19,9 @@ async function briefDestination() {
 
 async function candidateGroupChatId() {
   const setting = (await sql`SELECT value FROM app_settings WHERE key='candidate_group_chat_id' LIMIT 1`).rows[0]?.value;
-  return String(setting || process.env.CANDIDATE_GROUP_CHAT_ID || '-4482521303');
+  const chatId = setting || process.env.CANDIDATE_GROUP_CHAT_ID || '';
+  if (!chatId) throw new Error('Candidate group chat is not configured');
+  return String(chatId);
 }
 
 async function isCandidateGroupMember(userId, groupChatId) {

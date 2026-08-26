@@ -1,6 +1,7 @@
 import { body, init, json, nextInterview, slots, telegram, telegramApi, sql } from './_core.js';
 
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
+const CANDIDATE_GROUP_COMMAND = /^\/candidate_group(?:@stazherskaya_bot)?(?:\s|$)/i;
 const CANDIDATE_GROUP_KEYWORD = /^\s*кандидат(?:ы)?[.!]?\s*$/iu;
 const NOT_RELEVANT_KEYWORD = /^\s*не\s*актуально[.!]?\s*$/iu;
 
@@ -181,6 +182,31 @@ async function configureTrainerTopic(message) {
   return true;
 }
 
+async function configureCandidateGroup(message) {
+  if (!CANDIDATE_GROUP_COMMAND.test(message.text || '')) return false;
+  const chatId = String(message.chat.id);
+  let isAdministrator = false;
+  try {
+    const member = await telegramApi('getChatMember', { chat_id: chatId, user_id: message.from?.id });
+    isAdministrator = member?.status === 'creator' || member?.status === 'administrator';
+  } catch (error) {
+    console.error('[telegram] candidate group admin verification failed', { chatId, userId: message.from?.id, message: String(error) });
+  }
+  if (!isAdministrator) {
+    await telegram(chatId, '⚠️ Зарегистрировать группу может только её администратор. Отправьте команду из аккаунта администратора группы.');
+    return true;
+  }
+  const bot = await telegramApi('getMe');
+  const botMember = await telegramApi('getChatMember', { chat_id: chatId, user_id: bot.id });
+  if (!['creator', 'administrator'].includes(botMember?.status)) {
+    await telegram(chatId, '⚠️ Чтобы проверять, кто уже находится в группе, назначьте @stazherskaya_bot администратором группы и повторите команду /candidate_group. Публиковать сообщения от имени группы боту не требуется.');
+    return true;
+  }
+  await sql`INSERT INTO app_settings(key,value,updated_at) VALUES('candidate_group_chat_id',${chatId},NOW()) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=NOW()`;
+  await telegram(chatId, '✅ Группа кандидатов зарегистрирована. Участники этой группы будут исключены из сообщений о повторной записи на собеседование.');
+  return true;
+}
+
 async function handlePrivateStart(message) {
   const chatId = String(message.chat.id);
   const match = message.text?.match(/^\/start\s+trainer_app_([a-zA-Z0-9]{20})$/);
@@ -295,10 +321,10 @@ export default async function handler(req, res) {
     if (!message) return json(res, 200, { ok: true });
 
     if (message.chat?.type && message.chat.type !== 'private') {
-      if (!TOPIC_COMMAND.test(message.text || '')) return json(res, 200, { ok: true });
+      if (!TOPIC_COMMAND.test(message.text || '') && !CANDIDATE_GROUP_COMMAND.test(message.text || '')) return json(res, 200, { ok: true });
       try {
         await init();
-        await configureTrainerTopic(message);
+        if (!await configureCandidateGroup(message)) await configureTrainerTopic(message);
       } catch (error) {
         console.error('[telegram] trainer topic setup failed', { chatId: String(message.chat.id), threadId: message.message_thread_id, message: String(error), stack: error?.stack });
         const extra = message.message_thread_id ? { message_thread_id: Number(message.message_thread_id) } : {};
