@@ -1,4 +1,5 @@
 import { body, init, json, operator, sql, telegram } from './_core.js';
+import { syncDriveCandidate, uploadDriveFile } from './drive.js';
 
 export default async function handler(req,res){
   if(!operator(req))return json(res,401,{error:'Неверный код доступа'});
@@ -12,7 +13,9 @@ export default async function handler(req,res){
         const test=(await sql`SELECT id,questionnaire_version,status,answers,sent_at,submitted_at,created_at,updated_at FROM candidate_tests WHERE candidate_id=${id} ORDER BY created_at DESC LIMIT 1`).rows[0]||null;
         const testFiles=(await sql`SELECT id,test_type,file_kind,file_name,mime_type,uploaded_at FROM candidate_test_files WHERE candidate_id=${id} ORDER BY uploaded_at DESC`).rows;
         const questionnaireTwo=(await sql`SELECT status,answers,sent_at,submitted_at FROM candidate_questionnaire_two WHERE candidate_id=${id} LIMIT 1`).rows[0]||null;
-        return json(res,200,{candidate,messages,test,testFiles,questionnaireTwo});
+        const drive=(await sql`SELECT candidate_id,folder_id,folder_url,folder_name,synced_at FROM candidate_drive WHERE candidate_id=${id} LIMIT 1`).rows[0]||null;
+        const driveFiles=(await sql`SELECT file_kind,file_name,file_url,drive_file_id,mime_type,updated_at FROM candidate_drive_files WHERE candidate_id=${id} ORDER BY updated_at DESC`).rows;
+        return json(res,200,{candidate,messages,test,testFiles,questionnaireTwo,drive,driveFiles});
       }
       const candidates=(await sql`SELECT c.*,m.text AS last_message FROM candidates c LEFT JOIN LATERAL (SELECT text FROM messages WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) m ON true ORDER BY c.created_at DESC`).rows;
       const analytics=(await sql`SELECT count(*) FILTER (WHERE true)::int AS total,count(*) FILTER (WHERE status='interview_booked')::int AS booked,count(*) FILTER (WHERE status='hired')::int AS hired FROM candidates`).rows[0];
@@ -26,6 +29,14 @@ export default async function handler(req,res){
       return json(res,200,{ok:true});
     }
     if(req.method==='POST'){
+      if(v.action==='sync_drive_candidate'&&v.candidateId){
+        return json(res,200,{ok:true,...(await syncDriveCandidate(v.candidateId))});
+      }
+      if(v.action==='upload_drive_file'&&v.candidateId){
+        if(!v.fileName||!v.fileData)return json(res,400,{error:'Файл не передан'});
+        if(String(v.fileData).length>12000000)return json(res,413,{error:'Файл больше 8 МБ'});
+        return json(res,200,{ok:true,...(await uploadDriveFile(v.candidateId,v))});
+      }
       if(v.action==='reset_hr_test'&&v.candidateId){
         const candidate=(await sql`SELECT * FROM candidates WHERE id=${Number(v.candidateId)} LIMIT 1`).rows[0];
         if(!candidate||String(candidate.username||'').toLowerCase()!=='hracademystrateg')return json(res,403,{error:'Повторный доступ разрешён только тестовому аккаунту @HRAcademyStrateg'});
