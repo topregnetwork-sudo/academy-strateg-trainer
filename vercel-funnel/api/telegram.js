@@ -3,7 +3,9 @@ import { body, init, json, nextInterview, slots, telegram, telegramApi, sql } fr
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
 const CANDIDATE_GROUP_COMMAND = /^\/candidate_group(?:@stazherskaya_bot)?(?:\s|$)/i;
 const CANDIDATE_GROUP_KEYWORD = /^\s*кандидат(?:ы)?[.!]?\s*$/iu;
+const CANDIDATE_TEST_KEYWORD = /^\s*тест[.!]?\s*$/iu;
 const NOT_RELEVANT_KEYWORD = /^\s*не\s*актуально[.!]?\s*$/iu;
+const TEST_VERSION = 'executive-effectiveness-2020-ru-v1';
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -102,7 +104,7 @@ async function handleCandidateGroupKeyword(message) {
   if (!CANDIDATE_GROUP_KEYWORD.test(message.text || '')) return false;
   const chatId = String(message.chat.id);
   const candidate = (await sql`SELECT id,chat_id,status FROM candidates WHERE chat_id=${chatId} LIMIT 1`).rows[0];
-  if (!candidate || !['interview_booked','interviewed'].includes(candidate.status)) {
+  if (!candidate || !['interview_booked','interviewed','test_1_completed','test_1_passed','training','internship','hired'].includes(candidate.status)) {
     await telegram(chatId, 'Приглашение в группу кандидатов доступно после записи и прохождения собеседования.');
     return true;
   }
@@ -132,6 +134,41 @@ async function handleCandidateGroupKeyword(message) {
     }
     throw error;
   }
+  return true;
+}
+
+async function handleCandidateTestKeyword(message) {
+  if (!CANDIDATE_TEST_KEYWORD.test(message.text || '')) return false;
+  const chatId = String(message.chat.id);
+  const candidate = (await sql`SELECT id,chat_id,status FROM candidates WHERE chat_id=${chatId} LIMIT 1`).rows[0];
+  if (!candidate) {
+    await telegram(chatId, 'Не удалось найти вашу анкету. Откройте бота по кнопке с сайта вакансии и повторите попытку.');
+    return true;
+  }
+  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status) VALUES(${candidate.id},'in','candidate_test_command','тест','received')`;
+  const existing = (await sql`SELECT * FROM candidate_tests WHERE candidate_id=${candidate.id} AND questionnaire_version=${TEST_VERSION} LIMIT 1`).rows[0];
+  if (existing?.submitted_at || ['test_1_completed','test_1_passed'].includes(candidate.status)) {
+    const text = '✅ Тест 1 уже заполнен и сохранён в вашей анкете. Повторно проходить его не нужно.';
+    const messageId = await telegram(chatId, text);
+    await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','candidate_test_already_completed',${text},'delivered',${String(messageId || '')})`;
+    return true;
+  }
+  if (candidate.status !== 'interviewed') {
+    const text = 'Тест 1 станет доступен после собеседования, когда координатор переведёт вашу анкету в этап «Собеседование».';
+    const messageId = await telegram(chatId, text);
+    await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','candidate_test_unavailable',${text},'delivered',${String(messageId || '')})`;
+    return true;
+  }
+  let test = existing;
+  if (!test) {
+    const token = crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '');
+    test = (await sql`INSERT INTO candidate_tests(candidate_id,token,questionnaire_version,status) VALUES(${candidate.id},${token},${TEST_VERSION},'pending') RETURNING *`).rows[0];
+  }
+  const testUrl = `https://topregnetwork-sudo.github.io/academy-strateg-trainer/test.html?token=${test.token}`;
+  const text = '📝 <b>Тест 1 — эффективность руководителя</b>\n\nОткройте персональную ссылку и ответьте на 200 вопросов. Все вопросы находятся на одной странице; напротив каждого выберите «Да», «Может быть» или «Нет».\n\nПосле отправки ответы автоматически прикрепятся к вашей анкете.';
+  const messageId = await telegram(chatId, text, { reply_markup: { inline_keyboard: [[{ text: 'Пройти тест 1', url: testUrl }]] } });
+  await sql`UPDATE candidate_tests SET status='sent',sent_at=NOW(),updated_at=NOW() WHERE id=${test.id}`;
+  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','candidate_test_invite',${text},'delivered',${String(messageId || '')})`;
   return true;
 }
 
@@ -340,6 +377,7 @@ export default async function handler(req, res) {
     await init();
     if (await handleNotRelevant(message)) return json(res, 200, { ok: true });
     if (await handleCandidateGroupKeyword(message)) return json(res, 200, { ok: true });
+    if (await handleCandidateTestKeyword(message)) return json(res, 200, { ok: true });
     await handlePrivateStart(message);
     return json(res, 200, { ok: true });
   } catch (error) {
