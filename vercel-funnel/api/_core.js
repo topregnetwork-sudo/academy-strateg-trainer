@@ -23,6 +23,9 @@ export function nextInterview(slotId,now=new Date()){const [weekday,hour]=schedu
 async function enablePublicApplications(){await sql`ALTER TABLE applications ENABLE ROW LEVEL SECURITY`;await sql`GRANT INSERT ON applications TO anon`;await sql`GRANT USAGE, SELECT ON SEQUENCE applications_id_seq TO anon`;try{await sql`CREATE POLICY public_candidate_insert ON applications FOR INSERT TO anon WITH CHECK (candidate_id IS NULL AND char_length(code)=20)`}catch(error){if(error?.code!=='42710')throw error}}
 async function initCandidateTests(){
   await sql`CREATE TABLE IF NOT EXISTS candidate_tests (id BIGSERIAL PRIMARY KEY, candidate_id BIGINT NOT NULL, token TEXT UNIQUE NOT NULL, questionnaire_version TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', answers JSONB, sent_at TIMESTAMPTZ, submitted_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(candidate_id,questionnaire_version))`;
+  await sql`ALTER TABLE candidate_tests ADD COLUMN IF NOT EXISTS completion_notice_sent_at TIMESTAMPTZ`;
+  await sql`CREATE TABLE IF NOT EXISTS candidate_test_attempt_archive (id BIGSERIAL PRIMARY KEY,candidate_test_id BIGINT NOT NULL,candidate_id BIGINT NOT NULL,questionnaire_version TEXT NOT NULL,answers JSONB,sent_at TIMESTAMPTZ,submitted_at TIMESTAMPTZ,archived_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
+  await sql`CREATE TABLE IF NOT EXISTS candidate_test_files (id BIGSERIAL PRIMARY KEY,candidate_id BIGINT NOT NULL,test_type TEXT NOT NULL DEFAULT 'test_1',file_kind TEXT NOT NULL,file_name TEXT NOT NULL,mime_type TEXT NOT NULL,file_data TEXT NOT NULL,uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(candidate_id,test_type,file_kind))`;
   await sql`ALTER TABLE candidate_tests ENABLE ROW LEVEL SECURITY`;
   await sql`REVOKE ALL ON candidate_tests FROM anon`;
   await sql`REVOKE ALL ON candidate_tests FROM authenticated`;

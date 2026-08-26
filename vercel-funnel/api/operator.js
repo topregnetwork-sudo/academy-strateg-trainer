@@ -10,7 +10,8 @@ export default async function handler(req,res){
         const candidate=(await sql`SELECT c.*,a.full_name,a.age,a.motivation,a.garcia_confirmed,a.test_answer,a.trainer_experience_level FROM candidates c LEFT JOIN applications a ON a.candidate_id=c.id WHERE c.id=${id}`).rows[0];
         const messages=(await sql`SELECT * FROM messages WHERE candidate_id=${id} ORDER BY created_at ASC`).rows;
         const test=(await sql`SELECT id,questionnaire_version,status,answers,sent_at,submitted_at,created_at,updated_at FROM candidate_tests WHERE candidate_id=${id} ORDER BY created_at DESC LIMIT 1`).rows[0]||null;
-        return json(res,200,{candidate,messages,test});
+        const testFiles=(await sql`SELECT id,test_type,file_kind,file_name,mime_type,uploaded_at FROM candidate_test_files WHERE candidate_id=${id} ORDER BY uploaded_at DESC`).rows;
+        return json(res,200,{candidate,messages,test,testFiles});
       }
       const candidates=(await sql`SELECT c.*,m.text AS last_message FROM candidates c LEFT JOIN LATERAL (SELECT text FROM messages WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) m ON true ORDER BY c.created_at DESC`).rows;
       const analytics=(await sql`SELECT count(*) FILTER (WHERE true)::int AS total,count(*) FILTER (WHERE status='interview_booked')::int AS booked,count(*) FILTER (WHERE status='hired')::int AS hired FROM candidates`).rows[0];
@@ -24,6 +25,30 @@ export default async function handler(req,res){
       return json(res,200,{ok:true});
     }
     if(req.method==='POST'){
+      if(v.action==='reset_hr_test'&&v.candidateId){
+        const candidate=(await sql`SELECT * FROM candidates WHERE id=${Number(v.candidateId)} LIMIT 1`).rows[0];
+        if(!candidate||String(candidate.username||'').toLowerCase()!=='hracademystrateg')return json(res,403,{error:'Повторный доступ разрешён только тестовому аккаунту @HRAcademyStrateg'});
+        const version='executive-effectiveness-2020-ru-v1';
+        const current=(await sql`SELECT * FROM candidate_tests WHERE candidate_id=${candidate.id} AND questionnaire_version=${version} LIMIT 1`).rows[0];
+        if(current)await sql`INSERT INTO candidate_test_attempt_archive(candidate_test_id,candidate_id,questionnaire_version,answers,sent_at,submitted_at) VALUES(${current.id},${candidate.id},${version},${current.answers},${current.sent_at},${current.submitted_at})`;
+        const token=crypto.randomUUID().replaceAll('-','')+crypto.randomUUID().replaceAll('-','');
+        if(current)await sql`UPDATE candidate_tests SET token=${token},status='pending',answers=NULL,sent_at=NULL,submitted_at=NULL,completion_notice_sent_at=NULL,updated_at=NOW() WHERE id=${current.id}`;
+        else await sql`INSERT INTO candidate_tests(candidate_id,token,questionnaire_version,status) VALUES(${candidate.id},${token},${version},'pending')`;
+        await sql`UPDATE candidates SET status='interviewed',updated_at=NOW() WHERE id=${candidate.id}`;
+        return json(res,200,{ok:true,message:'Повторный доступ открыт. Напишите боту слово «тест».'});
+      }
+      if(v.action==='upload_test_file'&&v.candidateId){
+        if(!['answer_pdf','result_graph'].includes(v.fileKind))return json(res,400,{error:'Недопустимый тип файла'});
+        if(!v.fileName||!v.mimeType||!v.fileData)return json(res,400,{error:'Файл не передан'});
+        if(String(v.fileData).length>9000000)return json(res,413,{error:'Файл слишком большой. Максимум 6 МБ.'});
+        await sql`INSERT INTO candidate_test_files(candidate_id,test_type,file_kind,file_name,mime_type,file_data) VALUES(${Number(v.candidateId)},'test_1',${v.fileKind},${v.fileName},${v.mimeType},${v.fileData}) ON CONFLICT(candidate_id,test_type,file_kind) DO UPDATE SET file_name=EXCLUDED.file_name,mime_type=EXCLUDED.mime_type,file_data=EXCLUDED.file_data,uploaded_at=NOW()`;
+        return json(res,200,{ok:true});
+      }
+      if(v.action==='download_test_file'&&v.fileId){
+        const file=(await sql`SELECT file_name,mime_type,file_data FROM candidate_test_files WHERE id=${Number(v.fileId)} LIMIT 1`).rows[0];
+        if(!file)return json(res,404,{error:'Файл не найден'});
+        return json(res,200,{ok:true,...file});
+      }
       if(v.action==='send_test'&&v.candidateId){
         const candidate=(await sql`SELECT id,chat_id,first_name,last_name,username,status FROM candidates WHERE id=${Number(v.candidateId)} LIMIT 1`).rows[0];
         if(!candidate)return json(res,404,{error:'Кандидат не найден'});

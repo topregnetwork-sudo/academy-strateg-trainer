@@ -2,6 +2,7 @@ import { init, json, telegram, telegramApi, sql, slots } from './_core.js';
 
 const reminderText = '⏰ Напоминаем: ваше собеседование с Академией Стратег начнётся примерно через 30 минут. Пожалуйста, проверьте связь и подготовьтесь к встрече.';
 const noShowText = 'Здравствуйте! Вы были записаны на собеседование с Академией Стратег. Если сегодня не получилось подключиться, выберите новое удобное время ниже.\n\nЕсли вакансия для вас больше не актуальна, напишите в ответ: <b>не актуально</b>.';
+const testOneCompletedText = '✅ <b>Тест 1 заполнен</b>\n\nВсе 200 ответов сохранены в вашей карточке кандидата. Команда проверит результат. После проверки вы получите информацию о следующем этапе — IQ-тесте.';
 const rescheduleKeyboard = { inline_keyboard: Object.entries(slots).map(([slotId, title]) => [{ text: title, callback_data: `trainer_rebook_${slotId}` }]) };
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 const compact = (value, limit) => { const text = String(value || '').replace(/\s+/g, ' ').trim(); if (limit <= 0) return ''; return text.length > limit ? `${text.slice(0, limit - 1).trimEnd()}…` : text; };
@@ -132,6 +133,16 @@ export default async function handler(req, res) {
       if (offset + batchSize < due.length) await new Promise(resolve => setTimeout(resolve, 500));
     }
     const noShows = (await sql`SELECT id FROM candidates WHERE status='interview_booked' AND consent=true AND no_show_followup_sent=false AND interview_at <= NOW() - INTERVAL '90 minutes' AND interview_at >= NOW() - INTERVAL '7 days' ORDER BY id`).rows;
+    const completedTests=(await sql`SELECT t.id AS test_id,c.id AS candidate_id,c.chat_id FROM candidate_tests t JOIN candidates c ON c.id=t.candidate_id WHERE t.submitted_at IS NOT NULL AND t.completion_notice_sent_at IS NULL ORDER BY t.submitted_at LIMIT 50`).rows;
+    let testCompletionSent=0,testCompletionFailed=0;
+    for(const item of completedTests){
+      try{
+        const messageId=await telegram(item.chat_id,testOneCompletedText);
+        await sql`UPDATE candidate_tests SET completion_notice_sent_at=NOW(),updated_at=NOW() WHERE id=${item.test_id} AND completion_notice_sent_at IS NULL`;
+        await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${item.candidate_id},'out','test_1_completed',${testOneCompletedText},'delivered',${String(messageId||'')})`;
+        testCompletionSent++;
+      }catch(error){testCompletionFailed++;console.error('[reminders] test completion notice failed',{candidateId:item.candidate_id,message:String(error)})}
+    }
     let followupSent = 0, followupFailed = 0, followupSkippedInGroup = 0, followupMembershipCheckFailed = 0;
     const groupChatId = await candidateGroupChatId();
     for (let offset = 0; offset < noShows.length; offset += batchSize) {
@@ -165,7 +176,7 @@ export default async function handler(req, res) {
       }
       if (offset + batchSize < noShows.length) await new Promise(resolve => setTimeout(resolve, 500));
     }
-    return json(res, briefFailed || followupFailed || followupMembershipCheckFailed ? 500 : 200, { ok: briefFailed === 0 && followupFailed === 0 && followupMembershipCheckFailed === 0, due: due.length, sent, failed, briefDue: sessions.length, briefSent, briefSkipped, briefFailed, followupDue: noShows.length, followupSent, followupSkippedInGroup, followupFailed, followupMembershipCheckFailed });
+    return json(res, briefFailed || followupFailed || followupMembershipCheckFailed ? 500 : 200, { ok: briefFailed === 0 && followupFailed === 0 && followupMembershipCheckFailed === 0, due: due.length, sent, failed, briefDue: sessions.length, briefSent,briefSkipped,briefFailed,followupDue:noShows.length,followupSent,followupSkippedInGroup,followupFailed,followupMembershipCheckFailed,testCompletionDue:completedTests.length,testCompletionSent,testCompletionFailed });
   } catch (error) {
     console.error('[reminders] run failed', { message: String(error) });
     return json(res, 500, { error: 'Reminder failed' });
