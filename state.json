@@ -1,15 +1,15 @@
 {
   "project": "academy-strateg-trainer",
-  "last_change": "CANDIDATE-TIMELINE-008",
-  "commit": "fa7a100",
+  "last_change": "CARD-AND-A4-TABLE-009",
+  "commit": "pending",
   "baseline_commit": "5d493e7",
-  "rollback_branch": "rollback/candidate-timeline-before-008-20260826",
+  "rollback_branch": "rollback/card-and-a4-table-before-009-20260826",
   "status": "deployed_and_verified",
   "drive_parent_folder_url": "https://drive.google.com/drive/folders/1fpKRJQZIdFeqYCVQ6aWfN_4_xuLyMX4D",
   "behavior": {
-    "candidate_card": "created only after questionnaire 1, questionnaire 2, and test 1 are submitted",
+    "candidate_card": "one readable card with both questionnaire answers shown as question then answer; separate questionnaire files are not created",
     "operator_link": "one common folder link per candidate; folder name is candidate name plus the Test 1 completion date, when the folder is created",
-    "tests": "test 1 answers are stored as a CSV table; ready result graphs are added later",
+    "tests": "test 1 answers are stored in an A4-like CSV table with five side-by-side blocks of 40 questions and + / М / − marks; ready result graphs are added later",
     "timeline": "candidate link, group join, questionnaire completion, test keyword, test completion, and total elapsed time"
   }
 }
