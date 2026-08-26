@@ -25,7 +25,7 @@ function panelLink(req, session) {
 
 async function participantsFor(session) {
   return (await sql`
-    SELECT c.id,c.first_name,c.last_name,c.username,c.city,c.slot_id,c.interview_at,a.full_name,a.age,a.motivation
+    SELECT c.id,c.first_name,c.last_name,c.username,c.city,c.slot_id,c.interview_at,a.full_name,a.age,a.motivation,a.trainer_experience_level
     FROM candidates c LEFT JOIN applications a ON a.candidate_id=c.id
     WHERE c.status='interview_booked' AND c.consent=true AND c.interview_at=${session.interview_at} AND c.slot_id=${session.slot_id}
     ORDER BY COALESCE(NULLIF(a.full_name,''),NULLIF(c.first_name,''),NULLIF(c.username,'')),c.id
@@ -35,15 +35,17 @@ async function participantsFor(session) {
 function buildBrief(session, participants, { test = false } = {}) {
   const heading = test ? '🧪 <b>ТЕСТОВЫЙ БРИФ НА ЗАВТРА</b>' : '📋 <b>Собеседование через 30 минут</b>';
   const header = [heading, `Дата: <b>${escapeHtml(moscowReadableDate(session.interview_at))}</b>`, `Время: <b>${escapeHtml(slots[session.slot_id] || session.slot_id)}</b>`, `Участников: <b>${participants.length}</b>`].join('\n');
-  const render = limit => participants.map((person, index) => {
+  const experienceLabels = { none: 'без опыта', occasional: 'отдельные занятия', under_one_year: 'до года', professional: 'профессиональный опыт' };
+  const render = (motivationLimit, includeAge = true) => participants.map((person, index) => {
     const name = person.full_name || [person.first_name, person.last_name].filter(Boolean).join(' ') || person.username || `Кандидат ${person.id}`;
-    const facts = [person.city || 'город не указан', person.age ? `возраст ${person.age}` : 'возраст не указан'].join(' · ');
-    const motivation = compact(person.motivation, limit);
+    const experience = experienceLabels[person.trainer_experience_level] || 'опыт не указан';
+    const facts = [person.city || 'город не указан', experience, includeAge && person.age ? `возраст ${person.age}` : ''].filter(Boolean).join(' · ');
+    const motivation = compact(person.motivation, motivationLimit);
     return `${index + 1}. <b>${escapeHtml(name)}</b> — ${escapeHtml(facts)}${motivation ? `\nОпыт/ответ: ${escapeHtml(motivation)}` : ''}`;
   }).join('\n\n');
-  let body = render(80), text = `${header}${body ? `\n\n${body}` : '\n\nНа этот слот пока нет зарегистрированных участников.'}`;
-  if (text.length > 3800) body = render(35), text = `${header}\n\n${body}`;
+  let body = render(35), text = `${header}${body ? `\n\n${body}` : '\n\nНа этот слот пока нет зарегистрированных участников.'}`;
   if (text.length > 3800) body = render(0), text = `${header}\n\n${body}`;
+  if (text.length > 3800) body = render(0, false), text = `${header}\n\n${body}`;
   return text.length > 3900 ? `${text.slice(0, 3899).trimEnd()}…` : text;
 }
 
@@ -90,18 +92,30 @@ export default async function handler(req, res) {
       try { const result = await sendBrief(req, session); if (result.skipped) briefSkipped++; else briefSent++; }
       catch (error) { briefFailed++; console.error('[reminders] interview brief failed', { interviewAt: session.interview_at, slotId: session.slot_id, message: String(error) }); }
     }
-    const due = (await sql`UPDATE candidates SET reminded_30m=true,updated_at=NOW() WHERE id IN (SELECT id FROM candidates WHERE status='interview_booked' AND consent=true AND reminded_30m=false AND interview_at BETWEEN NOW() + INTERVAL '20 minutes' AND NOW() + INTERVAL '40 minutes' FOR UPDATE SKIP LOCKED) RETURNING *`).rows;
+    const due = (await sql`SELECT id FROM candidates WHERE status='interview_booked' AND consent=true AND reminded_30m=false AND interview_at BETWEEN NOW() + INTERVAL '20 minutes' AND NOW() + INTERVAL '40 minutes' ORDER BY id`).rows;
     let sent = 0, failed = 0;
-    for (const candidate of due) {
-      try {
-        const messageId = await telegram(candidate.chat_id, reminderText);
-        await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','text',${reminderText},'delivered',${String(messageId || '')})`;
-        sent++;
-      } catch (error) {
-        await sql`UPDATE candidates SET reminded_30m=false,updated_at=NOW() WHERE id=${candidate.id}`;
-        failed++;
-        console.error('[reminders] candidate failed', { candidateId: candidate.id, message: String(error) });
+    const batchSize = 10;
+    for (let offset = 0; offset < due.length; offset += batchSize) {
+      const results = await Promise.allSettled(due.slice(offset, offset + batchSize).map(async ({ id }) => {
+        const claimed = (await sql`UPDATE candidates SET reminded_30m=true,updated_at=NOW() WHERE id=${id} AND status='interview_booked' AND consent=true AND reminded_30m=false RETURNING *`).rows[0];
+        if (!claimed) return false;
+        try {
+          const messageId = await telegram(claimed.chat_id, reminderText);
+          await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${claimed.id},'out','text',${reminderText},'delivered',${String(messageId || '')})`;
+          return true;
+        } catch (error) {
+          await sql`UPDATE candidates SET reminded_30m=false,updated_at=NOW() WHERE id=${claimed.id}`;
+          throw Object.assign(error, { candidateId: claimed.id });
+        }
+      }));
+      for (const result of results) {
+        if (result.status === 'fulfilled' && result.value) sent++;
+        if (result.status === 'rejected') {
+          failed++;
+          console.error('[reminders] candidate failed', { candidateId: result.reason?.candidateId, message: String(result.reason) });
+        }
       }
+      if (offset + batchSize < due.length) await new Promise(resolve => setTimeout(resolve, 500));
     }
     return json(res, briefFailed ? 500 : 200, { ok: briefFailed === 0, due: due.length, sent, failed, briefDue: sessions.length, briefSent, briefSkipped, briefFailed });
   } catch (error) {
