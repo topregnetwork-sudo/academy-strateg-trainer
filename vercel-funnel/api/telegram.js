@@ -146,6 +146,17 @@ async function handleCandidateTestKeyword(message) {
     return true;
   }
   await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status) VALUES(${candidate.id},'in','candidate_test_command','тест','received')`;
+  const questionnaireTwo=(await sql`SELECT * FROM candidate_questionnaire_two WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0];
+  if(!questionnaireTwo?.submitted_at){
+    let questionnaire=questionnaireTwo;
+    if(!questionnaire){const questionnaireToken=crypto.randomUUID().replaceAll('-','')+crypto.randomUUID().replaceAll('-','');questionnaire=(await sql`INSERT INTO candidate_questionnaire_two(candidate_id,token,status) VALUES(${candidate.id},${questionnaireToken},'pending') RETURNING *`).rows[0]}
+    const questionnaireUrl=`https://topregnetwork-sudo.github.io/academy-strateg-trainer/questionnaire-2.html?token=${questionnaire.token}`;
+    const questionnaireText='Сначала заполните обязательную Анкету 2. Сразу после её отправки вернитесь в бот и снова напишите слово <b>тест</b>.';
+    const questionnaireMessageId=await telegram(chatId,questionnaireText,{reply_markup:{inline_keyboard:[[{text:'Заполнить Анкету 2',url:questionnaireUrl}]]}});
+    await sql`UPDATE candidate_questionnaire_two SET status='sent',sent_at=COALESCE(sent_at,NOW()),updated_at=NOW() WHERE id=${questionnaire.id}`;
+    await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','questionnaire_2_required',${questionnaireText},'delivered',${String(questionnaireMessageId||'')})`;
+    return true;
+  }
   const existing = (await sql`SELECT * FROM candidate_tests WHERE candidate_id=${candidate.id} AND questionnaire_version=${TEST_VERSION} LIMIT 1`).rows[0];
   if (existing?.submitted_at || ['test_1_completed','test_1_passed'].includes(candidate.status)) {
     const text = '✅ Тест 1 уже заполнен и сохранён в вашей анкете. Повторно проходить его не нужно.';

@@ -11,7 +11,8 @@ export default async function handler(req,res){
         const messages=(await sql`SELECT * FROM messages WHERE candidate_id=${id} ORDER BY created_at ASC`).rows;
         const test=(await sql`SELECT id,questionnaire_version,status,answers,sent_at,submitted_at,created_at,updated_at FROM candidate_tests WHERE candidate_id=${id} ORDER BY created_at DESC LIMIT 1`).rows[0]||null;
         const testFiles=(await sql`SELECT id,test_type,file_kind,file_name,mime_type,uploaded_at FROM candidate_test_files WHERE candidate_id=${id} ORDER BY uploaded_at DESC`).rows;
-        return json(res,200,{candidate,messages,test,testFiles});
+        const questionnaireTwo=(await sql`SELECT status,answers,sent_at,submitted_at FROM candidate_questionnaire_two WHERE candidate_id=${id} LIMIT 1`).rows[0]||null;
+        return json(res,200,{candidate,messages,test,testFiles,questionnaireTwo});
       }
       const candidates=(await sql`SELECT c.*,m.text AS last_message FROM candidates c LEFT JOIN LATERAL (SELECT text FROM messages WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) m ON true ORDER BY c.created_at DESC`).rows;
       const analytics=(await sql`SELECT count(*) FILTER (WHERE true)::int AS total,count(*) FILTER (WHERE status='interview_booked')::int AS booked,count(*) FILTER (WHERE status='hired')::int AS hired FROM candidates`).rows[0];
