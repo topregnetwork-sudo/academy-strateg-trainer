@@ -1,14 +1,14 @@
 {
   "project": "academy-strateg-trainer",
   "last_change": "GOOGLE-DRIVE-DOSSIER-005",
-  "commit": "93fc78a",
+  "commit": "91732ba",
   "baseline_commit": "5d493e7",
   "rollback_branch": "rollback/google-drive-after-test1-before-005-20260826",
   "status": "deployed_waiting_google_drive_bridge_configuration",
   "drive_parent_folder_url": "https://drive.google.com/drive/folders/1fpKRJQZIdFeqYCVQ6aWfN_4_xuLyMX4D",
   "behavior": {
     "candidate_card": "created only after questionnaire 1, questionnaire 2, and test 1 are submitted",
-    "operator_link": "one common folder link per candidate; folder name is candidate name plus creation date",
+    "operator_link": "one common folder link per candidate; folder name is candidate name plus the Test 1 completion date, when the folder is created",
     "tests": "test files and ready result graphs are added to the candidate folder later"
   }
 }
