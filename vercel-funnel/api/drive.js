@@ -50,7 +50,7 @@ function candidateFolderName(candidate, createdAt = candidate.created_at) {
   return `${name} — ${date}`.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function printableCard({ candidate, application, questionnaireTwo, test }) {
+function printableCard({ candidate, application, questionnaireTwo, test, messageEvents = [] }) {
   const question = (label, value) => `<article class="answer"><h3>${html(label)}</h3><p>${html(value || 'Не указано')}</p></article>`;
   const q1 = [
     ['Имя кандидата', application?.full_name || candidate.full_name || ''],
@@ -66,7 +66,19 @@ function printableCard({ candidate, application, questionnaireTwo, test }) {
   const labels = { work_history: 'Три последних места работы', achievements: 'Три главных достижения', strengths: 'Сильные навыки', development: 'Что развивать', family: 'Семья', children: 'Дети', hobbies: 'Увлечения', goals: 'Цели на пять лет', readiness: 'Готовность работать по шкале 0–10', income: 'Ожидаемый доход' };
   const q2 = questionnaireTwo?.answers ? Object.entries(questionnaireTwo.answers).map(([key, value]) => question(labels[key] || key, value)).join('') : '<p class="muted">Анкета 2 ещё не заполнена.</p>';
   const t1 = test?.answers ? `<p>Тест 1: ${test.submitted_at ? 'заполнен' : 'ожидает ответа'}; ответов: ${Array.isArray(test.answers) ? test.answers.length : 0}.</p>` : '<p>Тест 1: ещё не отправлен.</p>';
-  return `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Карточка кандидата</title><style>body{font:16px/1.5 Arial,sans-serif;max-width:820px;margin:28px auto;padding:0 18px;color:#172034;background:#f8fafc}h1{font-size:30px;margin:0 0 4px}h2{margin:28px 0 12px;padding-bottom:7px;border-bottom:2px solid #0b728d;color:#0b526b}.answer{background:#fff;border:1px solid #d8e1e8;border-radius:10px;margin:10px 0;padding:12px 16px}.answer h3{font-size:15px;margin:0 0 6px;color:#0b526b}.answer p{white-space:pre-wrap;margin:0}.muted{color:#64748b}</style><h1>Карточка кандидата в тренеры</h1><p class="muted">Сформировано: ${html(new Date().toLocaleString('ru-RU'))}</p><h2>Данные кандидата и ответы Анкеты 1</h2>${q1}<h2>Ответы Анкеты 2</h2>${q2}<h2>Тестирование</h2>${t1}<p>Тест 2 — IQ: ожидает подключения.</p><p>Тест 3 — воспроизведение: ожидает подключения.</p></html>`;
+  const exactMessage = predicate => messageEvents.find(predicate)?.created_at || null;
+  const stages = [
+    ['Получена ссылка кандидата', candidate.created_at],
+    ['Вход в группу', candidate.group_joined_at || exactMessage(event => event.kind === 'candidate_group_joined')],
+    ['Анкета заполнена', questionnaireTwo?.submitted_at],
+    ['Слово «тест» в боте', exactMessage(event => event.direction === 'in' && clean(event.text).toLowerCase().replace(/[.!]/g, '') === 'тест')],
+    ['Тест 1 заполнен', test?.submitted_at]
+  ];
+  const formatDate = value => value ? new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Moscow', dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : 'Не зафиксировано';
+  const elapsed = stages[0][1] && stages[4][1] ? Math.max(0, new Date(stages[4][1]) - new Date(stages[0][1])) : null;
+  const duration = elapsed === null ? 'Ожидаем завершения' : (() => { const minutes = Math.floor(elapsed / 60000), days = Math.floor(minutes / 1440), hours = Math.floor((minutes % 1440) / 60), mins = minutes % 60; return [days ? `${days} д.` : '', hours ? `${hours} ч.` : '', `${mins} мин.`].filter(Boolean).join(' '); })();
+  const timeline = stages.map(([label, value], index) => `<div class="stage ${value ? 'done' : ''}"><b>${index + 1}. ${html(label)}</b><span>${html(formatDate(value))}</span></div>`).join('');
+  return `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Карточка кандидата</title><style>body{font:16px/1.5 Arial,sans-serif;max-width:820px;margin:28px auto;padding:0 18px;color:#172034;background:#f8fafc}h1{font-size:30px;margin:0 0 4px}h2{margin:28px 0 12px;padding-bottom:7px;border-bottom:2px solid #0b728d;color:#0b526b}.answer{background:#fff;border:1px solid #d8e1e8;border-radius:10px;margin:10px 0;padding:12px 16px}.answer h3{font-size:15px;margin:0 0 6px;color:#0b526b}.answer p{white-space:pre-wrap;margin:0}.muted{color:#64748b}.timeline{display:grid;grid-template-columns:repeat(5,minmax(125px,1fr));gap:8px;overflow-x:auto}.stage{min-width:125px;padding:11px;border-radius:10px;background:#eef2f6;border-top:4px solid #94a3b8}.stage.done{background:#eef7f2;border-color:#24a163}.stage b,.stage span{display:block}.stage span{font-size:13px;margin-top:7px}.total{display:inline-block;margin:12px 0 0;padding:9px 12px;border-radius:9px;background:#e8f5ee;color:#17623a;font-weight:700}@media(max-width:720px){.timeline{grid-template-columns:1fr}.stage{min-width:0}}</style><h1>Карточка кандидата в тренеры</h1><p class="muted">Сформировано: ${html(new Date().toLocaleString('ru-RU'))}</p><h2>Временная линия до Теста 1</h2><div class="timeline">${timeline}</div><p class="total">Общее время: ${html(duration)}</p><h2>Данные кандидата и ответы Анкеты 1</h2>${q1}<h2>Ответы Анкеты 2</h2>${q2}<h2>Тестирование</h2>${t1}<p>Тест 2 — IQ: ожидает подключения.</p><p>Тест 3 — воспроизведение: ожидает подключения.</p></html>`;
 }
 
 function textFile(name, content, mimeType = 'text/html') {
@@ -98,10 +110,11 @@ export async function syncDriveCandidate(candidateId) {
   const application = (await sql`SELECT * FROM applications WHERE candidate_id=${candidate.id} ORDER BY created_at DESC LIMIT 1`).rows[0] || null;
   const questionnaireTwo = (await sql`SELECT * FROM candidate_questionnaire_two WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0] || null;
   const test = (await sql`SELECT * FROM candidate_tests WHERE candidate_id=${candidate.id} ORDER BY created_at DESC LIMIT 1`).rows[0] || null;
+  const messageEvents = (await sql`SELECT kind,direction,text,created_at FROM messages WHERE candidate_id=${candidate.id} ORDER BY created_at ASC`).rows;
   if (!questionnaireTwo?.submitted_at || !test?.submitted_at) return { pending: true, message: 'Папка кандидата появится после заполнения Теста 1' };
   const folderName = candidateFolderName(candidate, test.submitted_at);
   const files = [
-    textFile('00 — Карточка кандидата.html', printableCard({ candidate, application, questionnaireTwo, test })),
+    textFile('00 — Карточка кандидата.html', printableCard({ candidate, application, questionnaireTwo, test, messageEvents })),
     textFile('03 — Тест 1 — ответы.csv', testAnswersCsv({ candidate, application, test }), 'text/csv;charset=utf-8')
   ];
   const result = await callBridge(folderName, files);
