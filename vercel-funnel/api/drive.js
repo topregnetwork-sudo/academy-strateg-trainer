@@ -22,6 +22,33 @@ function base64(text) {
   return Buffer.from(String(text), 'utf8').toString('base64');
 }
 
+function answerSymbol(value) {
+  return value === 'M' ? 'М' : clean(value);
+}
+
+function csvCell(value) {
+  const text = String(value ?? '');
+  return /[;"\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function testAnswersCsv({ candidate, application, test }) {
+  const name = application?.full_name || candidate.full_name || [candidate.first_name, candidate.last_name].filter(Boolean).join(' ') || candidate.username || `Кандидат ${candidate.id}`;
+  const telegram = candidate.username ? `@${candidate.username}` : 'не указан';
+  const submitted = test.submitted_at ? new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Moscow', dateStyle: 'short', timeStyle: 'short' }).format(new Date(test.submitted_at)) : '';
+  const answers = Array.isArray(test.answers) ? test.answers.map(answerSymbol) : [];
+  const rows = [
+    ['Кандидат', name],
+    ['Telegram', telegram],
+    ['Город', candidate.city || application?.city || ''],
+    ['Телефон', candidate.phone || application?.phone || ''],
+    ['Дата заполнения', submitted],
+    [],
+    ['№', '+', 'М', '−', 'Ответ'],
+    ...answers.map((answer, index) => [index + 1, answer === '+' ? '✓' : '', answer === 'М' ? '✓' : '', answer === '-' ? '✓' : '', answer])
+  ];
+  return `\uFEFF${rows.map(row => row.map(csvCell).join(';')).join('\r\n')}`;
+}
+
 async function callBridge(folderName, files) {
   const config = bridgeConfig();
   const response = await fetch(config.url, {
@@ -45,6 +72,7 @@ function printableCard({ candidate, application, questionnaireTwo, test }) {
   const q1 = [
     ['Имя', application?.full_name || candidate.full_name || ''],
     ['Город', application?.city || candidate.city || ''],
+    ['Telegram', candidate.username ? `@${candidate.username}` : ''],
     ['Телефон', candidate.phone || application?.phone || ''],
     ['Возраст', application?.age || ''],
     ['Мотивация', application?.motivation || ''],
@@ -75,7 +103,7 @@ export async function syncDriveCandidate(candidateId) {
     textFile('01 — Анкета 1.html', printableCard({ candidate, application, questionnaireTwo: null, test }).replace('<h2>Анкета 2</h2><table><tr><td colspan="2">Анкета 2 ещё не заполнена</td></tr></table>', '')),
     textFile('02 — Анкета 2.html', printableCard({ candidate, application: null, questionnaireTwo, test }).match(/<h2>Анкета 2<\/h2>[\s\S]*?<h2>Тестирование<\/h2>/)?.[0] || '<p>Анкета 2 заполнена</p>')
   ];
-  files.push(textFile('03 — Тест 1 — ответы.json', JSON.stringify({ candidate_id: candidate.id, questionnaire_version: test.questionnaire_version || null, status: test.status || 'completed', submitted_at: test.submitted_at, answers: test.answers || [] }, null, 2), 'application/json'));
+  files.push(textFile('03 — Тест 1 — ответы.csv', testAnswersCsv({ candidate, application, test }), 'text/csv;charset=utf-8'));
   const result = await callBridge(folderName, files);
   const folder = result.folder;
   await sql`INSERT INTO candidate_drive(candidate_id,folder_id,folder_url,folder_name,synced_at,updated_at) VALUES(${candidate.id},${folder.id},${folder.url},${folder.name},NOW(),NOW()) ON CONFLICT(candidate_id) DO UPDATE SET folder_id=EXCLUDED.folder_id,folder_url=EXCLUDED.folder_url,folder_name=EXCLUDED.folder_name,synced_at=NOW(),updated_at=NOW()`;

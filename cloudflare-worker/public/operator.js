@@ -42,3 +42,30 @@ const renderDetailWithPdfActions=renderDetail;renderDetail=function(){renderDeta
 const renderDetailWithPdfActionsFinal=renderDetail;renderDetail=function(){renderDetailWithPdfActionsFinal();const preview=$('openTestReport');if(!preview||$('downloadTestReport'))return;preview.textContent='Открыть просмотр A4';const download=document.createElement('button');download.id='downloadTestReport';download.className='secondary-action';download.textContent='Скачать PDF бланка';preview.insertAdjacentElement('afterend',download);download.onclick=()=>openTestReport(true)};
 const renderDetailWithDrive=renderDetail;renderDetail=function(){renderDetailWithDrive();const host=$('detail');if(!host||host.querySelector('.drive-dossier'))return;const dossier=document.createElement('section');dossier.className='test-card drive-dossier';dossier.innerHTML=`<div><b>Google Drive — папка кандидата</b><p>Одна общая ссылка на папку. Она создаётся после заполнения Теста 1: внутри будут карточка с обеими анкетами, ответы теста и готовые результаты.</p>${details?.drive?.folder_url?`<p><a class="telegram-link" href="${esc(details.drive.folder_url)}" target="_blank" rel="noopener">Открыть папку кандидата</a></p>`:'<p class="muted">Папка появится после заполнения Теста 1.</p>'}</div><div class="test-actions"><button id="syncDriveCandidate">Создать / обновить папку кандидата</button></div>`;host.prepend(dossier);$('syncDriveCandidate').onclick=async()=>{const button=$('syncDriveCandidate');button.disabled=true;button.textContent='Сохраняем папку…';try{const result=await api('POST',{action:'sync_drive_candidate',candidateId:selected});showNotice(result.pending?result.message:'Папка кандидата обновлена');await openCandidate(selected)}catch(error){showNotice(error.message);button.disabled=false;button.textContent='Создать / обновить папку кандидата'}}};
 uploadResultGraph=async function(event){const file=event.target.files?.[0];if(!file)return;if(file.size>8*1024*1024)return showNotice('Файл больше 8 МБ');const fileData=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=reject;reader.readAsDataURL(file)});await api('POST',{action:'upload_test_file',candidateId:selected,fileKind:'result_graph',fileName:file.name,mimeType:file.type||'application/octet-stream',fileData});try{await api('POST',{action:'upload_drive_file',candidateId:selected,fileKind:'test_1_result_graph',fileName:file.name,mimeType:file.type||'application/octet-stream',fileData})}catch(error){showNotice(`График сохранён в карточку, но не в Google Drive: ${error.message}`)}showNotice('Итоговый график прикреплён к кандидату и отправлен в Google Drive');await openCandidate(selected)};
+
+/* Финальный экспорт Теста 1: табличный CSV вместо PDF. */
+function downloadTestCsv(){
+  const answers=(testDetails?.answers||[]).map(answerSymbol);
+  if(answers.length!==200)return showNotice('В тесте нет полного набора ответов');
+  const name=plain(details.full_name||[details.first_name,details.last_name].filter(Boolean).join(' ')||details.username||`Кандидат ${details.id}`),telegram=details.username?`@${plain(details.username)}`:'не указан',date=new Date(testDetails.submitted_at).toLocaleString('ru-RU'),cell=value=>{const text=String(value??'');return /[;"\\r\\n]/.test(text)?`"${text.replace(/"/g,'""')}"`:text},rows=[['Кандидат',name],['Telegram',telegram],['Город',plain(details.city||'')],['Телефон',plain(details.phone||'')],['Дата заполнения',date],[],['№','+','М','−','Ответ'],...answers.map((answer,index)=>[index+1,answer==='+'?'✓':'',answer==='М'?'✓':'',answer==='-'?'✓':'',answer])],csv='\\uFEFF'+rows.map(row=>row.map(cell).join(';')).join('\\r\\n'),safeName=(name||`candidate-${details.id}`).replace(/[^\\p{L}\\p{N}_-]+/gu,'_')||'candidate',url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})),link=document.createElement('a');
+  link.href=url;link.download=`${safeName}-test-answers.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);showNotice('Таблица ответов CSV скачана');
+}
+const renderDetailWithCsvExport=renderDetail;
+renderDetail=function(){renderDetailWithCsvExport();const primary=$('openTestReport'),pdf=$('downloadTestReport');if(pdf)pdf.remove();if(primary){primary.textContent='Скачать таблицу CSV';primary.onclick=downloadTestCsv}};
+
+/* Итоговый экспорт CSV с корректной кодировкой для Excel и Google Sheets. */
+function downloadTestCsvFinal(){
+  const answers=(testDetails?.answers||[]).map(answerSymbol);
+  if(answers.length!==200)return showNotice('В тесте нет полного набора ответов');
+  const name=plain(details.full_name||[details.first_name,details.last_name].filter(Boolean).join(' ')||details.username||('Кандидат '+details.id));
+  const telegram=details.username?'@'+plain(details.username):'не указан';
+  const date=new Date(testDetails.submitted_at).toLocaleString('ru-RU');
+  const cell=value=>{const text=String(value??'');return /[;"\r\n]/.test(text)?'"'+text.replace(/"/g,'""')+'"':text};
+  const rows=[['Кандидат',name],['Telegram',telegram],['Город',plain(details.city||'')],['Телефон',plain(details.phone||'')],['Дата заполнения',date],[],['№','+','М','−','Ответ'],...answers.map((answer,index)=>[index+1,answer==='+'?'✓':'',answer==='М'?'✓':'',answer==='-'?'✓':'',answer])];
+  const csv='\uFEFF'+rows.map(row=>row.map(cell).join(';')).join('\r\n');
+  const safeName=(name||('candidate-'+details.id)).replace(/[^A-Za-zА-Яа-яЁё0-9_-]+/g,'_')||'candidate';
+  const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})),link=document.createElement('a');
+  link.href=url;link.download=safeName+'-test-answers.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);showNotice('Таблица ответов CSV скачана');
+}
+const renderDetailWithCsvExportFinal=renderDetail;
+renderDetail=function(){renderDetailWithCsvExportFinal();const primary=$('openTestReport'),pdf=$('downloadTestReport');if(pdf)pdf.remove();if(primary){primary.textContent='Скачать таблицу CSV';primary.onclick=downloadTestCsvFinal}};
