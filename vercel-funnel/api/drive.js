@@ -1,10 +1,11 @@
 import { body, init, json, operator, sql } from './_core.js';
 
 const parentFolderId = () => process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || '1fpKRJQZIdFeqYCVQ6aWfN_4_xuLyMX4D';
+const bridgeUrl = () => process.env.GOOGLE_DRIVE_BRIDGE_URL || 'https://script.google.com/macros/s/AKfycbyUI5L871jnAwoExsqOTFbcBL5K37UYv_Z0RzpA3ZuTaE_Ovp69jpgNbZGkK_vkosa6Xg/exec';
 
 function bridgeConfig() {
-  const url = process.env.GOOGLE_DRIVE_BRIDGE_URL;
-  const secret = process.env.GOOGLE_DRIVE_BRIDGE_SECRET;
+  const url = bridgeUrl();
+  const secret = process.env.GOOGLE_DRIVE_BRIDGE_SECRET || process.env.OPERATOR_ACCESS_KEY;
   if (!url || !secret) throw new Error('Канал Google Drive ещё не подключён');
   return { url, secret };
 }
