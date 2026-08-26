@@ -5,7 +5,7 @@ const briefParams=new URLSearchParams(location.search),briefDate=/^\d{4}-\d{2}-\
 const accessFromLink=new URLSearchParams(location.hash.slice(1)).get('access')||'';
 let key=sessionStorage.getItem('operatorKey')||accessFromLink,all=[],selected=null,details=null,messages=[],testDetails=null,testFiles=[],questionnaireTwo=null,briefFiltersApplied=false,briefAutoOpened=false;
 if(accessFromLink)history.replaceState(null,'',location.pathname+location.search);
-const $=id=>document.getElementById(id), label=v=>statuses.find(x=>x[0]===v)?.[1]||v,esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const $=id=>document.getElementById(id), label=v=>statuses.find(x=>x[0]===v)?.[1]||v,plain=v=>String(v??'').replace(/<br\s*\/?\s*>/gi,'\n').replace(/<[^>]*>/g,'').replace(/&nbsp;/gi,' ').replace(/&lt;/gi,'<').replace(/&gt;/gi,'>').replace(/&amp;/gi,'&').replace(/&quot;/gi,'"').replace(/&#39;/gi,"'").replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim(),esc=v=>plain(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 statuses.forEach(([v,l])=>$('filter').add(new Option(l,v)));
 Object.entries(slots).forEach(([v,l])=>$('slotFilter').add(new Option(l,v)));
 async function api(method='GET',body,url=API){const r=await fetch(url,{method,headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'Ошибка соединения');return d}

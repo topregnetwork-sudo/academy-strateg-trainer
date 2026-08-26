@@ -14,6 +14,14 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;');
 }
 
+async function savePrivateIncoming(message) {
+  const chatId = String(message.chat?.id || '');
+  const candidate = (await sql`SELECT id FROM candidates WHERE chat_id=${chatId} LIMIT 1`).rows[0];
+  if (!candidate) return;
+  const text = String(message.text || message.caption || '').trim() || ({ photo: 'Отправил фотографию', document: 'Отправил файл', video: 'Отправил видео', voice: 'Отправил голосовое сообщение', contact: 'Отправил контакт' }[Object.keys(message).find(key => ['photo','document','video','voice','contact'].includes(key))] || 'Отправил сообщение');
+  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'in','telegram_message',${text},'received',${String(message.message_id || '')})`;
+}
+
 function candidateName(candidate) {
   return [candidate.first_name, candidate.last_name].filter(Boolean).join(' ') || candidate.username || `Кандидат ${candidate.id}`;
 }
@@ -156,7 +164,6 @@ async function handleCandidateTestKeyword(message) {
     await telegram(chatId, 'Не удалось найти вашу анкету. Откройте бота по кнопке с сайта вакансии и повторите попытку.');
     return true;
   }
-  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status) VALUES(${candidate.id},'in','candidate_test_command','тест','received')`;
   const questionnaireTwo=(await sql`SELECT * FROM candidate_questionnaire_two WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0];
   if(!questionnaireTwo?.submitted_at){
     let questionnaire=questionnaireTwo;
@@ -314,6 +321,7 @@ async function handleSlotChoice(callback) {
   const slotId = match[2], at = nextInterview(slotId), date = interviewDate(at);
   const row = (await sql`UPDATE candidates SET slot_id=${slotId},interview_at=${at},status='interview_booked',consent=true,reminded_30m=false,no_show_followup_sent=false,updated_at=NOW() WHERE id=${candidate.id} RETURNING id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
   await sql`UPDATE applications SET slot_id=${slotId} WHERE id=${app.id}`;
+  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'in','button_click',${`Нажал кнопку выбора времени: ${slots[slotId]}`},'received',${String(callback.message?.message_id || '')})`;
   const zoom = await getZoomMeetingUrl();
   const reply = `✅ <b>Вы записаны на собеседование</b>\n\nДата: <b>${date}</b>\nВремя: <b>${slots[slotId]}</b>\n\n${zoom ? 'Ссылка Zoom — по кнопке ниже.' : 'Координатор пришлёт ссылку Zoom в этот чат.'}\n\nЗа 30 минут до встречи придёт напоминание.`;
   let messageId;
@@ -346,6 +354,7 @@ async function handleRescheduleChoice(callback) {
   const slotId = match[1], at = nextInterview(slotId), date = interviewDate(at);
   const row = (await sql`UPDATE candidates SET slot_id=${slotId},interview_at=${at},status='interview_booked',consent=true,reminded_30m=false,no_show_followup_sent=false,updated_at=NOW() WHERE id=${candidate.id} RETURNING id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
   await sql`UPDATE applications SET slot_id=${slotId} WHERE candidate_id=${candidate.id}`;
+  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'in','button_click',${`Нажал кнопку нового времени: ${slots[slotId]}`},'received',${String(callback.message?.message_id || '')})`;
   const zoom = await getZoomMeetingUrl();
   const reply = `✅ <b>Новое время собеседования сохранено</b>\n\nДата: <b>${date}</b>\nВремя: <b>${slots[slotId]}</b>\n\n${zoom ? 'Ссылка Zoom — по кнопке ниже.' : 'Координатор пришлёт ссылку Zoom в этот чат.'}\n\nЗа 30 минут до встречи придёт напоминание.`;
   let messageId;
@@ -397,6 +406,7 @@ export default async function handler(req, res) {
     }
 
     await init();
+    await savePrivateIncoming(message);
     if (await handleNotRelevant(message)) return json(res, 200, { ok: true });
     if (await handleCandidateGroupKeyword(message)) return json(res, 200, { ok: true });
     if (await handleCandidateTestKeyword(message)) return json(res, 200, { ok: true });

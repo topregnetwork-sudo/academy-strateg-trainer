@@ -58,3 +58,23 @@ nav{flex-wrap:wrap}nav input{flex:1 1 280px}
   .candidate-head{max-height:40%}
   .history{min-height:140px}
 }
+
+/* PANEL-CONVERSATION-006: more room for the growing candidate file and readable chat. */
+main{max-width:1780px;padding:14px}
+.grid{grid-template-columns:310px minmax(0,1fr);height:calc(100vh - 172px);max-height:none;min-height:680px}
+.candidate-head{max-height:55%;padding:14px 18px}
+.candidate-head>div{min-width:0;width:100%}
+.history{min-height:270px;padding:16px 20px}
+.bubble p{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.35}
+.bubble{max-width:min(82%,900px)}
+.reply textarea{resize:vertical}
+
+@media(max-width:800px){
+  main{padding:8px}
+  .grid{grid-template-columns:1fr;height:auto;min-height:0}
+  .grid aside{height:min(27vh,240px)}
+  .grid article{height:70vh;min-height:620px}
+  .candidate-head{max-height:48%}
+  .history{min-height:220px}
+  .bubble{max-width:96%}
+}
