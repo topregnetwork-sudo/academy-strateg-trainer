@@ -2,6 +2,7 @@ import { body, init, json, nextInterview, slots, telegram, telegramApi, sql } fr
 
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
 const CANDIDATE_GROUP_KEYWORD = /^\s*кандидат(?:ы)?[.!]?\s*$/iu;
+const NOT_RELEVANT_KEYWORD = /^\s*не\s*актуально[.!]?\s*$/iu;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -133,6 +134,18 @@ async function handleCandidateGroupKeyword(message) {
   return true;
 }
 
+async function handleNotRelevant(message) {
+  if (!NOT_RELEVANT_KEYWORD.test(message.text || '')) return false;
+  const chatId = String(message.chat.id);
+  const candidate = (await sql`UPDATE candidates SET status='cancelled',consent=false,updated_at=NOW() WHERE chat_id=${chatId} RETURNING id`).rows[0];
+  const text = candidate
+    ? 'Спасибо, что сообщили. Мы отметили, что вакансия для вас больше не актуальна, и не будем присылать дальнейшие сообщения по этому набору.'
+    : 'Спасибо, что сообщили. Мы не будем присылать дальнейшие сообщения по этому набору.';
+  const messageId = await telegram(chatId, text);
+  if (candidate) await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','declined_confirmation',${text},'delivered',${String(messageId || '')})`;
+  return true;
+}
+
 async function configureTrainerTopic(message) {
   const chatId = String(message.chat.id);
   const allowedChatId = process.env.HR_BRIEF_CHAT_ID && String(process.env.HR_BRIEF_CHAT_ID);
@@ -185,7 +198,7 @@ async function handlePrivateStart(message) {
   }
 
   const experienced = app.trainer_experience_level === 'professional';
-  const row = (await sql`INSERT INTO candidates(chat_id,username,first_name,last_name,phone,city,slot_id,interview_at,source_id,status) VALUES(${chatId},${message.from?.username || null},${message.from?.first_name || app.full_name},${message.from?.last_name || null},${app.phone || null},${app.city},NULL,NULL,${app.source_id},${experienced ? 'experienced_not_target' : 'new'}) ON CONFLICT(chat_id) DO UPDATE SET username=EXCLUDED.username,first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,phone=COALESCE(EXCLUDED.phone,candidates.phone),city=EXCLUDED.city,slot_id=NULL,interview_at=NULL,source_id=EXCLUDED.source_id,status=EXCLUDED.status,reminded_30m=false,updated_at=NOW() RETURNING id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
+  const row = (await sql`INSERT INTO candidates(chat_id,username,first_name,last_name,phone,city,slot_id,interview_at,source_id,status) VALUES(${chatId},${message.from?.username || null},${message.from?.first_name || app.full_name},${message.from?.last_name || null},${app.phone || null},${app.city},NULL,NULL,${app.source_id},${experienced ? 'experienced_not_target' : 'new'}) ON CONFLICT(chat_id) DO UPDATE SET username=EXCLUDED.username,first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,phone=COALESCE(EXCLUDED.phone,candidates.phone),city=EXCLUDED.city,slot_id=NULL,interview_at=NULL,source_id=EXCLUDED.source_id,status=EXCLUDED.status,consent=true,reminded_30m=false,no_show_followup_sent=false,updated_at=NOW() RETURNING id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
   await sql`UPDATE applications SET candidate_id=${row.id} WHERE id=${app.id}`;
   const reply = experienced
     ? 'Спасибо, анкета получена. Нам нужно уточнить несколько моментов по вашему опыту. Если ваш профиль подойдёт к формату текущего набора, мы свяжемся с вами в Telegram.'
@@ -214,7 +227,7 @@ async function handleSlotChoice(callback) {
     return true;
   }
   const slotId = match[2], at = nextInterview(slotId), date = interviewDate(at);
-  const row = (await sql`UPDATE candidates SET slot_id=${slotId},interview_at=${at},status='interview_booked',reminded_30m=false,updated_at=NOW() WHERE id=${candidate.id} RETURNING id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
+  const row = (await sql`UPDATE candidates SET slot_id=${slotId},interview_at=${at},status='interview_booked',consent=true,reminded_30m=false,no_show_followup_sent=false,updated_at=NOW() WHERE id=${candidate.id} RETURNING id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
   await sql`UPDATE applications SET slot_id=${slotId} WHERE id=${app.id}`;
   const zoom = await getZoomMeetingUrl();
   const reply = `✅ <b>Вы записаны на собеседование</b>\n\nДата: <b>${date}</b>\nВремя: <b>${slots[slotId]}</b>\n\n${zoom ? 'Ссылка Zoom — по кнопке ниже.' : 'Координатор пришлёт ссылку Zoom в этот чат.'}\n\nЗа 30 минут до встречи придёт напоминание.`;
@@ -236,6 +249,35 @@ async function handleSlotChoice(callback) {
   return true;
 }
 
+async function handleRescheduleChoice(callback) {
+  const match = callback.data?.match(/^trainer_rebook_([a-z]{3}-[0-9]{4})$/);
+  if (!match || !slots[match[1]]) return false;
+  const chatId = String(callback.message?.chat?.id || callback.from?.id || '');
+  const candidate = (await sql`SELECT * FROM candidates WHERE chat_id=${chatId} AND status='interview_booked' AND no_show_followup_sent=true LIMIT 1`).rows[0];
+  if (!candidate) {
+    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Перенос для этой записи уже недоступен.' });
+    return true;
+  }
+  const slotId = match[1], at = nextInterview(slotId), date = interviewDate(at);
+  const row = (await sql`UPDATE candidates SET slot_id=${slotId},interview_at=${at},status='interview_booked',consent=true,reminded_30m=false,no_show_followup_sent=false,updated_at=NOW() WHERE id=${candidate.id} RETURNING id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
+  await sql`UPDATE applications SET slot_id=${slotId} WHERE candidate_id=${candidate.id}`;
+  const zoom = await getZoomMeetingUrl();
+  const reply = `✅ <b>Новое время собеседования сохранено</b>\n\nДата: <b>${date}</b>\nВремя: <b>${slots[slotId]}</b>\n\n${zoom ? 'Ссылка Zoom — по кнопке ниже.' : 'Координатор пришлёт ссылку Zoom в этот чат.'}\n\nЗа 30 минут до встречи придёт напоминание.`;
+  let messageId;
+  try {
+    messageId = await telegram(chatId, reply, zoom ? { reply_markup: { inline_keyboard: [[{ text: 'Открыть Zoom', url: zoom }]] } } : {});
+  } catch (error) {
+    await sql`UPDATE candidates SET slot_id=${candidate.slot_id},interview_at=${candidate.interview_at},status='interview_booked',reminded_30m=true,no_show_followup_sent=true,updated_at=NOW() WHERE id=${candidate.id}`;
+    await sql`UPDATE applications SET slot_id=${candidate.slot_id} WHERE candidate_id=${candidate.id}`;
+    throw error;
+  }
+  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','reschedule_confirmation',${reply},'delivered',${String(messageId || '')})`;
+  await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Новое время сохранено' });
+  try { await deliverHrBrief(row, await getHrDestination()); }
+  catch (error) { console.error('[telegram] rescheduled HR brief delivery failed', { candidateId: row.id, message: String(error) }); }
+  return true;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { ok: false });
   if (process.env.TELEGRAM_WEBHOOK_SECRET && req.headers['x-telegram-bot-api-secret-token'] !== process.env.TELEGRAM_WEBHOOK_SECRET) return json(res, 401, { ok: false });
@@ -246,7 +288,7 @@ export default async function handler(req, res) {
     const callback = update.callback_query;
     if (callback) {
       await init();
-      await handleSlotChoice(callback);
+      if (!await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
       return json(res, 200, { ok: true });
     }
     const message = update.message;
@@ -270,6 +312,7 @@ export default async function handler(req, res) {
     }
 
     await init();
+    if (await handleNotRelevant(message)) return json(res, 200, { ok: true });
     if (await handleCandidateGroupKeyword(message)) return json(res, 200, { ok: true });
     await handlePrivateStart(message);
     return json(res, 200, { ok: true });

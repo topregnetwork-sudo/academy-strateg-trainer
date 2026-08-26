@@ -1,5 +1,5 @@
 const API='/api/operator';
-const statuses=[['new','Новый'],['experienced_not_target','Опытный тренер — без записи'],['interview_booked','Записан'],['interviewed','Собеседование'],['training','Обучение'],['internship','Стажировка'],['hired','Принят'],['rejected','Отказ'],['cancelled','Отменил']];
+const statuses=[['new','Новый'],['experienced_not_target','Опытный тренер — без записи'],['interview_booked','Записан'],['interviewed','Собеседование'],['training','Обучение'],['internship','Стажировка'],['hired','Принят'],['rejected','Отказ'],['cancelled','Отказался']];
 const slots={'mon-0800':'Пн 08:00','tue-0800':'Вт 08:00','wed-0800':'Ср 08:00','thu-1800':'Чт 18:00','fri-1800':'Пт 18:00','sat-0600':'Сб 06:00'};
 const briefParams=new URLSearchParams(location.search),briefDate=/^\d{4}-\d{2}-\d{2}$/.test(briefParams.get('interview_date')||'')?briefParams.get('interview_date'):'',briefSlot=slots[briefParams.get('slot_id')]?briefParams.get('slot_id'):'';
 const accessFromLink=new URLSearchParams(location.hash.slice(1)).get('access')||'';

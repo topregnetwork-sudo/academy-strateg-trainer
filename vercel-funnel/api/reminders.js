@@ -1,6 +1,8 @@
 import { init, json, telegram, sql, slots } from './_core.js';
 
 const reminderText = '⏰ Напоминаем: ваше собеседование с Академией Стратег начнётся примерно через 30 минут. Пожалуйста, проверьте связь и подготовьтесь к встрече.';
+const noShowText = 'Здравствуйте! Вы были записаны на собеседование с Академией Стратег. Если сегодня не получилось подключиться, выберите новое удобное время ниже.\n\nЕсли вакансия для вас больше не актуальна, напишите в ответ: <b>не актуально</b>.';
+const rescheduleKeyboard = { inline_keyboard: Object.entries(slots).map(([slotId, title]) => [{ text: title, callback_data: `trainer_rebook_${slotId}` }]) };
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 const compact = (value, limit) => { const text = String(value || '').replace(/\s+/g, ' ').trim(); if (limit <= 0) return ''; return text.length > limit ? `${text.slice(0, limit - 1).trimEnd()}…` : text; };
 const moscowDate = value => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value));
@@ -117,7 +119,31 @@ export default async function handler(req, res) {
       }
       if (offset + batchSize < due.length) await new Promise(resolve => setTimeout(resolve, 500));
     }
-    return json(res, briefFailed ? 500 : 200, { ok: briefFailed === 0, due: due.length, sent, failed, briefDue: sessions.length, briefSent, briefSkipped, briefFailed });
+    const noShows = (await sql`SELECT id FROM candidates WHERE status='interview_booked' AND consent=true AND no_show_followup_sent=false AND interview_at <= NOW() - INTERVAL '90 minutes' AND interview_at >= NOW() - INTERVAL '7 days' ORDER BY id`).rows;
+    let followupSent = 0, followupFailed = 0;
+    for (let offset = 0; offset < noShows.length; offset += batchSize) {
+      const results = await Promise.allSettled(noShows.slice(offset, offset + batchSize).map(async ({ id }) => {
+        const claimed = (await sql`UPDATE candidates SET no_show_followup_sent=true,updated_at=NOW() WHERE id=${id} AND status='interview_booked' AND consent=true AND no_show_followup_sent=false RETURNING *`).rows[0];
+        if (!claimed) return false;
+        try {
+          const messageId = await telegram(claimed.chat_id, noShowText, { reply_markup: rescheduleKeyboard });
+          await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${claimed.id},'out','no_show_followup',${noShowText},'delivered',${String(messageId || '')})`;
+          return true;
+        } catch (error) {
+          await sql`UPDATE candidates SET no_show_followup_sent=false,updated_at=NOW() WHERE id=${claimed.id}`;
+          throw Object.assign(error, { candidateId: claimed.id });
+        }
+      }));
+      for (const result of results) {
+        if (result.status === 'fulfilled' && result.value) followupSent++;
+        if (result.status === 'rejected') {
+          followupFailed++;
+          console.error('[reminders] no-show follow-up failed', { candidateId: result.reason?.candidateId, message: String(result.reason) });
+        }
+      }
+      if (offset + batchSize < noShows.length) await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    return json(res, briefFailed || followupFailed ? 500 : 200, { ok: briefFailed === 0 && followupFailed === 0, due: due.length, sent, failed, briefDue: sessions.length, briefSent, briefSkipped, briefFailed, followupDue: noShows.length, followupSent, followupFailed });
   } catch (error) {
     console.error('[reminders] run failed', { message: String(error) });
     return json(res, 500, { error: 'Reminder failed' });
