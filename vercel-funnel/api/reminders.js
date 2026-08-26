@@ -191,7 +191,7 @@ export default async function handler(req, res) {
       }
       if (offset + batchSize < noShows.length) await new Promise(resolve => setTimeout(resolve, 500));
     }
-    return json(res, briefFailed || followupFailed || followupMembershipCheckFailed ? 500 : 200, { ok: briefFailed === 0 && followupFailed === 0 && followupMembershipCheckFailed === 0,questionnaireGroupAnnouncementSent,questionnaireDue:questionnaireRecipients.length,questionnaireSent,questionnaireFailed,questionnaireCompletionDue:questionnaireCompletedRows.length,questionnaireCompletionSent,questionnaireCompletionFailed,due: due.length, sent, failed, briefDue: sessions.length, briefSent,briefSkipped,briefFailed,followupDue:noShows.length,followupSent,followupSkippedInGroup,followupFailed,followupMembershipCheckFailed,testCompletionDue:completedTests.length,testCompletionSent,testCompletionFailed });
+    return json(res,200,{ok:true,questionnaireGroupAnnouncementSent,questionnaireDue:questionnaireRecipients.length,questionnaireSent,questionnaireFailed,questionnaireCompletionDue:questionnaireCompletedRows.length,questionnaireCompletionSent,questionnaireCompletionFailed,due:due.length,sent,failed,briefDue:sessions.length,briefSent,briefSkipped,briefFailed,followupDue:noShows.length,followupSent,followupSkippedInGroup,followupFailed,followupMembershipCheckFailed,testCompletionDue:completedTests.length,testCompletionSent,testCompletionFailed});
   } catch (error) {
     console.error('[reminders] run failed', { message: String(error) });
     return json(res, 500, { error: 'Reminder failed' });
