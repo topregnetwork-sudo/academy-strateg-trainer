@@ -20,7 +20,7 @@ export default async function handler(req,res){
     }
     const v=await body(req);
     if(req.method==='PATCH'){
-      const accepted=['new','experienced_not_target','interview_booked','interviewed','test_1_completed','test_1_passed','training','internship','hired','rejected','cancelled'];
+      const accepted=['new','experienced_not_target','interview_booked','interviewed','questionnaire','test_1_completed','test_1_passed','training','internship','hired','rejected','cancelled'];
       if(!accepted.includes(v.status))return json(res,400,{error:'Недопустимый статус'});
       await sql`UPDATE candidates SET status=${v.status},updated_at=NOW() WHERE id=${Number(v.candidateId)}`;
       return json(res,200,{ok:true});
@@ -53,7 +53,7 @@ export default async function handler(req,res){
       if(v.action==='send_test'&&v.candidateId){
         const candidate=(await sql`SELECT id,chat_id,first_name,last_name,username,status FROM candidates WHERE id=${Number(v.candidateId)} LIMIT 1`).rows[0];
         if(!candidate)return json(res,404,{error:'Кандидат не найден'});
-        if(candidate.status!=='interviewed')return json(res,409,{error:'Сначала переведите кандидата в статус «Собеседование».'});
+        if(!['interviewed','questionnaire'].includes(candidate.status))return json(res,409,{error:'Сначала переведите кандидата в статус «Собеседование» или «Анкета».'});
         const questionnaireVersion='executive-effectiveness-2020-ru-v1';
         let test=(await sql`SELECT * FROM candidate_tests WHERE candidate_id=${candidate.id} AND questionnaire_version=${questionnaireVersion} LIMIT 1`).rows[0];
         if(test?.submitted_at)return json(res,409,{error:'Кандидат уже завершил тест. Ответы находятся в его карточке.'});

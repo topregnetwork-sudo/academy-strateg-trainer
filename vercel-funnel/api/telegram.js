@@ -104,7 +104,7 @@ async function handleCandidateGroupKeyword(message) {
   if (!CANDIDATE_GROUP_KEYWORD.test(message.text || '')) return false;
   const chatId = String(message.chat.id);
   const candidate = (await sql`SELECT id,chat_id,status FROM candidates WHERE chat_id=${chatId} LIMIT 1`).rows[0];
-  if (!candidate || !['interview_booked','interviewed','test_1_completed','test_1_passed','training','internship','hired'].includes(candidate.status)) {
+  if (!candidate || !['interview_booked','interviewed','questionnaire','test_1_completed','test_1_passed','training','internship','hired'].includes(candidate.status)) {
     await telegram(chatId, 'Приглашение в группу кандидатов доступно после записи и прохождения собеседования.');
     return true;
   }
@@ -120,7 +120,7 @@ async function handleCandidateGroupKeyword(message) {
     await sql`UPDATE candidates SET status='interviewed',updated_at=NOW() WHERE id=${candidate.id}`;
   }
 
-  let questionnaire = (await sql`SELECT id,token FROM candidate_questionnaire_two WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0];
+  let questionnaire = (await sql`SELECT id,token,submitted_at FROM candidate_questionnaire_two WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0];
   if (!questionnaire) {
     const questionnaireToken = crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '');
     questionnaire = (await sql`INSERT INTO candidate_questionnaire_two(candidate_id,token,status) VALUES(${candidate.id},${questionnaireToken},'pending') ON CONFLICT(candidate_id) DO UPDATE SET updated_at=NOW() RETURNING id,token`).rows[0];
@@ -129,9 +129,13 @@ async function handleCandidateGroupKeyword(message) {
   const text = '✅ <b>Код принят.</b>\n\nПереходите в группу кандидатов Академии Стратег. Там вы познакомитесь с проектом и получите дальнейшие материалы.';
   try {
     const messageId = await telegram(chatId, text, { reply_markup: { inline_keyboard: [[{ text: 'Перейти в группу кандидатов', url: inviteUrl }],[{ text: 'Заполнить Анкету 2', url: questionnaireUrl }]] } });
+    const questionnaireLinkText = `📋 <b>Ваша персональная Анкета 2:</b>\n${questionnaireUrl}`;
+    const questionnaireLinkMessageId = await telegram(chatId, questionnaireLinkText);
     await sql`UPDATE candidate_questionnaire_two SET status=CASE WHEN submitted_at IS NULL THEN 'sent' ELSE status END,sent_at=COALESCE(sent_at,NOW()),updated_at=NOW() WHERE id=${questionnaire.id}`;
+    if (!questionnaire.submitted_at) await sql`UPDATE candidates SET status='questionnaire',updated_at=NOW() WHERE id=${candidate.id}`;
     try {
       await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','candidate_group_invite',${text},'delivered',${String(messageId || '')})`;
+      await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','questionnaire_2_link',${questionnaireLinkText},'delivered',${String(questionnaireLinkMessageId || '')})`;
     } catch (historyError) {
       console.error('[telegram] candidate group invite history failed', { candidateId: candidate.id, message: String(historyError) });
     }
@@ -171,7 +175,7 @@ async function handleCandidateTestKeyword(message) {
     await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','candidate_test_already_completed',${text},'delivered',${String(messageId || '')})`;
     return true;
   }
-  if (candidate.status !== 'interviewed') {
+  if (!['interviewed','questionnaire'].includes(candidate.status)) {
     const text = 'Тест 1 станет доступен после собеседования, когда координатор переведёт вашу анкету в этап «Собеседование».';
     const messageId = await telegram(chatId, text);
     await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','candidate_test_unavailable',${text},'delivered',${String(messageId || '')})`;
