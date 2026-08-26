@@ -1,7 +1,7 @@
 {
   "project": "academy-strateg-trainer",
   "last_change": "GARCIA-MARK-IN-DRIVE-011",
-  "commit": "pending",
+  "commit": "cf91459",
   "baseline_commit": "5d493e7",
   "rollback_branch": "rollback/garcia-mark-in-drive-before-011-20260826",
   "status": "deployed_and_verified",
