@@ -31,23 +31,34 @@ function csvCell(value) {
   return /[;"\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-async function callBridge(folderName, files) {
+async function callBridge(folderName, files, targetParentFolderId = parentFolderId()) {
   const config = bridgeConfig();
   const response = await fetch(config.url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ secret: config.secret, parentFolderId: parentFolderId(), folderName, files })
+    body: JSON.stringify({ secret: config.secret, parentFolderId: targetParentFolderId, folderName, files })
   });
   const result = await response.json().catch(() => null);
   if (!response.ok || !result?.ok) throw new Error(result?.error || 'Google Drive не принял файл');
   return result;
 }
 
+function candidateCity(candidate) {
+  return (clean(candidate.city) || 'Город не указан').replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+async function ensureCityFolder(candidate) {
+  const result = await callBridge(candidateCity(candidate), []);
+  if (!result?.folder?.id) throw new Error('Не удалось создать папку города в Google Drive');
+  return result.folder;
+}
+
 function candidateFolderName(candidate, createdAt = candidate.created_at) {
   const name = clean(candidate.full_name || [candidate.first_name, candidate.last_name].filter(Boolean).join(' ') || candidate.username || `Кандидат ${candidate.id}`);
+  const city = candidateCity(candidate);
   const created = new Date(createdAt || Date.now());
   const date = Number.isNaN(created.getTime()) ? 'дата не указана' : new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', year: 'numeric' }).format(created);
-  return `${name} — ${date}`.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
+  return `${name} — ${city} — ${date}`.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function printableCard({ candidate, application, questionnaireTwo, test, messageEvents = [] }) {
@@ -118,12 +129,13 @@ export async function syncDriveCandidate(candidateId) {
     textFile('00 — Карточка кандидата.html', printableCard({ candidate, application, questionnaireTwo, test, messageEvents })),
     textFile('03 — Тест 1 — ответы.csv', testAnswersCsv({ candidate, application, test }), 'text/csv;charset=utf-8')
   ];
-  const result = await callBridge(folderName, files);
+  const cityFolder = await ensureCityFolder(candidate);
+  const result = await callBridge(folderName, files, cityFolder.id);
   await sql`DELETE FROM candidate_drive_files WHERE candidate_id=${candidate.id} AND (file_name LIKE '01 — Анкета 1%' OR file_name LIKE '02 — Анкета 2%')`;
   const folder = result.folder;
   await sql`INSERT INTO candidate_drive(candidate_id,folder_id,folder_url,folder_name,synced_at,updated_at) VALUES(${candidate.id},${folder.id},${folder.url},${folder.name},NOW(),NOW()) ON CONFLICT(candidate_id) DO UPDATE SET folder_id=EXCLUDED.folder_id,folder_url=EXCLUDED.folder_url,folder_name=EXCLUDED.folder_name,synced_at=NOW(),updated_at=NOW()`;
   for (const file of result.files || []) await sql`INSERT INTO candidate_drive_files(candidate_id,file_kind,file_name,file_url,drive_file_id,mime_type,updated_at) VALUES(${candidate.id},${file.name},${file.name},${file.url},${file.id},${file.mimeType || 'application/octet-stream'},NOW()) ON CONFLICT(candidate_id,file_kind) DO UPDATE SET file_name=EXCLUDED.file_name,file_url=EXCLUDED.file_url,drive_file_id=EXCLUDED.drive_file_id,mime_type=EXCLUDED.mime_type,updated_at=NOW()`;
-  return { folder, files: result.files || [] };
+  return { cityFolder, folder, files: result.files || [] };
 }
 
 export async function uploadDriveFile(candidateId, item) {
@@ -134,11 +146,12 @@ export async function uploadDriveFile(candidateId, item) {
   const test = (await sql`SELECT submitted_at FROM candidate_tests WHERE candidate_id=${candidate.id} ORDER BY created_at DESC LIMIT 1`).rows[0] || null;
   if (!questionnaireTwo?.submitted_at || !test?.submitted_at) throw new Error('Папка доступна после заполнения Теста 1');
   if (!item?.fileName || !item?.fileData) throw new Error('Файл не передан');
-  const result = await callBridge(candidateFolderName(candidate, test.submitted_at), [{ name: clean(item.fileName), mimeType: clean(item.mimeType || 'application/octet-stream'), data: String(item.fileData) }]);
+  const cityFolder = await ensureCityFolder(candidate);
+  const result = await callBridge(candidateFolderName(candidate, test.submitted_at), [{ name: clean(item.fileName), mimeType: clean(item.mimeType || 'application/octet-stream'), data: String(item.fileData) }], cityFolder.id);
   const file = result.files?.[0];
   if (file) await sql`INSERT INTO candidate_drive_files(candidate_id,file_kind,file_name,file_url,drive_file_id,mime_type,updated_at) VALUES(${candidate.id},${clean(item.fileKind || item.fileName)},${file.name},${file.url},${file.id},${file.mimeType || item.mimeType || 'application/octet-stream'},NOW()) ON CONFLICT(candidate_id,file_kind) DO UPDATE SET file_name=EXCLUDED.file_name,file_url=EXCLUDED.file_url,drive_file_id=EXCLUDED.drive_file_id,mime_type=EXCLUDED.mime_type,updated_at=NOW()`;
   await sql`INSERT INTO candidate_drive(candidate_id,folder_id,folder_url,folder_name,synced_at,updated_at) VALUES(${candidate.id},${result.folder.id},${result.folder.url},${result.folder.name},NOW(),NOW()) ON CONFLICT(candidate_id) DO UPDATE SET folder_id=EXCLUDED.folder_id,folder_url=EXCLUDED.folder_url,folder_name=EXCLUDED.folder_name,synced_at=NOW(),updated_at=NOW()`;
-  return result;
+  return { ...result, cityFolder };
 }
 
 export default async function handler(req, res) {
