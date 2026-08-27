@@ -2,7 +2,6 @@
   "functions": {
     "api/telegram.js": { "maxDuration": 60 },
     "api/reminders.js": { "maxDuration": 60 },
-    "api/zoom-link-return-old-7b91d4.js": { "maxDuration": 60 },
     "api/*.js": { "maxDuration": 30 }
   },
   "rewrites": [
