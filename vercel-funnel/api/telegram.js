@@ -2,7 +2,7 @@ import { body, init, json, nextInterview, slots, telegram, telegramApi, sql } fr
 
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
 const CANDIDATE_GROUP_COMMAND = /^\/candidate_group(?:@stazherskaya_bot)?(?:\s|$)/i;
-const CANDIDATE_GROUP_KEYWORD = /^\s*кандидат(?:ы)?[.!]?\s*$/iu;
+const CANDIDATE_GROUP_KEYWORD = /^\s*(?:кандидат|кондидат)(?:ы)?[.!]?\s*$/iu;
 const CANDIDATE_TEST_KEYWORD = /^\s*тест[.!]?\s*$/iu;
 const NOT_RELEVANT_KEYWORD = /^\s*не\s*актуально[.!]?\s*$/iu;
 const TEST_VERSION = 'executive-effectiveness-2020-ru-v1';
@@ -331,8 +331,14 @@ async function handlePrivateStart(message) {
   }
 
   const experienced = app.trainer_experience_level === 'professional';
-  const row = (await sql`INSERT INTO candidates(chat_id,username,first_name,last_name,phone,city,slot_id,interview_at,source_id,status) VALUES(${chatId},${message.from?.username || null},${message.from?.first_name || app.full_name},${message.from?.last_name || null},${app.phone || null},${app.city},NULL,NULL,${app.source_id},${experienced ? 'experienced_not_target' : 'new'}) ON CONFLICT(chat_id) DO UPDATE SET username=EXCLUDED.username,first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,phone=COALESCE(EXCLUDED.phone,candidates.phone),city=EXCLUDED.city,slot_id=NULL,interview_at=NULL,source_id=EXCLUDED.source_id,status=EXCLUDED.status,consent=true,reminded_30m=false,no_show_followup_sent=false,updated_at=NOW() RETURNING id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
+  const row = (await sql`INSERT INTO candidates(chat_id,username,first_name,last_name,phone,city,slot_id,interview_at,source_id,status) VALUES(${chatId},${message.from?.username || null},${message.from?.first_name || app.full_name},${message.from?.last_name || null},${app.phone || null},${app.city},NULL,NULL,${app.source_id},${experienced ? 'experienced_not_target' : 'new'}) ON CONFLICT(chat_id) DO UPDATE SET username=EXCLUDED.username,first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,phone=COALESCE(EXCLUDED.phone,candidates.phone),city=EXCLUDED.city,source_id=EXCLUDED.source_id,status=CASE WHEN candidates.status IN ('new','experienced_not_target') AND candidates.interview_at IS NULL THEN EXCLUDED.status ELSE candidates.status END,consent=true,updated_at=NOW() RETURNING id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
   await sql`UPDATE applications SET candidate_id=${row.id} WHERE id=${app.id}`;
+  if (!['new','experienced_not_target'].includes(row.status)) {
+    const reply = 'Спасибо, анкета получена. Ваш текущий этап отбора сохранён — повторное заполнение первой анкеты его не изменило. Продолжайте по последним инструкциям бота.';
+    const messageId = await telegram(chatId, reply);
+    await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${row.id},'out','repeat_application_preserved',${reply},'delivered',${String(messageId || '')})`;
+    return;
+  }
   const reply = experienced
     ? 'Спасибо, анкета получена. Нам нужно уточнить несколько моментов по вашему опыту. Если ваш профиль подойдёт к формату текущего набора, мы свяжемся с вами в Telegram.'
     : 'Спасибо, анкета получена. Выберите удобное время собеседования:';
