@@ -4,7 +4,7 @@
   "commit": "8b4eacf",
   "baseline_commit": "5d493e7",
   "rollback_branch": "rollback/auto-drive-backfill-before-012-20260827",
-  "status": "deployed_and_verified",
+  "status": "deployed_manual_recovery_verified_scheduler_first_run_pending",
   "drive_parent_folder_url": "https://drive.google.com/drive/folders/1fpKRJQZIdFeqYCVQ6aWfN_4_xuLyMX4D",
   "behavior": {
     "candidate_card": "one readable Google Drive card with the full five-stage timeline, total elapsed time, the Garcia article confirmation, and both questionnaire answers shown as question then answer; separate questionnaire files are not created",
