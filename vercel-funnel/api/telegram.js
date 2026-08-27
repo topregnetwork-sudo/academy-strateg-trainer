@@ -199,7 +199,7 @@ async function handleCandidateTestKeyword(message) {
     let questionnaire=questionnaireTwo;
     if(!questionnaire){const questionnaireToken=crypto.randomUUID().replaceAll('-','')+crypto.randomUUID().replaceAll('-','');questionnaire=(await sql`INSERT INTO candidate_questionnaire_two(candidate_id,token,status) VALUES(${candidate.id},${questionnaireToken},'pending') RETURNING *`).rows[0]}
     const questionnaireUrl=`https://topregnetwork-sudo.github.io/academy-strateg-trainer/questionnaire-2.html?token=${questionnaire.token}`;
-    const questionnaireText='Сначала заполните обязательную Анкету 2. Сразу после её отправки вернитесь в бот и снова напишите слово <b>тест</b>.';
+    const questionnaireText='Сначала заполните обязательную Анкету 2. После отправки продолжите изучение материалов группы и следуйте инструкциям.';
     const questionnaireMessageId=await telegram(chatId,questionnaireText,{reply_markup:{inline_keyboard:[[{text:'Заполнить Анкету 2',url:questionnaireUrl}]]}});
     await sql`UPDATE candidate_questionnaire_two SET status='sent',sent_at=COALESCE(sent_at,NOW()),updated_at=NOW() WHERE id=${questionnaire.id}`;
     await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','questionnaire_2_required',${questionnaireText},'delivered',${String(questionnaireMessageId||'')})`;
@@ -311,7 +311,7 @@ async function handlePrivateStart(message) {
     }
     await sql`UPDATE candidates SET status='questionnaire',updated_at=NOW() WHERE id=${candidate.id} AND status IN ('new','interview_booked','interviewed')`;
     await sql`UPDATE candidate_questionnaire_two SET completion_notice_sent_at=COALESCE(completion_notice_sent_at,NOW()),updated_at=NOW() WHERE id=${questionnaire.id}`;
-    const text = '✅ <b>Анкета 2 получена.</b>\n\nЧтобы получить Тест 1, напишите в этом боте слово <b>тест</b>.';
+    const text = '✅ <b>Анкета 2 получена.</b>\n\nСпасибо, что заполнили анкету. Переходите к изучению материалов группы и следуйте инструкциям. Когда дойдёте до соответствующего этапа, вернитесь в бота.';
     const messageId = await telegram(chatId, text);
     await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','questionnaire_2_completed',${text},'delivered',${String(messageId || '')})`;
     return;
