@@ -170,13 +170,10 @@ async function handleCandidateGroupKeyword(message) {
   const text = '✅ <b>Код принят.</b>\n\nПереходите в группу кандидатов Академии Стратег. Там вы познакомитесь с проектом и получите дальнейшие материалы.';
   try {
     const messageId = await telegram(chatId, text, { reply_markup: { inline_keyboard: [[{ text: 'Перейти в группу кандидатов', url: inviteUrl }],[{ text: 'Заполнить Анкету 2', url: questionnaireUrl }]] } });
-    const questionnaireLinkText = `📋 <b>Ваша персональная Анкета 2:</b>\n${questionnaireUrl}`;
-    const questionnaireLinkMessageId = await telegram(chatId, questionnaireLinkText);
     await sql`UPDATE candidate_questionnaire_two SET status=CASE WHEN submitted_at IS NULL THEN 'sent' ELSE status END,sent_at=COALESCE(sent_at,NOW()),updated_at=NOW() WHERE id=${questionnaire.id}`;
     if (!questionnaire.submitted_at) await sql`UPDATE candidates SET status='questionnaire',updated_at=NOW() WHERE id=${candidate.id}`;
     try {
       await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','candidate_group_invite',${text},'delivered',${String(messageId || '')})`;
-      await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','questionnaire_2_link',${questionnaireLinkText},'delivered',${String(questionnaireLinkMessageId || '')})`;
     } catch (historyError) {
       console.error('[telegram] candidate group invite history failed', { candidateId: candidate.id, message: String(historyError) });
     }
@@ -215,12 +212,7 @@ async function handleCandidateTestKeyword(message) {
     await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','candidate_test_already_completed',${text},'delivered',${String(messageId || '')})`;
     return true;
   }
-  if (!['interviewed','questionnaire'].includes(candidate.status)) {
-    const text = 'Тест 1 станет доступен после собеседования, когда координатор переведёт вашу анкету в этап «Собеседование».';
-    const messageId = await telegram(chatId, text);
-    await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','candidate_test_unavailable',${text},'delivered',${String(messageId || '')})`;
-    return true;
-  }
+  await sql`UPDATE candidates SET status='questionnaire',updated_at=NOW() WHERE id=${candidate.id} AND status IN ('new','interview_booked','interviewed')`;
   let test = existing;
   if (!test) {
     const token = crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '');
@@ -308,6 +300,22 @@ async function configureCandidateGroup(message) {
 
 async function handlePrivateStart(message) {
   const chatId = String(message.chat.id);
+  if (/^\/start\s+questionnaire_done$/i.test(message.text || '')) {
+    const candidate = (await sql`SELECT id,status FROM candidates WHERE chat_id=${chatId} LIMIT 1`).rows[0];
+    const questionnaire = candidate ? (await sql`SELECT id,token,submitted_at FROM candidate_questionnaire_two WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0] : null;
+    if (!candidate || !questionnaire?.submitted_at) {
+      const text = 'Сначала заполните Анкету 2. После отправки вернитесь в бота.';
+      const extra = questionnaire?.token ? { reply_markup: { inline_keyboard: [[{ text: 'Заполнить Анкету 2', url: `https://topregnetwork-sudo.github.io/academy-strateg-trainer/questionnaire-2.html?token=${questionnaire.token}` }]] } } : {};
+      await telegram(chatId, text, extra);
+      return;
+    }
+    await sql`UPDATE candidates SET status='questionnaire',updated_at=NOW() WHERE id=${candidate.id} AND status IN ('new','interview_booked','interviewed')`;
+    await sql`UPDATE candidate_questionnaire_two SET completion_notice_sent_at=COALESCE(completion_notice_sent_at,NOW()),updated_at=NOW() WHERE id=${questionnaire.id}`;
+    const text = '✅ <b>Анкета 2 получена.</b>\n\nЧтобы получить Тест 1, напишите в этом боте слово <b>тест</b>.';
+    const messageId = await telegram(chatId, text);
+    await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','questionnaire_2_completed',${text},'delivered',${String(messageId || '')})`;
+    return;
+  }
   const match = message.text?.match(/^\/start\s+trainer_app_([a-zA-Z0-9]{20})$/);
   const app = match ? (await sql`SELECT * FROM applications WHERE code=${match[1]}`).rows[0] : null;
   if (!app) {
