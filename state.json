@@ -1,7 +1,7 @@
 {
   "project": "academy-strateg-trainer",
   "last_change": "AUTO-DRIVE-BACKFILL-012",
-  "commit": "pending",
+  "commit": "8b4eacf",
   "baseline_commit": "5d493e7",
   "rollback_branch": "rollback/auto-drive-backfill-before-012-20260827",
   "status": "deployed_and_verified",
