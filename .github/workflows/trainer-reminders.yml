@@ -2,28 +2,9 @@ name: Trainer interview reminders
 
 on:
   schedule:
-    # Three redundant triggers cover GitHub-hosted scheduler delays up to 40 minutes.
-    # The API's 20–40 minute due window and database deduplication ensure that only
-    # the trigger which actually lands near the interview sends each notification.
-    - cron: '0 4 * * 1-3'
-    - cron: '15 4 * * 1-3'
-    - cron: '30 4 * * 1-3'
-    - cron: '0 14 * * 4-5'
-    - cron: '15 14 * * 4-5'
-    - cron: '30 14 * * 4-5'
-    - cron: '0 2 * * 6'
-    - cron: '15 2 * * 6'
-    - cron: '30 2 * * 6'
-    # Post-interview no-show follow-up, 90 minutes after each regular slot.
-    - cron: '30 6 * * 1-3'
-    - cron: '45 6 * * 1-3'
-    - cron: '0 7 * * 1-3'
-    - cron: '30 16 * * 4-5'
-    - cron: '45 16 * * 4-5'
-    - cron: '0 17 * * 4-5'
-    - cron: '30 4 * * 6'
-    - cron: '45 4 * * 6'
-    - cron: '0 5 * * 6'
+    # Regular processing is required not only around interview slots: completed
+    # questionnaires, tests, Telegram notices, and Drive folders can appear at any time.
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 concurrency:

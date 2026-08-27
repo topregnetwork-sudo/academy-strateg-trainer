@@ -160,6 +160,14 @@ export default async function handler(req, res) {
         testCompletionSent++;
       }catch(error){testCompletionFailed++;console.error('[reminders] test completion notice failed',{candidateId:item.candidate_id,message:String(error)})}
     }
+    const driveBackfillRows=(await sql`SELECT DISTINCT c.id AS candidate_id FROM candidates c JOIN candidate_questionnaire_two q ON q.candidate_id=c.id AND q.submitted_at IS NOT NULL JOIN candidate_tests t ON t.candidate_id=c.id AND t.submitted_at IS NOT NULL LEFT JOIN candidate_drive d ON d.candidate_id=c.id LEFT JOIN candidate_drive_files f ON f.candidate_id=c.id AND f.file_name='00 — Карточка кандидата.html' WHERE d.candidate_id IS NULL OR f.candidate_id IS NULL ORDER BY c.id LIMIT 5`).rows;
+    let driveBackfillSynced=0,driveBackfillFailed=0;
+    for(const item of driveBackfillRows){
+      try{
+        const result=await syncDriveCandidate(item.candidate_id);
+        if(!result.pending){driveBackfillSynced++;console.log('[reminders] Drive folder restored',{candidateId:item.candidate_id,folderId:result.folder?.id})}
+      }catch(error){driveBackfillFailed++;console.error('[reminders] Drive backfill failed',{candidateId:item.candidate_id,message:String(error)})}
+    }
     let followupSent = 0, followupFailed = 0, followupSkippedInGroup = 0, followupMembershipCheckFailed = 0;
     const groupChatId = await candidateGroupChatId();
     for (let offset = 0; offset < noShows.length; offset += batchSize) {
@@ -193,7 +201,7 @@ export default async function handler(req, res) {
       }
       if (offset + batchSize < noShows.length) await new Promise(resolve => setTimeout(resolve, 500));
     }
-    return json(res,200,{ok:true,questionnaireGroupAnnouncementSent,questionnaireDue:questionnaireRecipients.length,questionnaireSent,questionnaireFailed,questionnaireCompletionDue:questionnaireCompletedRows.length,questionnaireCompletionSent,questionnaireCompletionFailed,due:due.length,sent,failed,briefDue:sessions.length,briefSent,briefSkipped,briefFailed,followupDue:noShows.length,followupSent,followupSkippedInGroup,followupFailed,followupMembershipCheckFailed,testCompletionDue:completedTests.length,testCompletionSent,testCompletionFailed});
+    return json(res,200,{ok:true,questionnaireGroupAnnouncementSent,questionnaireDue:questionnaireRecipients.length,questionnaireSent,questionnaireFailed,questionnaireCompletionDue:questionnaireCompletedRows.length,questionnaireCompletionSent,questionnaireCompletionFailed,due:due.length,sent,failed,briefDue:sessions.length,briefSent,briefSkipped,briefFailed,followupDue:noShows.length,followupSent,followupSkippedInGroup,followupFailed,followupMembershipCheckFailed,testCompletionDue:completedTests.length,testCompletionSent,testCompletionFailed,driveBackfillDue:driveBackfillRows.length,driveBackfillSynced,driveBackfillFailed});
   } catch (error) {
     console.error('[reminders] run failed', { message: String(error) });
     return json(res, 500, { error: 'Reminder failed' });
