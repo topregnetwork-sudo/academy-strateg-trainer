@@ -1,9 +1,9 @@
 {
   "project": "academy-strateg-trainer",
-  "last_change": "DRIVE-AUTOMATION-019",
-  "commit": "e23ad65",
-  "baseline_commit": "ca8c70f",
-  "rollback_branch": "rollback/drive-schedule-before-001-20260828",
+  "last_change": "OPERATOR-DRIVE-SELF-HEAL-020",
+  "commit": "94ad616",
+  "baseline_commit": "bcf24d5",
+  "rollback_branch": "rollback/operator-drive-self-heal-before-001-20260828",
   "status": "deployed_and_verified",
   "drive_parent_folder_url": "https://drive.google.com/drive/folders/1fpKRJQZIdFeqYCVQ6aWfN_4_xuLyMX4D",
   "behavior": {
@@ -20,6 +20,7 @@
     "offline_slot_summary": "after every successful booking the candidate receives the existing confirmation, while coordination topic 30 receives both slot totals, remaining capacity, overall total, and candidate names linked to their Google Drive folders; current summary message 367 reported 3 at 13:30 and 1 at 14:30",
     "native_drive_files": "candidate cards are native Google Docs and Test 1 answer tables are native Google Sheets; all 14 completed dossiers were migrated in place across Minsk and Chelyabinsk with zero remaining legacy dossiers",
     "operator_username_search": "operator search accepts Telegram usernames both with and without a leading @ while preserving name, phone, and all existing filters",
-    "drive_schedule": "the 15-minute GitHub scheduler runs at minutes 07, 22, 37, and 52 to avoid peak-load quarter-hour drops; Tatiana Ivanenko dossier was restored after a missed scheduled run"
+    "drive_schedule": "the background scheduler no longer creates Drive dossiers; it remains responsible only for reminders, briefs, invitations, and service messages",
+    "operator_drive_self_heal": "opening an eligible candidate in the operator panel creates a missing Drive dossier immediately, refreshes the card, and shows a direct retry button with the exact error if Google fails; all currently eligible candidates have dossiers"
   }
 }
