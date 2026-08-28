@@ -23,9 +23,17 @@ function availableSlots(now = new Date()) {
   return d.now >= d.stop1330 ? ['1430'] : ['1330', '1430'];
 }
 
-function inviteKeyboard(now = new Date()) {
+async function bookableSlots(now = new Date()) {
+  const timed = availableSlots(now);
+  if (!timed.length) return [];
+  const counts = (await sql`SELECT slot_time,count(*)::int AS count FROM offline_interview_bookings WHERE event_date=${EVENT_DATE}::date AND status='booked' GROUP BY slot_time`).rows;
+  const bySlot = Object.fromEntries(counts.map(row => [row.slot_time, row.count]));
+  return timed.filter(slot => (bySlot[slot] || 0) < CAPACITY);
+}
+
+async function inviteKeyboard(now = new Date()) {
   const rows = [[{ text: 'Изучить Цели Академии', url: GOALS_URL }]];
-  const available = availableSlots(now);
+  const available = await bookableSlots(now);
   if (available.length) rows.push(available.map(slot => ({ text: `Записаться на ${SLOTS[slot]}`, callback_data: `offline_minsk_${EVENT_DATE.replaceAll('-', '')}_${slot}` })));
   return { inline_keyboard: rows };
 }
@@ -36,7 +44,7 @@ function invitationText() {
 
 export async function sendOfflineInvites() {
   await init();
-  if (!availableSlots().length) return { stopped: true, sent: 0, failed: 0, recipients: [] };
+  if (!(await bookableSlots()).length) return { stopped: true, sent: 0, failed: 0, recipients: [] };
   const recipients = (await sql`
     SELECT c.id,c.chat_id,c.username,c.first_name,c.last_name,c.city,
            COALESCE(NULLIF(TRIM(a.full_name),''),NULLIF(TRIM(CONCAT_WS(' ',c.first_name,c.last_name)),''),c.username,'Кандидат ' || c.id::text) AS full_name
@@ -52,12 +60,12 @@ export async function sendOfflineInvites() {
   let sent = 0, failed = 0;
   const delivered = [];
   for (const candidate of recipients) {
-    if (!availableSlots().length) break;
+    if (!(await bookableSlots()).length) break;
     const reserved = (await sql`INSERT INTO offline_interview_invites(candidate_id,event_date,status,updated_at) VALUES(${candidate.id},${EVENT_DATE}::date,'pending',NOW()) ON CONFLICT(candidate_id,event_date) DO UPDATE SET status='pending',updated_at=NOW() WHERE offline_interview_invites.status='failed' RETURNING candidate_id`).rows[0];
     if (!reserved) continue;
     const text = invitationText();
     try {
-      const messageId = await telegram(candidate.chat_id, text, { disable_web_page_preview: true, reply_markup: inviteKeyboard() });
+      const messageId = await telegram(candidate.chat_id, text, { disable_web_page_preview: true, reply_markup: await inviteKeyboard() });
       await sql`UPDATE offline_interview_invites SET status='sent',telegram_message_id=${String(messageId || '')},sent_at=NOW(),updated_at=NOW() WHERE candidate_id=${candidate.id} AND event_date=${EVENT_DATE}::date`;
       await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','offline_interview_invite',${text},'delivered',${String(messageId || '')})`;
       sent++;
@@ -69,6 +77,15 @@ export async function sendOfflineInvites() {
     }
   }
   return { stopped: false, sent, failed, recipients: delivered };
+}
+
+async function refreshInvitationKeyboards() {
+  const replyMarkup = await inviteKeyboard();
+  const rows = (await sql`SELECT c.chat_id,i.telegram_message_id FROM offline_interview_invites i JOIN candidates c ON c.id=i.candidate_id WHERE i.event_date=${EVENT_DATE}::date AND i.telegram_message_id IS NOT NULL AND i.status IN ('sent','booked')`).rows;
+  for (const row of rows) {
+    try { await telegramApi('editMessageReplyMarkup', { chat_id: row.chat_id, message_id: Number(row.telegram_message_id), reply_markup: replyMarkup }); }
+    catch (error) { console.error('[offline] keyboard refresh failed', { chatId: row.chat_id, messageId: row.telegram_message_id, message: String(error) }); }
+  }
 }
 
 async function allocate(candidateId, slot) {
@@ -126,6 +143,7 @@ export async function handleOfflineInterviewChoice(callback) {
   const username = candidate.username ? `@${candidate.username}` : 'не указан';
   const notice = `✅ <b>Новая запись на офлайн-собеседование</b>\n\nКандидат: <b>${candidate.full_name}</b>\nГород: Минск\nTelegram: ${username}\nТелефон: ${candidate.phone || 'не указан'}\nДата: 28 августа 2026 года\nВремя: <b>${SLOTS[slot]}</b>\n\nЗаписано на ${SLOTS[slot]}: <b>${count} из ${CAPACITY}</b>\nОсталось мест: <b>${CAPACITY - count}</b>\n\n<a href="https://academy-strateg-trainer.vercel.app/operator.html">Открыть операторскую панель</a>`;
   await telegram(COORDINATION_CHAT_ID, notice, { message_thread_id: COORDINATION_THREAD_ID, disable_web_page_preview: true });
+  if (count >= CAPACITY) await refreshInvitationKeyboards();
   await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: `Запись на ${SLOTS[slot]} сохранена.` });
   return true;
 }
