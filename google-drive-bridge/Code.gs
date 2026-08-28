@@ -70,6 +70,13 @@ function saveFile_(folder, item) {
   return { id: file.getId(), name: file.getName(), url: file.getUrl(), mimeType: file.getMimeType() };
 }
 
+function authorizeNativeFiles() {
+  const document = DocumentApp.create('Проверка разрешения Академии Стратег');
+  DriveApp.getFileById(document.getId()).setTrashed(true);
+  const spreadsheet = SpreadsheetApp.create('Проверка разрешения Академии Стратег');
+  DriveApp.getFileById(spreadsheet.getId()).setTrashed(true);
+}
+
 function doPost(event) {
   try {
     const payload = JSON.parse(event.postData && event.postData.contents || '{}');
