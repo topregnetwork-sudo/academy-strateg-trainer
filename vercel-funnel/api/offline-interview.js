@@ -1,4 +1,5 @@
 import { init, json, operator, sql, telegram, telegramApi } from './_core.js';
+import { syncDriveCandidate } from './drive.js';
 
 const EVENT_DATE = '2026-08-28';
 const ADDRESS = 'Площадь Свободы, 8';
@@ -9,6 +10,63 @@ const COORDINATION_CHAT_ID = '-1004397133749';
 const COORDINATION_THREAD_ID = 30;
 const CAPACITY = 6;
 const SLOTS = { '1330': '13:30', '1430': '14:30' };
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, symbol => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[symbol]);
+}
+
+async function slotSummary({ ensureDrive = false } = {}) {
+  let rows = (await sql`
+    SELECT b.candidate_id,b.slot_time,b.slot_position,
+           COALESCE(NULLIF(TRIM(a.full_name),''),NULLIF(TRIM(CONCAT_WS(' ',c.first_name,c.last_name)),''),c.username,'Кандидат ' || c.id::text) AS full_name,
+           d.folder_url
+    FROM offline_interview_bookings b
+    JOIN candidates c ON c.id=b.candidate_id
+    LEFT JOIN LATERAL (SELECT full_name FROM applications WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) a ON TRUE
+    LEFT JOIN candidate_drive d ON d.candidate_id=c.id
+    WHERE b.event_date=${EVENT_DATE}::date AND b.status='booked'
+    ORDER BY b.slot_time,b.slot_position
+  `).rows;
+  if (ensureDrive) {
+    for (const row of rows.filter(item => !item.folder_url)) {
+      try { await syncDriveCandidate(row.candidate_id); }
+      catch (error) { console.error('[offline] Drive sync failed for summary', { candidateId: row.candidate_id, message: String(error) }); }
+    }
+    rows = (await sql`
+      SELECT b.candidate_id,b.slot_time,b.slot_position,
+             COALESCE(NULLIF(TRIM(a.full_name),''),NULLIF(TRIM(CONCAT_WS(' ',c.first_name,c.last_name)),''),c.username,'Кандидат ' || c.id::text) AS full_name,
+             d.folder_url
+      FROM offline_interview_bookings b
+      JOIN candidates c ON c.id=b.candidate_id
+      LEFT JOIN LATERAL (SELECT full_name FROM applications WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) a ON TRUE
+      LEFT JOIN candidate_drive d ON d.candidate_id=c.id
+      WHERE b.event_date=${EVENT_DATE}::date AND b.status='booked'
+      ORDER BY b.slot_time,b.slot_position
+    `).rows;
+  }
+  const grouped = Object.fromEntries(Object.keys(SLOTS).map(slot => [slot, rows.filter(row => row.slot_time === slot)]));
+  const total = rows.length;
+  const lines = Object.entries(SLOTS).map(([slot, label]) => {
+    const candidates = grouped[slot];
+    const list = candidates.length ? candidates.map((candidate, index) => {
+      const name = esc(candidate.full_name);
+      return `${index + 1}. ${candidate.folder_url ? `<a href="${esc(candidate.folder_url)}">${name}</a>` : `${name} — папка создаётся`}`;
+    }).join('\n') : '— записей нет';
+    return `<b>${label} — ${candidates.length} из ${CAPACITY}</b> · свободно ${CAPACITY - candidates.length}\n${list}`;
+  });
+  return {
+    counts: Object.fromEntries(Object.entries(grouped).map(([slot, candidates]) => [slot, candidates.length])),
+    total,
+    text: `📊 <b>Общая сводка на 28 августа</b>\n\n${lines.join('\n\n')}\n\nВсего: <b>${total} из ${CAPACITY * Object.keys(SLOTS).length}</b> · свободно ${CAPACITY * Object.keys(SLOTS).length - total}`
+  };
+}
+
+export async function sendOfflineSlotSummary() {
+  await init();
+  const summary = await slotSummary({ ensureDrive: true });
+  const messageId = await telegram(COORDINATION_CHAT_ID, summary.text, { message_thread_id: COORDINATION_THREAD_ID, disable_web_page_preview: true });
+  return { messageId, counts: summary.counts, total: summary.total };
+}
 
 function deadlines(now = new Date()) {
   return {
@@ -142,14 +200,18 @@ export async function handleOfflineInterviewChoice(callback) {
     return true;
   }
   await sql`UPDATE offline_interview_invites SET status='booked',updated_at=NOW() WHERE candidate_id=${candidate.id} AND event_date=${EVENT_DATE}::date`;
-  const count = (await sql`SELECT count(*)::int AS count FROM offline_interview_bookings WHERE event_date=${EVENT_DATE}::date AND slot_time=${slot} AND status='booked'`).rows[0].count;
+  try { await syncDriveCandidate(candidate.id); }
+  catch (error) { console.error('[offline] Drive sync failed after booking', { candidateId: candidate.id, message: String(error) }); }
+  const summary = await slotSummary();
   const confirmation = `✅ <b>Вы записаны на дальнейшее тестирование и личное собеседование</b>\n\nДата: <b>28 августа 2026 года</b>\nВремя: <b>${SLOTS[slot]}</b>\nАдрес: <b>${ADDRESS}</b>\n\nДо встречи ознакомьтесь и изучите Цели Академии Стратег.\n\n<a href="${GOALS_URL}">Изучить Цели Академии</a>\n<a href="${PDF_URL}">Скачать Цели в PDF</a>\n<a href="${ROUTE_URL}">Фото и видео — как пройти</a>`;
   const confirmationId = await telegram(chatId, confirmation, { disable_web_page_preview: true });
   await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','offline_interview_confirmation',${confirmation},'delivered',${String(confirmationId || '')})`;
   const username = candidate.username ? `@${candidate.username}` : 'не указан';
-  const notice = `✅ <b>Новая запись на офлайн-собеседование</b>\n\nКандидат: <b>${candidate.full_name}</b>\nГород: Минск\nTelegram: ${username}\nТелефон: ${candidate.phone || 'не указан'}\nДата: 28 августа 2026 года\nВремя: <b>${SLOTS[slot]}</b>\n\nЗаписано на ${SLOTS[slot]}: <b>${count} из ${CAPACITY}</b>\nОсталось мест: <b>${CAPACITY - count}</b>\n\n<a href="https://academy-strateg-trainer.vercel.app/operator.html">Открыть операторскую панель</a>`;
+  const drive = (await sql`SELECT folder_url FROM candidate_drive WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0];
+  const driveLine = drive?.folder_url ? `<a href="${esc(drive.folder_url)}">Папка кандидата в Google Drive</a>` : 'Папка кандидата в Google Drive создаётся';
+  const notice = `✅ <b>Новая запись на офлайн-собеседование</b>\n\nКандидат: <b>${esc(candidate.full_name)}</b>\nГород: Минск\nTelegram: ${esc(username)}\nТелефон: ${esc(candidate.phone || 'не указан')}\nДата: 28 августа 2026 года\nВремя: <b>${SLOTS[slot]}</b>\n${driveLine}\n\n${summary.text}\n\n<a href="https://academy-strateg-trainer.vercel.app/operator.html">Открыть операторскую панель</a>`;
   await telegram(COORDINATION_CHAT_ID, notice, { message_thread_id: COORDINATION_THREAD_ID, disable_web_page_preview: true });
-  if (count >= CAPACITY) await refreshInvitationKeyboards();
+  if (summary.counts[slot] >= CAPACITY) await refreshInvitationKeyboards();
   await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: `Запись на ${SLOTS[slot]} сохранена.` });
   return true;
 }
