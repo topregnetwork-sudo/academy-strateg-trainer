@@ -69,8 +69,11 @@ export default {
       }, { status: 502, headers: { "Cache-Control": "no-store" } });
     }
   },
-  async scheduled(_controller, env, ctx) {
+  async scheduled(controller, env, ctx) {
     ctx.waitUntil((async () => {
+      const moment=new Date(controller.scheduledTime),day=moment.getUTCDay(),hour=moment.getUTCHours();
+      const expected=(day>=1&&day<=3&&(hour===4||hour===6))||((day===4||day===5)&&(hour===14||hour===16))||(day===6&&(hour===2||hour===4));
+      if(!expected)return;
       let lastError;
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
