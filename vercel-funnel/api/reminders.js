@@ -1,5 +1,4 @@
 import { init, json, telegram, telegramApi, sql, slots } from './_core.js';
-import { syncDriveCandidate } from './drive.js';
 import { sendOfflineInvites } from './offline-interview.js';
 
 const reminderText = '⏰ Напоминаем: ваше собеседование с Академией Стратег начнётся примерно через 30 минут. Пожалуйста, проверьте связь и подготовьтесь к встрече.';
@@ -157,17 +156,8 @@ export default async function handler(req, res) {
         const messageId=await telegram(item.chat_id,testOneCompletedText);
         await sql`UPDATE candidate_tests SET completion_notice_sent_at=NOW(),updated_at=NOW() WHERE id=${item.test_id} AND completion_notice_sent_at IS NULL`;
         await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${item.candidate_id},'out','test_1_completed',${testOneCompletedText},'delivered',${String(messageId||'')})`;
-        try{await syncDriveCandidate(item.candidate_id)}catch(error){console.error('[reminders] drive sync after test failed',{candidateId:item.candidate_id,message:String(error)})}
         testCompletionSent++;
       }catch(error){testCompletionFailed++;console.error('[reminders] test completion notice failed',{candidateId:item.candidate_id,message:String(error)})}
-    }
-    const driveBackfillRows=(await sql`SELECT DISTINCT c.id AS candidate_id FROM candidates c JOIN candidate_questionnaire_two q ON q.candidate_id=c.id AND q.submitted_at IS NOT NULL JOIN candidate_tests t ON t.candidate_id=c.id AND t.submitted_at IS NOT NULL LEFT JOIN candidate_drive d ON d.candidate_id=c.id LEFT JOIN candidate_drive_files doc ON doc.candidate_id=c.id AND doc.mime_type='application/vnd.google-apps.document' LEFT JOIN candidate_drive_files sheet ON sheet.candidate_id=c.id AND sheet.mime_type='application/vnd.google-apps.spreadsheet' WHERE d.candidate_id IS NULL OR doc.candidate_id IS NULL OR sheet.candidate_id IS NULL ORDER BY c.id LIMIT 5`).rows;
-    let driveBackfillSynced=0,driveBackfillFailed=0;
-    for(const item of driveBackfillRows){
-      try{
-        const result=await syncDriveCandidate(item.candidate_id);
-        if(!result.pending){driveBackfillSynced++;console.log('[reminders] Drive folder restored',{candidateId:item.candidate_id,folderId:result.folder?.id})}
-      }catch(error){driveBackfillFailed++;console.error('[reminders] Drive backfill failed',{candidateId:item.candidate_id,message:String(error)})}
     }
     let followupSent = 0, followupFailed = 0, followupSkippedInGroup = 0, followupMembershipCheckFailed = 0;
     const groupChatId = await candidateGroupChatId();
@@ -203,7 +193,7 @@ export default async function handler(req, res) {
       if (offset + batchSize < noShows.length) await new Promise(resolve => setTimeout(resolve, 500));
     }
     const offlineInvites=await sendOfflineInvites();
-    return json(res,200,{ok:true,questionnaireGroupAnnouncementSent,questionnaireDue:questionnaireRecipients.length,questionnaireSent,questionnaireFailed,questionnaireCompletionDue:questionnaireCompletedRows.length,questionnaireCompletionSent,questionnaireCompletionFailed,due:due.length,sent,failed,briefDue:sessions.length,briefSent,briefSkipped,briefFailed,followupDue:noShows.length,followupSent,followupSkippedInGroup,followupFailed,followupMembershipCheckFailed,testCompletionDue:completedTests.length,testCompletionSent,testCompletionFailed,driveBackfillDue:driveBackfillRows.length,driveBackfillSynced,driveBackfillFailed,offlineInvites});
+    return json(res,200,{ok:true,questionnaireGroupAnnouncementSent,questionnaireDue:questionnaireRecipients.length,questionnaireSent,questionnaireFailed,questionnaireCompletionDue:questionnaireCompletedRows.length,questionnaireCompletionSent,questionnaireCompletionFailed,due:due.length,sent,failed,briefDue:sessions.length,briefSent,briefSkipped,briefFailed,followupDue:noShows.length,followupSent,followupSkippedInGroup,followupFailed,followupMembershipCheckFailed,testCompletionDue:completedTests.length,testCompletionSent,testCompletionFailed,offlineInvites});
   } catch (error) {
     console.error('[reminders] run failed', { message: String(error) });
     return json(res, 500, { error: 'Reminder failed' });
