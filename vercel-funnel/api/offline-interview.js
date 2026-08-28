@@ -3,6 +3,7 @@ import { init, json, operator, sql, telegram, telegramApi } from './_core.js';
 const EVENT_DATE = '2026-08-28';
 const ADDRESS = 'Площадь Свободы, 8';
 const GOALS_URL = 'https://academy-strateg-trainer.vercel.app/goals.html';
+const PDF_URL = 'https://academy-strateg-trainer.vercel.app/academy-strateg-goals.pdf';
 const ROUTE_URL = 'https://drive.google.com/drive/folders/1SwBmFviGh5MaS81T_89iARM5_Hjygd9-?usp=drive_link';
 const COORDINATION_CHAT_ID = '-1004397133749';
 const COORDINATION_THREAD_ID = 30;
@@ -32,7 +33,7 @@ async function bookableSlots(now = new Date()) {
 }
 
 async function inviteKeyboard(now = new Date()) {
-  const rows = [[{ text: 'Изучить Цели Академии', url: GOALS_URL }]];
+  const rows = [[{ text: 'Изучить Цели Академии', url: GOALS_URL }, { text: 'Скачать PDF', url: PDF_URL }]];
   const available = await bookableSlots(now);
   if (available.length) rows.push(available.map(slot => ({ text: `Записаться на ${SLOTS[slot]}`, callback_data: `offline_minsk_${EVENT_DATE.replaceAll('-', '')}_${slot}` })));
   return { inline_keyboard: rows };
@@ -79,7 +80,7 @@ export async function sendOfflineInvites() {
   return { stopped: false, sent, failed, recipients: delivered };
 }
 
-async function refreshInvitationKeyboards() {
+export async function refreshInvitationKeyboards() {
   const replyMarkup = await inviteKeyboard();
   const rows = (await sql`SELECT c.chat_id,i.telegram_message_id FROM offline_interview_invites i JOIN candidates c ON c.id=i.candidate_id WHERE i.event_date=${EVENT_DATE}::date AND i.telegram_message_id IS NOT NULL AND i.status IN ('sent','booked')`).rows;
   for (const row of rows) {
@@ -105,6 +106,11 @@ async function allocate(candidateId, slot) {
 }
 
 export async function handleOfflineInterviewChoice(callback) {
+  const preview = callback.data?.match(/^offline_preview_(1330|1430)$/);
+  if (preview) {
+    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: `Тест кнопки ${SLOTS[preview[1]]}: работает. Место не занято.`, show_alert: true });
+    return true;
+  }
   const match = callback.data?.match(/^offline_minsk_20260828_(1330|1430)$/);
   if (!match) return false;
   const slot = match[1], chatId = String(callback.message?.chat?.id || callback.from?.id || '');
@@ -137,7 +143,7 @@ export async function handleOfflineInterviewChoice(callback) {
   }
   await sql`UPDATE offline_interview_invites SET status='booked',updated_at=NOW() WHERE candidate_id=${candidate.id} AND event_date=${EVENT_DATE}::date`;
   const count = (await sql`SELECT count(*)::int AS count FROM offline_interview_bookings WHERE event_date=${EVENT_DATE}::date AND slot_time=${slot} AND status='booked'`).rows[0].count;
-  const confirmation = `✅ <b>Вы записаны на дальнейшее тестирование и личное собеседование</b>\n\nДата: <b>28 августа 2026 года</b>\nВремя: <b>${SLOTS[slot]}</b>\nАдрес: <b>${ADDRESS}</b>\n\nДо встречи ознакомьтесь и изучите Цели Академии Стратег.\n\n<a href="${GOALS_URL}">Изучить Цели Академии</a>\n<a href="${ROUTE_URL}">Фото и видео — как пройти</a>`;
+  const confirmation = `✅ <b>Вы записаны на дальнейшее тестирование и личное собеседование</b>\n\nДата: <b>28 августа 2026 года</b>\nВремя: <b>${SLOTS[slot]}</b>\nАдрес: <b>${ADDRESS}</b>\n\nДо встречи ознакомьтесь и изучите Цели Академии Стратег.\n\n<a href="${GOALS_URL}">Изучить Цели Академии</a>\n<a href="${PDF_URL}">Скачать Цели в PDF</a>\n<a href="${ROUTE_URL}">Фото и видео — как пройти</a>`;
   const confirmationId = await telegram(chatId, confirmation, { disable_web_page_preview: true });
   await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','offline_interview_confirmation',${confirmation},'delivered',${String(confirmationId || '')})`;
   const username = candidate.username ? `@${candidate.username}` : 'не указан';
@@ -146,6 +152,18 @@ export async function handleOfflineInterviewChoice(callback) {
   if (count >= CAPACITY) await refreshInvitationKeyboards();
   await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: `Запись на ${SLOTS[slot]} сохранена.` });
   return true;
+}
+
+export async function sendOfflinePreview() {
+  await init();
+  const candidate = (await sql`SELECT id,chat_id FROM candidates WHERE LOWER(username)='hracademystrateg' LIMIT 1`).rows[0];
+  if (!candidate) throw new Error('Тестовый аккаунт @HRAcademyStrateg не найден');
+  const keyboard = { inline_keyboard: [
+    [{ text: 'Изучить Цели Академии', url: GOALS_URL }, { text: 'Скачать PDF', url: PDF_URL }],
+    [{ text: 'Записаться на 13:30', callback_data: 'offline_preview_1330' }, { text: 'Записаться на 14:30', callback_data: 'offline_preview_1430' }]
+  ] };
+  const messageId = await telegram(candidate.chat_id, `🧪 <b>Тестовый вариант сообщения</b>\n\n${invitationText()}\n\nНажатие временных кнопок в этом тесте не занимает места.`, { disable_web_page_preview: true, reply_markup: keyboard });
+  return { candidateId: candidate.id, messageId };
 }
 
 export default async function handler(req, res) {
