@@ -1,9 +1,9 @@
 {
   "project": "academy-strateg-trainer",
-  "last_change": "MINSK-OFFLINE-INVITE-014",
-  "commit": "7afb261",
-  "baseline_commit": "cd6dedd",
-  "rollback_branch": "rollback/minsk-offline-invite-before-001-20260828",
+  "last_change": "ACADEMY-GOALS-PDF-015",
+  "commit": "42941dd",
+  "baseline_commit": "18165c3",
+  "rollback_branch": "rollback/goals-pdf-before-001-20260828",
   "status": "deployed_and_verified",
   "drive_parent_folder_url": "https://drive.google.com/drive/folders/1fpKRJQZIdFeqYCVQ6aWfN_4_xuLyMX4D",
   "behavior": {
@@ -15,6 +15,7 @@
     "drive_city_structure": "candidate folders are nested under an automatically created city folder and named as candidate name — city — Test 1 completion date; empty city uses Город не указан",
     "drive_city_migration": "13 existing folders retained their original Drive IDs and links; 9 are under Минск and 4 under Челябинск",
     "minsk_offline_invite": "10 Minsk Test 1 completers invited with zero delivery failures for 28 August 2026; Chelyabinsk excluded; 13:30 and 14:30 have six seats, with cutoffs at 12:30 and 13:30 Moscow",
-    "academy_goals": "the exact approved long-form text is published at /goals.html with typography-only formatting"
+    "academy_goals": "the exact approved long-form text is published at /goals.html with typography-only formatting and as a downloadable five-page PDF",
+    "academy_goals_pdf_test": "PDF is live with application/pdf content type; Telegram preview message 1259 was sent to @HRAcademyStrateg with non-booking test slot buttons"
   }
 }
