@@ -1,9 +1,9 @@
 {
   "project": "academy-strateg-trainer",
-  "last_change": "NATIVE-DRIVE-FILES-017",
-  "commit": "0c444d5",
-  "baseline_commit": "efb90c4",
-  "rollback_branch": "rollback/native-drive-files-before-001-20260828",
+  "last_change": "OPERATOR-USERNAME-SEARCH-018",
+  "commit": "pending",
+  "baseline_commit": "ca13066",
+  "rollback_branch": "rollback/operator-username-search-before-001-20260828",
   "status": "deployed_and_verified",
   "drive_parent_folder_url": "https://drive.google.com/drive/folders/1fpKRJQZIdFeqYCVQ6aWfN_4_xuLyMX4D",
   "behavior": {
@@ -18,6 +18,7 @@
     "academy_goals": "the exact approved long-form text is published at /goals.html with typography-only formatting and as a downloadable five-page PDF",
     "academy_goals_pdf_test": "PDF is live with application/pdf content type; Telegram preview message 1259 was sent to @HRAcademyStrateg with non-booking test slot buttons",
     "offline_slot_summary": "after every successful booking the candidate receives the existing confirmation, while coordination topic 30 receives both slot totals, remaining capacity, overall total, and candidate names linked to their Google Drive folders; current summary message 367 reported 3 at 13:30 and 1 at 14:30",
-    "native_drive_files": "candidate cards are native Google Docs and Test 1 answer tables are native Google Sheets; all 14 completed dossiers were migrated in place across Minsk and Chelyabinsk with zero remaining legacy dossiers"
+    "native_drive_files": "candidate cards are native Google Docs and Test 1 answer tables are native Google Sheets; all 14 completed dossiers were migrated in place across Minsk and Chelyabinsk with zero remaining legacy dossiers",
+    "operator_username_search": "operator search accepts Telegram usernames both with and without a leading @ while preserving name, phone, and all existing filters"
   }
 }
