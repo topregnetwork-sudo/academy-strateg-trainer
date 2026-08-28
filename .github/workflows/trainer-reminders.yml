@@ -4,7 +4,9 @@ on:
   schedule:
     # Regular processing is required not only around interview slots: completed
     # questionnaires, tests, Telegram notices, and Drive folders can appear at any time.
-    - cron: '*/15 * * * *'
+    # Use off-quarter minutes: GitHub may delay or drop scheduled runs during
+    # peak load at :00, :15, :30 and :45.
+    - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
 
 concurrency:
