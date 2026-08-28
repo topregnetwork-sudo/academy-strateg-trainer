@@ -1,4 +1,5 @@
 import { body, init, json, nextInterview, slots, telegram, telegramApi, sql } from './_core.js';
+import { handleOfflineInterviewChoice } from './offline-interview.js';
 
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
 const CANDIDATE_GROUP_COMMAND = /^\/candidate_group(?:@stazherskaya_bot)?(?:\s|$)/i;
@@ -434,7 +435,7 @@ export default async function handler(req, res) {
     const callback = update.callback_query;
     if (callback) {
       await init();
-      if (!await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
+      if (!await handleOfflineInterviewChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
       return json(res, 200, { ok: true });
     }
     const message = update.message;

@@ -1,5 +1,6 @@
 import { init, json, telegram, telegramApi, sql, slots } from './_core.js';
 import { syncDriveCandidate } from './drive.js';
+import { sendOfflineInvites } from './offline-interview.js';
 
 const reminderText = '⏰ Напоминаем: ваше собеседование с Академией Стратег начнётся примерно через 30 минут. Пожалуйста, проверьте связь и подготовьтесь к встрече.';
 const noShowText = 'Здравствуйте! Вы были записаны на собеседование с Академией Стратег. Если сегодня не получилось подключиться, выберите новое удобное время ниже.\n\nЕсли вакансия для вас больше не актуальна, напишите в ответ: <b>не актуально</b>.';
@@ -201,7 +202,8 @@ export default async function handler(req, res) {
       }
       if (offset + batchSize < noShows.length) await new Promise(resolve => setTimeout(resolve, 500));
     }
-    return json(res,200,{ok:true,questionnaireGroupAnnouncementSent,questionnaireDue:questionnaireRecipients.length,questionnaireSent,questionnaireFailed,questionnaireCompletionDue:questionnaireCompletedRows.length,questionnaireCompletionSent,questionnaireCompletionFailed,due:due.length,sent,failed,briefDue:sessions.length,briefSent,briefSkipped,briefFailed,followupDue:noShows.length,followupSent,followupSkippedInGroup,followupFailed,followupMembershipCheckFailed,testCompletionDue:completedTests.length,testCompletionSent,testCompletionFailed,driveBackfillDue:driveBackfillRows.length,driveBackfillSynced,driveBackfillFailed});
+    const offlineInvites=await sendOfflineInvites();
+    return json(res,200,{ok:true,questionnaireGroupAnnouncementSent,questionnaireDue:questionnaireRecipients.length,questionnaireSent,questionnaireFailed,questionnaireCompletionDue:questionnaireCompletedRows.length,questionnaireCompletionSent,questionnaireCompletionFailed,due:due.length,sent,failed,briefDue:sessions.length,briefSent,briefSkipped,briefFailed,followupDue:noShows.length,followupSent,followupSkippedInGroup,followupFailed,followupMembershipCheckFailed,testCompletionDue:completedTests.length,testCompletionSent,testCompletionFailed,driveBackfillDue:driveBackfillRows.length,driveBackfillSynced,driveBackfillFailed,offlineInvites});
   } catch (error) {
     console.error('[reminders] run failed', { message: String(error) });
     return json(res, 500, { error: 'Reminder failed' });
