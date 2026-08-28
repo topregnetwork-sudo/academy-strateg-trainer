@@ -161,7 +161,7 @@ export default async function handler(req, res) {
         testCompletionSent++;
       }catch(error){testCompletionFailed++;console.error('[reminders] test completion notice failed',{candidateId:item.candidate_id,message:String(error)})}
     }
-    const driveBackfillRows=(await sql`SELECT DISTINCT c.id AS candidate_id FROM candidates c JOIN candidate_questionnaire_two q ON q.candidate_id=c.id AND q.submitted_at IS NOT NULL JOIN candidate_tests t ON t.candidate_id=c.id AND t.submitted_at IS NOT NULL LEFT JOIN candidate_drive d ON d.candidate_id=c.id LEFT JOIN candidate_drive_files f ON f.candidate_id=c.id AND f.file_name='00 — Карточка кандидата.html' WHERE d.candidate_id IS NULL OR f.candidate_id IS NULL ORDER BY c.id LIMIT 5`).rows;
+    const driveBackfillRows=(await sql`SELECT DISTINCT c.id AS candidate_id FROM candidates c JOIN candidate_questionnaire_two q ON q.candidate_id=c.id AND q.submitted_at IS NOT NULL JOIN candidate_tests t ON t.candidate_id=c.id AND t.submitted_at IS NOT NULL LEFT JOIN candidate_drive d ON d.candidate_id=c.id LEFT JOIN candidate_drive_files doc ON doc.candidate_id=c.id AND doc.mime_type='application/vnd.google-apps.document' LEFT JOIN candidate_drive_files sheet ON sheet.candidate_id=c.id AND sheet.mime_type='application/vnd.google-apps.spreadsheet' WHERE d.candidate_id IS NULL OR doc.candidate_id IS NULL OR sheet.candidate_id IS NULL ORDER BY c.id LIMIT 5`).rows;
     let driveBackfillSynced=0,driveBackfillFailed=0;
     for(const item of driveBackfillRows){
       try{
