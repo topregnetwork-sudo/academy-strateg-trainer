@@ -1,12 +1,8 @@
 name: Trainer interview reminders
 
 on:
-  schedule:
-    # Regular processing is required not only around interview slots: completed
-    # questionnaires, tests, Telegram notices, and Drive folders can appear at any time.
-    # Use off-quarter minutes: GitHub may delay or drop scheduled runs during
-    # peak load at :00, :15, :30 and :45.
-    - cron: '7,22,37,52 * * * *'
+  # No background schedule. This workflow runs only after an explicit manual
+  # action in GitHub; operator and bot actions remain separate and immediate.
   workflow_dispatch:
 
 concurrency:

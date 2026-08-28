@@ -1,9 +1,9 @@
 {
   "project": "academy-strateg-trainer",
-  "last_change": "OPERATOR-DRIVE-SELF-HEAL-020",
-  "commit": "94ad616",
-  "baseline_commit": "bcf24d5",
-  "rollback_branch": "rollback/operator-drive-self-heal-before-001-20260828",
+  "last_change": "EXPLICIT-FUNNEL-ACTIONS-021",
+  "commit": "pending",
+  "baseline_commit": "a26d2ac",
+  "rollback_branch": "rollback/explicit-funnel-actions-before-001-20260828",
   "status": "deployed_and_verified",
   "drive_parent_folder_url": "https://drive.google.com/drive/folders/1fpKRJQZIdFeqYCVQ6aWfN_4_xuLyMX4D",
   "behavior": {
@@ -21,6 +21,7 @@
     "native_drive_files": "candidate cards are native Google Docs and Test 1 answer tables are native Google Sheets; all 14 completed dossiers were migrated in place across Minsk and Chelyabinsk with zero remaining legacy dossiers",
     "operator_username_search": "operator search accepts Telegram usernames both with and without a leading @ while preserving name, phone, and all existing filters",
     "drive_schedule": "the background scheduler no longer creates Drive dossiers; it remains responsible only for reminders, briefs, invitations, and service messages",
-    "operator_drive_self_heal": "opening an eligible candidate in the operator panel creates a missing Drive dossier immediately, refreshes the card, and shows a direct retry button with the exact error if Google fails; all currently eligible candidates have dossiers"
+    "operator_drive_self_heal": "opening an eligible candidate in the operator panel creates a missing Drive dossier immediately, refreshes the card, and shows a direct retry button with the exact error if Google fails; all currently eligible candidates have dossiers",
+    "background_policy": "all scheduled GitHub background processing is disabled; funnel transitions occur only from explicit candidate bot commands, booking buttons, operator actions, manual broadcasts, or a manually dispatched maintenance workflow"
   }
 }
