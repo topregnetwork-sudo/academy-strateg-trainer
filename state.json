@@ -1,7 +1,7 @@
 {
   "project": "academy-strateg-trainer",
   "last_change": "EXPLICIT-FUNNEL-ACTIONS-021",
-  "commit": "pending",
+  "commit": "bd564a5",
   "baseline_commit": "a26d2ac",
   "rollback_branch": "rollback/explicit-funnel-actions-before-001-20260828",
   "status": "deployed_and_verified",
