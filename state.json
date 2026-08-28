@@ -1,10 +1,10 @@
 {
   "project": "academy-strateg-trainer",
   "last_change": "EVENT-DRIVEN-FUNNEL-022",
-  "commit": "5152e23 + trigger configuration follow-up",
+  "commit": "5152e23, 9f6c717",
   "baseline_commit": "bc10acd",
   "rollback_branch": "rollback/event-driven-funnel-before-022",
-  "status": "deployed_pending_next-real-event-e2e",
+  "status": "deployed_and_safe-route-verified; next real candidate event will provide external Telegram E2E confirmation",
   "drive_parent_folder_url": "https://drive.google.com/drive/folders/1fpKRJQZIdFeqYCVQ6aWfN_4_xuLyMX4D",
   "behavior": {
     "candidate_card": "one readable Google Drive card with the full five-stage timeline, total elapsed time, the Garcia article confirmation, and both questionnaire answers shown as question then answer; separate questionnaire files are not created",
