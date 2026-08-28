@@ -1,10 +1,10 @@
 {
   "project": "academy-strateg-trainer",
-  "last_change": "EXPLICIT-FUNNEL-ACTIONS-021",
-  "commit": "bd564a5",
-  "baseline_commit": "a26d2ac",
-  "rollback_branch": "rollback/explicit-funnel-actions-before-001-20260828",
-  "status": "deployed_and_verified",
+  "last_change": "EVENT-DRIVEN-FUNNEL-022",
+  "commit": "pending",
+  "baseline_commit": "bc10acd",
+  "rollback_branch": "rollback/event-driven-funnel-before-022",
+  "status": "implementation_verified_pending_deployment",
   "drive_parent_folder_url": "https://drive.google.com/drive/folders/1fpKRJQZIdFeqYCVQ6aWfN_4_xuLyMX4D",
   "behavior": {
     "candidate_card": "one readable Google Drive card with the full five-stage timeline, total elapsed time, the Garcia article confirmation, and both questionnaire answers shown as question then answer; separate questionnaire files are not created",
@@ -22,6 +22,7 @@
     "operator_username_search": "operator search accepts Telegram usernames both with and without a leading @ while preserving name, phone, and all existing filters",
     "drive_schedule": "the background scheduler no longer creates Drive dossiers; it remains responsible only for reminders, briefs, invitations, and service messages",
     "operator_drive_self_heal": "opening an eligible candidate in the operator panel creates a missing Drive dossier immediately, refreshes the card, and shows a direct retry button with the exact error if Google fails; all currently eligible candidates have dossiers",
-    "background_policy": "all scheduled GitHub background processing is disabled; funnel transitions occur only from explicit candidate bot commands, booking buttons, operator actions, manual broadcasts, or a manually dispatched maintenance workflow"
+    "background_policy": "funnel transitions are event-driven per candidate; there is no polling of forms, tests, Drive folders, or progression; Cloudflare wakes the protected timed handler only at the exact pre-slot and post-slot times for reminders, briefs, and no-show follow-up",
+    "event_progression": "Test 1 and Questionnaire 2 submission immediately process only that candidate; Test 1 also creates or updates the candidate Drive folder with bounded retries and idempotent duplicate protection"
   }
 }

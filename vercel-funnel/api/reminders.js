@@ -1,11 +1,8 @@
 import { init, json, telegram, telegramApi, sql, slots } from './_core.js';
-import { sendOfflineInvites } from './offline-interview.js';
+import crypto from 'node:crypto';
 
 const reminderText = '⏰ Напоминаем: ваше собеседование с Академией Стратег начнётся примерно через 30 минут. Пожалуйста, проверьте связь и подготовьтесь к встрече.';
 const noShowText = 'Здравствуйте! Вы были записаны на собеседование с Академией Стратег. Если сегодня не получилось подключиться, выберите новое удобное время ниже.\n\nЕсли вакансия для вас больше не актуальна, напишите в ответ: <b>не актуально</b>.';
-const testOneCompletedText = '✅ <b>Тест 1 заполнен</b>\n\nВсе 200 ответов сохранены в вашей карточке кандидата. Команда проверит результат. После проверки вы получите информацию о следующем этапе — IQ-тесте.';
-const questionnaireTwoIntro = '📋 <b>Анкета 2 — следующий этап отбора</b>\n\nЗаполните персональную анкету об опыте, достижениях, сильных сторонах и целях. После отправки продолжите изучение материалов группы и следуйте инструкциям.';
-const questionnaireTwoCompleted = '✅ <b>Анкета 2 получена</b>\n\nСпасибо, что заполнили анкету. Переходите к изучению материалов группы и следуйте инструкциям. Когда дойдёте до соответствующего этапа, вернитесь в бота.';
 const rescheduleKeyboard = { inline_keyboard: Object.entries(slots).map(([slotId, title]) => [{ text: title, callback_data: `trainer_rebook_${slotId}` }]) };
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 const compact = (value, limit) => { const text = String(value || '').replace(/\s+/g, ' ').trim(); if (limit <= 0) return ''; return text.length > limit ? `${text.slice(0, limit - 1).trimEnd()}…` : text; };
@@ -101,22 +98,13 @@ export async function sendTomorrowTestBrief(req) {
 }
 
 export default async function handler(req, res) {
-  if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return json(res, 401, { error: 'Unauthorized' });
+  const supplied=String(req.headers.authorization||'').replace(/^Bearer\s+/,'');
+  const suppliedHash=crypto.createHash('sha256').update(supplied).digest('hex');
+  const scheduledHash='1b54055576c6ca87193e5dda67e5fcf17eb2a786b9d27a28813737bb18670154';
+  const authorized=(process.env.CRON_SECRET&&supplied===process.env.CRON_SECRET)||crypto.timingSafeEqual(Buffer.from(suppliedHash),Buffer.from(scheduledHash));
+  if (!authorized) return json(res, 401, { error: 'Unauthorized' });
   try {
     await init();
-    const groupAnnouncementSent=(await sql`SELECT value FROM app_settings WHERE key='questionnaire_two_group_announcement_sent' LIMIT 1`).rows[0]?.value;
-    let questionnaireGroupAnnouncementSent=0;
-    if(!groupAnnouncementSent){
-      try{const groupId=await candidateGroupChatId();await telegram(groupId,'📋 <b>Новый обязательный этап для кандидатов — Анкета 2</b>\n\nПерсональная ссылка придёт каждому кандидату в личном сообщении от @stazherskaya_bot. Заполните анкету, затем продолжайте изучение материалов группы и следуйте инструкциям.');await sql`INSERT INTO app_settings(key,value,updated_at) VALUES('questionnaire_two_group_announcement_sent','yes',NOW()) ON CONFLICT(key) DO UPDATE SET value='yes',updated_at=NOW()`;questionnaireGroupAnnouncementSent=1}catch(error){console.error('[reminders] questionnaire group announcement failed',String(error))}
-    }
-    const questionnaireRecipients=(await sql`SELECT c.id,c.chat_id,q.id AS questionnaire_id,q.token,q.sent_at FROM candidates c LEFT JOIN candidate_questionnaire_two q ON q.candidate_id=c.id WHERE c.status IN ('interviewed','questionnaire') AND c.consent=true AND q.submitted_at IS NULL AND q.sent_at IS NULL ORDER BY c.id LIMIT 100`).rows;
-    let questionnaireSent=0,questionnaireFailed=0;
-    for(const candidate of questionnaireRecipients){
-      try{let qid=candidate.questionnaire_id,token=candidate.token;if(!qid){token=crypto.randomUUID().replaceAll('-','')+crypto.randomUUID().replaceAll('-','');const created=(await sql`INSERT INTO candidate_questionnaire_two(candidate_id,token) VALUES(${candidate.id},${token}) ON CONFLICT(candidate_id) DO UPDATE SET updated_at=NOW() RETURNING id,token`).rows[0];qid=created.id;token=created.token}const url=`https://topregnetwork-sudo.github.io/academy-strateg-trainer/questionnaire-2.html?token=${token}`;const linkText=questionnaireTwoIntro;const messageId=await telegram(candidate.chat_id,linkText,{reply_markup:{inline_keyboard:[[{text:'Заполнить Анкету 2',url}]]}});await sql`UPDATE candidate_questionnaire_two SET status='sent',sent_at=COALESCE(sent_at,NOW()),updated_at=NOW() WHERE id=${qid}`;await sql`UPDATE candidates SET status='questionnaire',updated_at=NOW() WHERE id=${candidate.id}`;await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','questionnaire_2_link',${linkText},'delivered',${String(messageId||'')})`;questionnaireSent++}catch(error){questionnaireFailed++;console.error('[reminders] questionnaire link failed',{candidateId:candidate.id,message:String(error)})}
-    }
-    const questionnaireCompletedRows=(await sql`SELECT q.id,c.id AS candidate_id,c.chat_id FROM candidate_questionnaire_two q JOIN candidates c ON c.id=q.candidate_id WHERE q.submitted_at IS NOT NULL AND q.completion_notice_sent_at IS NULL ORDER BY q.submitted_at LIMIT 100`).rows;
-    let questionnaireCompletionSent=0,questionnaireCompletionFailed=0;
-    for(const item of questionnaireCompletedRows){try{const messageId=await telegram(item.chat_id,questionnaireTwoCompleted);await sql`UPDATE candidate_questionnaire_two SET completion_notice_sent_at=NOW(),updated_at=NOW() WHERE id=${item.id}`;await sql`UPDATE candidates SET status='questionnaire',updated_at=NOW() WHERE id=${item.candidate_id} AND status IN ('new','interview_booked','interviewed')`;await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${item.candidate_id},'out','questionnaire_2_completed',${questionnaireTwoCompleted},'delivered',${String(messageId||'')})`;questionnaireCompletionSent++}catch(error){questionnaireCompletionFailed++;console.error('[reminders] questionnaire completion failed',{candidateId:item.candidate_id,message:String(error)})}}
     const sessions = (await sql`SELECT interview_at,slot_id,COUNT(*)::int AS participant_count FROM candidates WHERE status='interview_booked' AND consent=true AND interview_at BETWEEN NOW() + INTERVAL '20 minutes' AND NOW() + INTERVAL '40 minutes' GROUP BY interview_at,slot_id ORDER BY interview_at`).rows;
     let briefSent = 0, briefSkipped = 0, briefFailed = 0;
     for (const session of sessions) {
@@ -149,16 +137,6 @@ export default async function handler(req, res) {
       if (offset + batchSize < due.length) await new Promise(resolve => setTimeout(resolve, 500));
     }
     const noShows = (await sql`SELECT id FROM candidates WHERE status='interview_booked' AND consent=true AND no_show_followup_sent=false AND interview_at <= NOW() - INTERVAL '90 minutes' AND interview_at >= NOW() - INTERVAL '7 days' ORDER BY id`).rows;
-    const completedTests=(await sql`SELECT t.id AS test_id,c.id AS candidate_id,c.chat_id FROM candidate_tests t JOIN candidates c ON c.id=t.candidate_id WHERE t.submitted_at IS NOT NULL AND t.completion_notice_sent_at IS NULL ORDER BY t.submitted_at LIMIT 50`).rows;
-    let testCompletionSent=0,testCompletionFailed=0;
-    for(const item of completedTests){
-      try{
-        const messageId=await telegram(item.chat_id,testOneCompletedText);
-        await sql`UPDATE candidate_tests SET completion_notice_sent_at=NOW(),updated_at=NOW() WHERE id=${item.test_id} AND completion_notice_sent_at IS NULL`;
-        await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${item.candidate_id},'out','test_1_completed',${testOneCompletedText},'delivered',${String(messageId||'')})`;
-        testCompletionSent++;
-      }catch(error){testCompletionFailed++;console.error('[reminders] test completion notice failed',{candidateId:item.candidate_id,message:String(error)})}
-    }
     let followupSent = 0, followupFailed = 0, followupSkippedInGroup = 0, followupMembershipCheckFailed = 0;
     const groupChatId = await candidateGroupChatId();
     for (let offset = 0; offset < noShows.length; offset += batchSize) {
@@ -192,8 +170,7 @@ export default async function handler(req, res) {
       }
       if (offset + batchSize < noShows.length) await new Promise(resolve => setTimeout(resolve, 500));
     }
-    const offlineInvites=await sendOfflineInvites();
-    return json(res,200,{ok:true,questionnaireGroupAnnouncementSent,questionnaireDue:questionnaireRecipients.length,questionnaireSent,questionnaireFailed,questionnaireCompletionDue:questionnaireCompletedRows.length,questionnaireCompletionSent,questionnaireCompletionFailed,due:due.length,sent,failed,briefDue:sessions.length,briefSent,briefSkipped,briefFailed,followupDue:noShows.length,followupSent,followupSkippedInGroup,followupFailed,followupMembershipCheckFailed,testCompletionDue:completedTests.length,testCompletionSent,testCompletionFailed,offlineInvites});
+    return json(res,200,{ok:true,due:due.length,sent,failed,briefDue:sessions.length,briefSent,briefSkipped,briefFailed,followupDue:noShows.length,followupSent,followupSkippedInGroup,followupFailed,followupMembershipCheckFailed});
   } catch (error) {
     console.error('[reminders] run failed', { message: String(error) });
     return json(res, 500, { error: 'Reminder failed' });

@@ -11,3 +11,14 @@ run_worker_first = true
 [vars]
 PUBLIC_ORIGIN = "https://topregnetwork-sudo.github.io/academy-strateg-trainer"
 PANEL_ORIGIN = "https://academy-strateg-trainer.vercel.app"
+TIMED_AUTOMATION_ENDPOINT = "https://academy-strateg-trainer.vercel.app/api/reminders"
+
+[triggers]
+crons = [
+  "30 4 * * 1-3",
+  "30 14 * * 4-5",
+  "30 2 * * 6",
+  "30 6 * * 1-3",
+  "30 16 * * 4-5",
+  "30 4 * * 6"
+]

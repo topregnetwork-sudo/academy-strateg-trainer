@@ -69,4 +69,22 @@ export default {
       }, { status: 502, headers: { "Cache-Control": "no-store" } });
     }
   },
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil((async () => {
+      let lastError;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const response = await fetch(env.TIMED_AUTOMATION_ENDPOINT, {
+            headers: { Authorization: `Bearer ${env.TIMED_TRIGGER_SECRET}` },
+          });
+          if (!response.ok) throw new Error(`Timed automation returned ${response.status}: ${await response.text()}`);
+          return;
+        } catch (error) {
+          lastError = error;
+          if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 5000 * attempt));
+        }
+      }
+      throw lastError;
+    })());
+  },
 };

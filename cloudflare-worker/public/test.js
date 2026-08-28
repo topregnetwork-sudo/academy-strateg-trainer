@@ -18,6 +18,10 @@ function rpc(name,payload,signal){
     return data;
   });
 }
+async function progress(type){
+  const response=await fetch('https://academy-strateg-trainer.vercel.app/api/progression',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type,token}),keepalive:true});
+  if(!response.ok)throw new Error('Ответы сохранены, но следующий шаг задержался. Нажмите ещё раз.');
+}
 
 function show(id){['loading','errorState','doneState','testForm'].forEach(name=>$(name).hidden=name!==id)}
 function safeDraft(){try{const value=JSON.parse(localStorage.getItem(draftKey)||'{}');return value&&typeof value==='object'?value:{}}catch{return{}}}
@@ -63,8 +67,8 @@ $('testForm').addEventListener('submit',async event=>{
   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),25000);
   try{
     const result=await rpc('submit_candidate_test',{p_token:token,p_answers:answers,p_questionnaire_version:definition.version},controller.signal);
-    if(!result?.ok)throw new Error(result?.error||'Не удалось сохранить ответы');
-    clearDraft();show('doneState');scrollTo({top:0,behavior:'smooth'});
+    if(!result?.ok&&!String(result?.error||'').includes('уже отправлен'))throw new Error(result?.error||'Не удалось сохранить ответы');
+    await progress('test_1_completed');clearDraft();show('doneState');scrollTo({top:0,behavior:'smooth'});
   }catch(error){$('formNotice').textContent=error.name==='AbortError'?'Отправка заняла слишком много времени. Проверьте интернет и нажмите ещё раз.':error.message;button.disabled=false;button.textContent='Отправить 200 ответов'}
   finally{clearTimeout(timeout)}
 });
