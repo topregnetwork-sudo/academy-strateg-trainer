@@ -1,10 +1,10 @@
 {
   "project": "academy-strateg-trainer",
   "last_change": "GOALS-BRANDING-023",
-  "commit": "pending",
+  "commit": "d564d41",
   "baseline_commit": "2ede40e",
   "rollback_branch": "rollback/goals-branding-before-023",
-  "status": "visual_and_text_verified_pending_deployment",
+  "status": "deployed_and_verified_on_vercel_and_cloudflare",
   "drive_parent_folder_url": "https://drive.google.com/drive/folders/1fpKRJQZIdFeqYCVQ6aWfN_4_xuLyMX4D",
   "behavior": {
     "candidate_card": "one readable Google Drive card with the full five-stage timeline, total elapsed time, the Garcia article confirmation, and both questionnaire answers shown as question then answer; separate questionnaire files are not created",
