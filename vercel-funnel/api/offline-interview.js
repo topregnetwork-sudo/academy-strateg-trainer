@@ -98,6 +98,23 @@ async function inviteKeyboard(now = new Date()) {
   return { inline_keyboard: rows };
 }
 
+function bookingKeyboard() {
+  return { inline_keyboard: [[{ text: 'Изменить время', callback_data: `offline_change_${EVENT_DATE.replaceAll('-', '')}` }]] };
+}
+
+async function changeTimeKeyboard(currentSlot, now = new Date()) {
+  const available = (await bookableSlots(now)).filter(slot => slot !== currentSlot);
+  const rows = [];
+  for (let index = 0; index < available.length; index += 2) {
+    rows.push(available.slice(index, index + 2).map(slot => ({
+      text: SLOTS[slot],
+      callback_data: `offline_move_${EVENT_DATE.replaceAll('-', '')}_${slot}`
+    })));
+  }
+  rows.push([{ text: `Оставить ${SLOTS[currentSlot]}`, callback_data: `offline_keep_${EVENT_DATE.replaceAll('-', '')}` }]);
+  return { inline_keyboard: rows };
+}
+
 function invitationText() {
   return `Спасибо, что заполнили анкету и завершили Тест 1.\n\nПриглашаем вас на следующий этап — дальнейшее тестирование и личное собеседование в Академии Стратег.\n\nДата: <b>${EVENT_DATE_TEXT}</b>\nАдрес: <b>${ADDRESS}</b>\n\nВыберите одно доступное время по кнопке ниже. Каждый слот предназначен для одного кандидата.\n\nДо собеседования ознакомьтесь и изучите Цели Академии Стратег.\n\n<a href="${ROUTE_URL}">Фото и видео — как пройти</a>`;
 }
@@ -150,6 +167,33 @@ export async function refreshInvitationKeyboards() {
   }
 }
 
+export async function enableRescheduleControlsForBookedCandidates() {
+  await init();
+  const rows = (await sql`
+    SELECT DISTINCT ON (b.candidate_id) b.candidate_id,c.chat_id,m.telegram_message_id
+    FROM offline_interview_bookings b
+    JOIN candidates c ON c.id=b.candidate_id
+    JOIN messages m ON m.candidate_id=b.candidate_id
+      AND m.direction='out'
+      AND m.kind IN ('offline_interview_confirmation','offline_interview_rescheduled')
+      AND m.delivery_status='delivered'
+      AND m.telegram_message_id IS NOT NULL
+    WHERE b.event_date=${EVENT_DATE}::date AND b.status='booked'
+    ORDER BY b.candidate_id,m.created_at DESC
+  `).rows;
+  let edited = 0, failed = 0;
+  for (const row of rows) {
+    try {
+      await telegramApi('editMessageReplyMarkup', { chat_id: row.chat_id, message_id: Number(row.telegram_message_id), reply_markup: bookingKeyboard() });
+      edited++;
+    } catch (error) {
+      failed++;
+      console.error('[offline] reschedule control edit failed', { candidateId: row.candidate_id, message: String(error) });
+    }
+  }
+  return { bookedWithConfirmation: rows.length, edited, failed };
+}
+
 async function allocate(candidateId, slot) {
   for (let attempt = 0; attempt < 8; attempt++) {
     const row = (await sql`
@@ -166,13 +210,111 @@ async function allocate(candidateId, slot) {
   return null;
 }
 
+async function candidateForChat(chatId) {
+  return (await sql`
+    SELECT c.id,c.chat_id,c.username,c.first_name,c.last_name,c.phone,c.city,
+           COALESCE(NULLIF(TRIM(a.full_name),''),NULLIF(TRIM(CONCAT_WS(' ',c.first_name,c.last_name)),''),c.username,'Кандидат ' || c.id::text) AS full_name
+    FROM candidates c
+    JOIN candidate_tests t ON t.candidate_id=c.id AND t.submitted_at IS NOT NULL
+    LEFT JOIN LATERAL (SELECT full_name,city FROM applications WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) a ON TRUE
+    WHERE c.chat_id=${chatId} AND LOWER(TRIM(COALESCE(NULLIF(a.city,''),c.city,'')))='минск' LIMIT 1
+  `).rows[0];
+}
+
+async function existingBooking(candidateId) {
+  return (await sql`SELECT slot_time,slot_position FROM offline_interview_bookings WHERE candidate_id=${candidateId} AND event_date=${EVENT_DATE}::date AND status='booked' LIMIT 1`).rows[0];
+}
+
+function confirmationText(slot, changed = false) {
+  const title = changed ? '🔄 <b>Время собеседования изменено</b>' : '✅ <b>Вы записаны на дальнейшее тестирование и личное собеседование</b>';
+  return `${title}\n\nДата: <b>${EVENT_DATE_TEXT}</b>\nВремя: <b>${SLOTS[slot]}</b>\nАдрес: <b>${ADDRESS}</b>\n\nДо встречи ознакомьтесь и изучите Цели Академии Стратег.\n\n<a href="${GOALS_URL}">Изучить Цели Академии</a>\n<a href="${PDF_URL}">Скачать Цели в PDF</a>\n<a href="${ROUTE_URL}">Фото и видео — как пройти</a>`;
+}
+
+async function sendBookingConfirmation(candidate, slot, changed = false) {
+  const text = confirmationText(slot, changed);
+  const messageId = await telegram(candidate.chat_id, text, { disable_web_page_preview: true, reply_markup: bookingKeyboard() });
+  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out',${changed ? 'offline_interview_rescheduled' : 'offline_interview_confirmation'},${text},'delivered',${String(messageId || '')})`;
+  return messageId;
+}
+
+async function sendCoordinationChange(candidate, previousSlot, slot) {
+  try { await syncDriveCandidate(candidate.id); }
+  catch (error) { console.error('[offline] Drive sync failed after reschedule', { candidateId: candidate.id, message: String(error) }); }
+  const summary = await slotSummary({ ensureDrive: true });
+  const username = candidate.username ? `@${candidate.username}` : 'не указан';
+  const drive = (await sql`SELECT folder_url FROM candidate_drive WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0];
+  const driveLine = drive?.folder_url ? `<a href="${esc(drive.folder_url)}">Папка кандидата в Google Drive</a>` : 'Папка кандидата в Google Drive создаётся';
+  const notice = `🔄 <b>Кандидат изменил время</b>\n\nКандидат: <b>${esc(candidate.full_name)}</b>\nГород: Минск\nTelegram: ${esc(username)}\nТелефон: ${esc(candidate.phone || 'не указан')}\nДата: ${EVENT_DATE_TEXT}\nБыло: <b>${SLOTS[previousSlot]}</b>\nСтало: <b>${SLOTS[slot]}</b>\n${driveLine}\n\n${summary.text}\n\n<a href="https://academy-strateg-trainer.vercel.app/operator.html">Открыть операторскую панель</a>`;
+  await telegram(COORDINATION_CHAT_ID, notice, { message_thread_id: COORDINATION_THREAD_ID, disable_web_page_preview: true });
+  return summary;
+}
+
 export async function handleOfflineInterviewChoice(callback) {
+  const previewChange = callback.data === 'offline_preview_change';
+  const previewMove = callback.data?.match(/^offline_preview_move_(\d{4})$/);
+  if (previewChange || previewMove) {
+    const text = previewChange ? 'Кнопка «Изменить время» работает. Реальная запись не изменена.' : `Тест переноса на ${SLOTS[previewMove[1]]}: работает. Запись не изменена.`;
+    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text, show_alert: true });
+    return true;
+  }
   const preview = callback.data?.match(/^offline_preview_(\d{4})$/);
   if (preview) {
     await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: `Тест кнопки ${SLOTS[preview[1]]}: работает. Место не занято.`, show_alert: true });
     return true;
   }
+  const change = callback.data === 'offline_change_20260901';
+  const keep = callback.data === 'offline_keep_20260901';
+  const move = callback.data?.match(/^offline_move_20260901_(\d{4})$/);
   const match = callback.data?.match(/^offline_minsk_20260901_(\d{4})$/);
+  if (change || keep || move) {
+    const chatId = String(callback.message?.chat?.id || callback.from?.id || '');
+    const candidate = await candidateForChat(chatId);
+    const existing = candidate ? await existingBooking(candidate.id) : null;
+    if (!candidate || !existing) {
+      await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Активная запись не найдена.', show_alert: true });
+      return true;
+    }
+    if (keep) {
+      await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: `Запись на ${SLOTS[existing.slot_time]} сохранена.` });
+      return true;
+    }
+    if (change) {
+      const keyboard = await changeTimeKeyboard(existing.slot_time);
+      if (keyboard.inline_keyboard.length === 1) {
+        await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Других свободных времён сейчас нет. Ваша запись сохранена.', show_alert: true });
+        return true;
+      }
+      await telegram(chatId, `🔄 <b>Изменение времени</b>\n\nСейчас вы записаны на <b>${SLOTS[existing.slot_time]}</b>.\nВыберите другое свободное время. Текущее место сохранится, пока новое не будет успешно занято.`, { reply_markup: keyboard });
+      await telegramApi('answerCallbackQuery', { callback_query_id: callback.id });
+      return true;
+    }
+    const slot = move[1];
+    if (!SLOTS[slot] || !availableSlots().includes(slot)) {
+      await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Запись на это время уже закрыта. Старая запись сохранена.', show_alert: true });
+      return true;
+    }
+    let moved;
+    try {
+      moved = (await sql`
+        UPDATE offline_interview_bookings booking
+        SET slot_time=${slot},slot_position=1,updated_at=NOW()
+        WHERE booking.candidate_id=${candidate.id} AND booking.event_date=${EVENT_DATE}::date AND booking.status='booked'
+          AND NOT EXISTS (SELECT 1 FROM offline_interview_bookings occupied WHERE occupied.event_date=${EVENT_DATE}::date AND occupied.slot_time=${slot} AND occupied.status='booked' AND occupied.candidate_id<>${candidate.id})
+        RETURNING booking.slot_time
+      `).rows[0];
+    } catch (error) {
+      console.error('[offline] atomic reschedule conflict', { candidateId: candidate.id, slot, message: String(error) });
+    }
+    if (!moved) {
+      await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: `Время ${SLOTS[slot]} уже заняли. Ваша запись на ${SLOTS[existing.slot_time]} сохранена.`, show_alert: true });
+      return true;
+    }
+    await sendBookingConfirmation(candidate, slot, true);
+    await sendCoordinationChange(candidate, existing.slot_time, slot);
+    await refreshInvitationKeyboards();
+    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: `Время изменено на ${SLOTS[slot]}.` });
+    return true;
+  }
   if(match&&!SLOTS[match[1]])return false;
   if (!match) return false;
   const slot = match[1], chatId = String(callback.message?.chat?.id || callback.from?.id || '');
@@ -181,19 +323,12 @@ export async function handleOfflineInterviewChoice(callback) {
     await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Запись на это время уже закрыта.', show_alert: true });
     return true;
   }
-  const candidate = (await sql`
-    SELECT c.id,c.chat_id,c.username,c.first_name,c.last_name,c.phone,c.city,
-           COALESCE(NULLIF(TRIM(a.full_name),''),NULLIF(TRIM(CONCAT_WS(' ',c.first_name,c.last_name)),''),c.username,'Кандидат ' || c.id::text) AS full_name
-    FROM candidates c
-    JOIN candidate_tests t ON t.candidate_id=c.id AND t.submitted_at IS NOT NULL
-    LEFT JOIN LATERAL (SELECT full_name,city FROM applications WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) a ON TRUE
-    WHERE c.chat_id=${chatId} AND LOWER(TRIM(COALESCE(NULLIF(a.city,''),c.city,'')))='минск' LIMIT 1
-  `).rows[0];
+  const candidate = await candidateForChat(chatId);
   if (!candidate) {
     await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Эта запись доступна только приглашённым кандидатам из Минска.', show_alert: true });
     return true;
   }
-  const existing = (await sql`SELECT slot_time,slot_position FROM offline_interview_bookings WHERE candidate_id=${candidate.id} AND event_date=${EVENT_DATE}::date AND status='booked' LIMIT 1`).rows[0];
+  const existing = await existingBooking(candidate.id);
   if (existing) {
     await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: `Вы уже записаны на ${SLOTS[existing.slot_time]}.`, show_alert: true });
     return true;
@@ -207,9 +342,7 @@ export async function handleOfflineInterviewChoice(callback) {
   try { await syncDriveCandidate(candidate.id); }
   catch (error) { console.error('[offline] Drive sync failed after booking', { candidateId: candidate.id, message: String(error) }); }
   const summary = await slotSummary();
-  const confirmation = `✅ <b>Вы записаны на дальнейшее тестирование и личное собеседование</b>\n\nДата: <b>${EVENT_DATE_TEXT}</b>\nВремя: <b>${SLOTS[slot]}</b>\nАдрес: <b>${ADDRESS}</b>\n\nДо встречи ознакомьтесь и изучите Цели Академии Стратег.\n\n<a href="${GOALS_URL}">Изучить Цели Академии</a>\n<a href="${PDF_URL}">Скачать Цели в PDF</a>\n<a href="${ROUTE_URL}">Фото и видео — как пройти</a>`;
-  const confirmationId = await telegram(chatId, confirmation, { disable_web_page_preview: true });
-  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','offline_interview_confirmation',${confirmation},'delivered',${String(confirmationId || '')})`;
+  await sendBookingConfirmation(candidate, slot);
   const username = candidate.username ? `@${candidate.username}` : 'не указан';
   const drive = (await sql`SELECT folder_url FROM candidate_drive WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0];
   const driveLine = drive?.folder_url ? `<a href="${esc(drive.folder_url)}">Папка кандидата в Google Drive</a>` : 'Папка кандидата в Google Drive создаётся';
@@ -232,11 +365,24 @@ export async function sendOfflinePreview() {
   return { candidateId: candidate.id, messageId };
 }
 
+export async function sendOfflineReschedulePreviewToCoordination() {
+  await init();
+  const keyboard = { inline_keyboard: [
+    [{ text: 'Изменить время', callback_data: 'offline_preview_change' }],
+    [{ text: 'Перенести на 13:15', callback_data: 'offline_preview_move_1315' }, { text: 'Перенести на 13:30', callback_data: 'offline_preview_move_1330' }]
+  ] };
+  const text = `🧪 <b>ТЕСТ — изменение времени</b>\n\nПосле записи кандидат видит кнопку «Изменить время».\n\nСтарое место не отменяется, пока новое не занято. Если новое время уже забрали, прежняя запись сохраняется.\n\nПосле успешного переноса в этой теме придёт карточка «Было / Стало» и обновлённая общая сводка.\n\nКнопки ниже тестовые: они не меняют реальные записи.`;
+  const messageId = await telegram(COORDINATION_CHAT_ID, text, { message_thread_id: COORDINATION_THREAD_ID, disable_web_page_preview: true, reply_markup: keyboard });
+  return { messageId };
+}
+
 export default async function handler(req, res) {
   if (!operator(req)) return json(res, 401, { error: 'Неверный код доступа' });
   if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
   try {
     await init();
+    if (req.query?.action === 'reschedule-preview') return json(res, 200, { ok: true, ...(await sendOfflineReschedulePreviewToCoordination()) });
+    if (req.query?.action === 'enable-reschedule') return json(res, 200, { ok: true, ...(await enableRescheduleControlsForBookedCandidates()) });
     return json(res, 200, { ok: true, ...(await sendOfflineInvites()) });
   }
   catch (error) { console.error('[offline] batch failed', error); return json(res, 500, { error: String(error?.message || error) }); }
