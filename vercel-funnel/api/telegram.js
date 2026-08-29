@@ -7,6 +7,8 @@ const CANDIDATE_GROUP_KEYWORD = /^\s*(?:кандидат|кондидат)(?:ы)
 const CANDIDATE_TEST_KEYWORD = /^\s*тест[.!]?\s*$/iu;
 const NOT_RELEVANT_KEYWORD = /^\s*не\s*актуально[.!]?\s*$/iu;
 const TEST_VERSION = 'executive-effectiveness-2020-ru-v1';
+const COORDINATION_CHAT_ID = '-1004397133749';
+const COORDINATION_THREAD_ID = 30;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -466,6 +468,37 @@ async function handleOfflineOutcomeChoice(callback) {
   return true;
 }
 
+async function handleNadezhdaFinalistChoice(callback) {
+  const match = callback.data?.match(/^nadezhda_finalist_(thanks|lexus)$/);
+  if (!match) return false;
+  const chatId = String(callback.message?.chat?.id || callback.from?.id || '');
+  const candidate = (await sql`
+    SELECT c.id,c.chat_id,c.username,
+           COALESCE(NULLIF(TRIM(a.full_name),''),NULLIF(TRIM(CONCAT_WS(' ',c.first_name,c.last_name)),''),c.username) AS full_name
+    FROM candidates c
+    LEFT JOIN LATERAL (SELECT full_name FROM applications WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) a ON TRUE
+    WHERE c.chat_id=${chatId} LIMIT 1
+  `).rows[0];
+  if (!candidate || !/\bволкова\b/iu.test(candidate.full_name || '') || !/\bнадежда\b/iu.test(candidate.full_name || '')) {
+    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Эта кнопка доступна только адресату.', show_alert: true });
+    return true;
+  }
+  await ensureOfflineOutcomeChoices();
+  const choice = match[1] === 'thanks' ? 'Спасибо' : 'Дай вам Бог лексус)';
+  const claimed = (await sql`INSERT INTO candidate_outreach_choices(candidate_id,campaign_id,choice) VALUES(${candidate.id},'nadezhda_finalist_20260829',${match[1]}) ON CONFLICT DO NOTHING RETURNING candidate_id`).rows[0];
+  if (!claimed) {
+    const existing = (await sql`SELECT choice FROM candidate_outreach_choices WHERE candidate_id=${candidate.id} AND campaign_id='nadezhda_finalist_20260829' LIMIT 1`).rows[0];
+    const existingText = existing?.choice === 'lexus' ? 'Дай вам Бог лексус)' : 'Спасибо';
+    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: `Ваш ответ «${existingText}» уже сохранён.`, show_alert: true });
+    return true;
+  }
+  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'in','nadezhda_finalist_choice',${choice},'received',${String(callback.message?.message_id || '')})`;
+  const username = candidate.username ? `@${candidate.username}` : 'не указан';
+  await telegram(COORDINATION_CHAT_ID, `✅ <b>Надежда Волкова ответила на сообщение о финале</b>\n\nTelegram: ${escapeHtml(username)}\nВыбранный ответ: <b>${escapeHtml(choice)}</b>`, { message_thread_id: COORDINATION_THREAD_ID });
+  await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Спасибо! Ваш ответ сохранён.' });
+  return true;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { ok: false });
   if (process.env.TELEGRAM_WEBHOOK_SECRET && req.headers['x-telegram-bot-api-secret-token'] !== process.env.TELEGRAM_WEBHOOK_SECRET) return json(res, 401, { ok: false });
@@ -481,7 +514,7 @@ export default async function handler(req, res) {
     const callback = update.callback_query;
     if (callback) {
       await init();
-      if (!await handleOfflineInterviewChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
+      if (!await handleOfflineInterviewChoice(callback) && !await handleNadezhdaFinalistChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
       return json(res, 200, { ok: true });
     }
     const message = update.message;
