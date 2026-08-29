@@ -20,11 +20,11 @@ export default async function handler(req, res) {
     const rows = (await sql`
       SELECT DISTINCT ON (c.id) c.id,c.chat_id,c.username,c.status,a.full_name
       FROM candidates c JOIN applications a ON a.candidate_id=c.id
-      WHERE a.full_name IN (${NAMES[0]},${NAMES[1]},${NAMES[2]},${NAMES[3]},${NAMES[4]},${NAMES[5]})
+      WHERE LOWER(a.full_name) IN (LOWER(${NAMES[0]}),LOWER(${NAMES[1]}),LOWER(${NAMES[2]}),LOWER(${NAMES[3]}),LOWER(${NAMES[4]}),LOWER(${NAMES[5]}))
       ORDER BY c.id,a.created_at DESC
     `).rows;
-    const foundNames = new Set(rows.map(item => item.full_name));
-    const missing = NAMES.filter(name => !foundNames.has(name));
+    const foundNames = new Set(rows.map(item => item.full_name.toLocaleLowerCase('ru-RU')));
+    const missing = NAMES.filter(name => !foundNames.has(name.toLocaleLowerCase('ru-RU')));
     if (rows.length !== NAMES.length || missing.length) return json(res, 409, { error: 'Cohort mismatch', found: rows.map(item => ({ id: item.id, fullName: item.full_name, username: item.username })), missing });
     if (rows.some(item => /\bволкова\b/iu.test(item.full_name))) return json(res, 409, { error: 'Protected candidate appeared in cohort' });
     if (req.query?.action !== 'send') return json(res, 200, { ok: true, recipients: rows.map(item => ({ id: item.id, fullName: item.full_name, username: item.username, status: item.status })) });
