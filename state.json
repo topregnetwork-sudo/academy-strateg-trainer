@@ -1,10 +1,10 @@
 {
   "project": "academy-strateg-trainer",
-  "last_change": "GOALS-BRANDING-023",
-  "commit": "d564d41",
-  "baseline_commit": "2ede40e",
-  "rollback_branch": "rollback/goals-branding-before-023",
-  "status": "deployed_and_verified_on_vercel_and_cloudflare",
+  "last_change": "MINSK-OFFLINE-SEPT1-024",
+  "commit": "61b77d9, c9ab046 + cleanup pending",
+  "baseline_commit": "8ca3624",
+  "rollback_branch": "rollback/minsk-sept1-offline-before-024",
+  "status": "8 invitations delivered, coordination summary test 503 and full candidate preview 505 delivered, candidate keyboards refreshed, temporary key cleanup pending deployment",
   "drive_parent_folder_url": "https://drive.google.com/drive/folders/1fpKRJQZIdFeqYCVQ6aWfN_4_xuLyMX4D",
   "behavior": {
     "candidate_card": "one readable Google Drive card with the full five-stage timeline, total elapsed time, the Garcia article confirmation, and both questionnaire answers shown as question then answer; separate questionnaire files are not created",
@@ -18,6 +18,7 @@
     "academy_goals": "the exact approved long-form text is published at /goals.html in the light Academy website style with the approved logo and as a downloadable four-page branded PDF with the logo on every page",
     "academy_goals_pdf_test": "PDF is live with application/pdf content type; Telegram preview message 1259 was sent to @HRAcademyStrateg with non-booking test slot buttons",
     "offline_slot_summary": "after every successful booking the candidate receives the existing confirmation, while coordination topic 30 receives both slot totals, remaining capacity, overall total, and candidate names linked to their Google Drive folders; current summary message 367 reported 3 at 13:30 and 1 at 14:30",
+    "minsk_offline_sept1": "8 eligible Minsk Test 1 candidates invited for 1 September 2026 at Ploshchad Svobody 8; 11 individual 15-minute slots from 11:00 through 13:30; coordination test message 503 sent; every booking immediately sends candidate confirmation and a coordination brief with Drive link and full slot summary",
     "native_drive_files": "candidate cards are native Google Docs and Test 1 answer tables are native Google Sheets; all 14 completed dossiers were migrated in place across Minsk and Chelyabinsk with zero remaining legacy dossiers",
     "operator_username_search": "operator search accepts Telegram usernames both with and without a leading @ while preserving name, phone, and all existing filters",
     "drive_schedule": "the background scheduler no longer creates Drive dossiers; it remains responsible only for reminders, briefs, invitations, and service messages",

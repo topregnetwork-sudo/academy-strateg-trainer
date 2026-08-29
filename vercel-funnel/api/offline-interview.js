@@ -1,6 +1,5 @@
 import { init, json, operator, sql, telegram, telegramApi } from './_core.js';
 import { syncDriveCandidate } from './drive.js';
-import crypto from 'node:crypto';
 
 const EVENT_DATE = '2026-09-01';
 const EVENT_DATE_TEXT = '1 сентября 2026 года';
@@ -12,7 +11,6 @@ const COORDINATION_CHAT_ID = '-1004397133749';
 const COORDINATION_THREAD_ID = 30;
 const CAPACITY = 1;
 const SLOTS = { '1100':'11:00','1115':'11:15','1130':'11:30','1145':'11:45','1200':'12:00','1215':'12:15','1230':'12:30','1245':'12:45','1300':'13:00','1315':'13:15','1330':'13:30' };
-const BATCH_KEY_HASH = '1c509736d2caa55aa6c37e45e2ffa9e5a4ab369676e3e934d8781aea63d6baaf';
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, symbol => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[symbol]);
@@ -102,15 +100,6 @@ async function inviteKeyboard(now = new Date()) {
 
 function invitationText() {
   return `Спасибо, что заполнили анкету и завершили Тест 1.\n\nПриглашаем вас на следующий этап — дальнейшее тестирование и личное собеседование в Академии Стратег.\n\nДата: <b>${EVENT_DATE_TEXT}</b>\nАдрес: <b>${ADDRESS}</b>\n\nВыберите одно доступное время по кнопке ниже. Каждый слот предназначен для одного кандидата.\n\nДо собеседования ознакомьтесь и изучите Цели Академии Стратег.\n\n<a href="${ROUTE_URL}">Фото и видео — как пройти</a>`;
-}
-
-async function sendCoordinationCandidatePreview(){
-  const rows=[[{text:'Изучить Цели Академии',url:GOALS_URL},{text:'Скачать PDF',url:PDF_URL}]];
-  const slotKeys=Object.keys(SLOTS);
-  for(let index=0;index<slotKeys.length;index+=2)rows.push(slotKeys.slice(index,index+2).map(slot=>({text:`Записаться на ${SLOTS[slot]}`,callback_data:`offline_preview_${slot}`})));
-  const text=`🧪 <b>Тестовый вариант сообщения</b>\n\n${invitationText()}\n\nНажатие временных кнопок в этом тесте не занимает места.`;
-  const messageId=await telegram(COORDINATION_CHAT_ID,text,{message_thread_id:COORDINATION_THREAD_ID,disable_web_page_preview:true,reply_markup:{inline_keyboard:rows}});
-  return {messageId};
 }
 
 export async function sendOfflineInvites() {
@@ -244,14 +233,10 @@ export async function sendOfflinePreview() {
 }
 
 export default async function handler(req, res) {
-  const supplied=String(req.query?.batch_key||'');
-  const batchAuthorized=supplied&&crypto.createHash('sha256').update(supplied).digest('hex')===BATCH_KEY_HASH;
-  if (!operator(req)&&!batchAuthorized) return json(res, 401, { error: 'Неверный код доступа' });
+  if (!operator(req)) return json(res, 401, { error: 'Неверный код доступа' });
   if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
   try {
     await init();
-    if(req.query?.candidate_preview==='1')return json(res,200,{ok:true,preview:true,...(await sendCoordinationCandidatePreview())});
-    if(req.query?.refresh_keyboards==='1'){await refreshInvitationKeyboards();return json(res,200,{ok:true,refreshed:true});}
     return json(res, 200, { ok: true, ...(await sendOfflineInvites()) });
   }
   catch (error) { console.error('[offline] batch failed', error); return json(res, 500, { error: String(error?.message || error) }); }
