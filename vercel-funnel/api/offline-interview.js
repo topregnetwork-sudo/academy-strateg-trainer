@@ -71,13 +71,6 @@ export async function sendOfflineSlotSummary() {
   return { messageId, counts: summary.counts, total: summary.total };
 }
 
-async function sendCoordinationTest() {
-  const slotLines=Object.values(SLOTS).map(time=>`• ${time}`).join('\n');
-  const text=`🧪 <b>ТЕСТ — офлайн-собеседование 1 сентября</b>\n\nПри каждой новой записи здесь появится бриф: имя, город, Telegram, телефон, выбранное время, ссылка на папку Google Drive и общая сводка.\n\n<b>Доступные слоты:</b>\n${slotLines}\n\nКаждый слот — один кандидат. Это тестовое сообщение, место не занято.`;
-  const messageId=await telegram(COORDINATION_CHAT_ID,text,{message_thread_id:COORDINATION_THREAD_ID,disable_web_page_preview:true});
-  return {messageId};
-}
-
 function deadlines(now = new Date()) {
   return { stopAll: new Date('2026-09-01T13:30:00+03:00'), now };
 }
@@ -103,12 +96,21 @@ async function bookableSlots(now = new Date()) {
 async function inviteKeyboard(now = new Date()) {
   const rows = [[{ text: 'Изучить Цели Академии', url: GOALS_URL }, { text: 'Скачать PDF', url: PDF_URL }]];
   const available = await bookableSlots(now);
-  for(let index=0;index<available.length;index+=2) rows.push(available.slice(index,index+2).map(slot => ({ text: SLOTS[slot], callback_data: `offline_minsk_${EVENT_DATE.replaceAll('-', '')}_${slot}` })));
+  for(let index=0;index<available.length;index+=2) rows.push(available.slice(index,index+2).map(slot => ({ text: `Записаться на ${SLOTS[slot]}`, callback_data: `offline_minsk_${EVENT_DATE.replaceAll('-', '')}_${slot}` })));
   return { inline_keyboard: rows };
 }
 
 function invitationText() {
   return `Спасибо, что заполнили анкету и завершили Тест 1.\n\nПриглашаем вас на следующий этап — дальнейшее тестирование и личное собеседование в Академии Стратег.\n\nДата: <b>${EVENT_DATE_TEXT}</b>\nАдрес: <b>${ADDRESS}</b>\n\nВыберите одно доступное время по кнопке ниже. Каждый слот предназначен для одного кандидата.\n\nДо собеседования ознакомьтесь и изучите Цели Академии Стратег.\n\n<a href="${ROUTE_URL}">Фото и видео — как пройти</a>`;
+}
+
+async function sendCoordinationCandidatePreview(){
+  const rows=[[{text:'Изучить Цели Академии',url:GOALS_URL},{text:'Скачать PDF',url:PDF_URL}]];
+  const slotKeys=Object.keys(SLOTS);
+  for(let index=0;index<slotKeys.length;index+=2)rows.push(slotKeys.slice(index,index+2).map(slot=>({text:`Записаться на ${SLOTS[slot]}`,callback_data:`offline_preview_${slot}`})));
+  const text=`🧪 <b>Тестовый вариант сообщения</b>\n\n${invitationText()}\n\nНажатие временных кнопок в этом тесте не занимает места.`;
+  const messageId=await telegram(COORDINATION_CHAT_ID,text,{message_thread_id:COORDINATION_THREAD_ID,disable_web_page_preview:true,reply_markup:{inline_keyboard:rows}});
+  return {messageId};
 }
 
 export async function sendOfflineInvites() {
@@ -248,11 +250,8 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
   try {
     await init();
-    if(req.query?.preview==='1'){
-      const rows=(await sql`SELECT c.id FROM candidates c JOIN candidate_tests t ON t.candidate_id=c.id AND t.submitted_at IS NOT NULL LEFT JOIN LATERAL (SELECT city FROM applications WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) a ON TRUE LEFT JOIN offline_interview_invites i ON i.candidate_id=c.id AND i.event_date=${EVENT_DATE}::date WHERE c.consent=true AND LOWER(TRIM(COALESCE(NULLIF(a.city,''),c.city,'')))='минск' AND c.status NOT IN ('test_1_passed','training','internship','hired','rejected','cancelled') AND NOT EXISTS (SELECT 1 FROM offline_interview_bookings previous WHERE previous.candidate_id=c.id AND previous.event_date<${EVENT_DATE}::date AND previous.status='booked') AND (i.candidate_id IS NULL OR i.status='failed')`).rows;
-      return json(res,200,{ok:true,preview:true,recipientCount:rows.length,slots:Object.values(SLOTS),capacity:CAPACITY});
-    }
-    if(req.query?.coordination_test==='1') return json(res,200,{ok:true,test:true,...(await sendCoordinationTest())});
+    if(req.query?.candidate_preview==='1')return json(res,200,{ok:true,preview:true,...(await sendCoordinationCandidatePreview())});
+    if(req.query?.refresh_keyboards==='1'){await refreshInvitationKeyboards();return json(res,200,{ok:true,refreshed:true});}
     return json(res, 200, { ok: true, ...(await sendOfflineInvites()) });
   }
   catch (error) { console.error('[offline] batch failed', error); return json(res, 500, { error: String(error?.message || error) }); }
