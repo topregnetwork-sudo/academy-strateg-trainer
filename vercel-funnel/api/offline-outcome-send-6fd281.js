@@ -20,7 +20,7 @@ export default async function handler(req, res) {
     const rows = (await sql`
       SELECT DISTINCT ON (c.id) c.id,c.chat_id,c.username,c.status,a.full_name
       FROM candidates c JOIN applications a ON a.candidate_id=c.id
-      WHERE a.full_name IN (SELECT jsonb_array_elements_text(${JSON.stringify(NAMES)}::jsonb))
+      WHERE a.full_name IN (${NAMES[0]},${NAMES[1]},${NAMES[2]},${NAMES[3]},${NAMES[4]},${NAMES[5]})
       ORDER BY c.id,a.created_at DESC
     `).rows;
     const foundNames = new Set(rows.map(item => item.full_name));
