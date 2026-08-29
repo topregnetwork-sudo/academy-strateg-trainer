@@ -1,10 +1,10 @@
 {
   "project": "academy-strateg-trainer",
   "last_change": "MINSK-OFFLINE-SEPT1-024",
-  "commit": "61b77d9, c9ab046 + cleanup pending",
+  "commit": "61b77d9, c9ab046, e2d8a62",
   "baseline_commit": "8ca3624",
   "rollback_branch": "rollback/minsk-sept1-offline-before-024",
-  "status": "8 invitations delivered, coordination summary test 503 and full candidate preview 505 delivered, candidate keyboards refreshed, temporary key cleanup pending deployment",
+  "status": "deployed and verified: 8 invitations delivered, coordination summary test 503 and full candidate preview 505 delivered, candidate keyboards refreshed, temporary key removed",
   "drive_parent_folder_url": "https://drive.google.com/drive/folders/1fpKRJQZIdFeqYCVQ6aWfN_4_xuLyMX4D",
   "behavior": {
     "candidate_card": "one readable Google Drive card with the full five-stage timeline, total elapsed time, the Garcia article confirmation, and both questionnaire answers shown as question then answer; separate questionnaire files are not created",
