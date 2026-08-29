@@ -420,6 +420,52 @@ async function handleRescheduleChoice(callback) {
   return true;
 }
 
+async function ensureOfflineOutcomeChoices() {
+  await sql`CREATE TABLE IF NOT EXISTS candidate_outreach_choices(candidate_id BIGINT NOT NULL,campaign_id TEXT NOT NULL,choice TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),PRIMARY KEY(candidate_id,campaign_id))`;
+}
+
+async function removeFromCandidateGroup(candidate) {
+  const groupChatId = (await sql`SELECT value FROM app_settings WHERE key='candidate_group_chat_id' LIMIT 1`).rows[0]?.value;
+  if (!groupChatId) return { removed: false, reason: 'group_not_configured' };
+  const member = await telegramApi('getChatMember', { chat_id: groupChatId, user_id: Number(candidate.chat_id) });
+  if (['left','kicked'].includes(member.status)) return { removed: false, reason: 'already_outside' };
+  if (!['member','restricted'].includes(member.status)) return { removed: false, reason: `protected_${member.status}` };
+  await telegramApi('unbanChatMember', { chat_id: groupChatId, user_id: Number(candidate.chat_id), only_if_banned: false });
+  const after = await telegramApi('getChatMember', { chat_id: groupChatId, user_id: Number(candidate.chat_id) });
+  return { removed: after.status === 'left', reason: after.status };
+}
+
+async function handleOfflineOutcomeChoice(callback) {
+  const match = callback.data?.match(/^offline_outcome_20260829_(yes|no)$/);
+  if (!match) return false;
+  const choice = match[1];
+  const chatId = String(callback.message?.chat?.id || callback.from?.id || '');
+  const candidate = (await sql`SELECT id,chat_id,username,first_name,last_name,status FROM candidates WHERE chat_id=${chatId} LIMIT 1`).rows[0];
+  if (!candidate) {
+    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Карточка кандидата не найдена.', show_alert: true });
+    return true;
+  }
+  await ensureOfflineOutcomeChoices();
+  const claimed = (await sql`INSERT INTO candidate_outreach_choices(candidate_id,campaign_id,choice) VALUES(${candidate.id},'offline_outcome_20260829',${choice}) ON CONFLICT DO NOTHING RETURNING candidate_id`).rows[0];
+  if (!claimed) {
+    const existing = (await sql`SELECT choice FROM candidate_outreach_choices WHERE candidate_id=${candidate.id} AND campaign_id='offline_outcome_20260829' LIMIT 1`).rows[0];
+    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: existing?.choice === 'yes' ? 'Ваш ответ «Да» уже сохранён.' : 'Ваш ответ «Нет» уже сохранён.', show_alert: true });
+    return true;
+  }
+  const reply = choice === 'yes'
+    ? 'Спасибо за ваш ответ и готовность оставаться с Академией на связи!\n\nВаше участие в отборе тренеров завершено, поэтому мы отключим вас от рабочей группы кандидатов. При этом сохраним ваш контакт и позднее расскажем, какие мероприятия и возможности Академии могут быть интересны вам и вашему окружению.\n\nСпасибо за знакомство. До скорой связи!'
+    : 'Спасибо, что ответили.\n\nВаше участие в текущем отборе завершено, поэтому мы отключим вас от рабочей группы кандидатов.\n\nМы благодарны вам за время, внимание и усилия, которые вы вложили в прохождение отбора и знакомство с Академией Стратег.\n\nЖелаем вам успехов, новых интересных возможностей и подходящей команды.\n\nДо новых встреч!';
+  const messageId = await telegram(chatId, reply);
+  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out',${choice === 'yes' ? 'academy_contact_confirmation' : 'selection_closed_confirmation'},${reply},'delivered',${String(messageId || '')})`;
+  await sql`UPDATE candidates SET status=${choice === 'yes' ? 'academy_contact' : 'rejected'},consent=${choice === 'yes'},updated_at=NOW() WHERE id=${candidate.id}`;
+  let removal;
+  try { removal = await removeFromCandidateGroup(candidate); }
+  catch (error) { removal = { removed: false, reason: String(error?.message || error) }; console.error('[offline-outcome] group removal failed', { candidateId: candidate.id, message: removal.reason }); }
+  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'in','offline_outcome_choice',${choice === 'yes' ? 'Готов оставаться с Академией на связи' : 'Не хочет оставаться на связи'},'received',${String(callback.message?.message_id || '')})`;
+  await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: removal?.removed ? 'Спасибо. Ваш ответ сохранён.' : 'Спасибо. Ваш ответ сохранён.' });
+  return true;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { ok: false });
   if (process.env.TELEGRAM_WEBHOOK_SECRET && req.headers['x-telegram-bot-api-secret-token'] !== process.env.TELEGRAM_WEBHOOK_SECRET) return json(res, 401, { ok: false });
@@ -435,7 +481,7 @@ export default async function handler(req, res) {
     const callback = update.callback_query;
     if (callback) {
       await init();
-      if (!await handleOfflineInterviewChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
+      if (!await handleOfflineInterviewChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
       return json(res, 200, { ok: true });
     }
     const message = update.message;
