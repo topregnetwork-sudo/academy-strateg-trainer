@@ -1,9 +1,10 @@
 import { init, json, operator, sql, telegram, telegramApi } from './_core.js';
 import { syncDriveCandidate } from './drive.js';
+import {createHash} from 'node:crypto';
 
 const EVENT_DATE = '2026-09-01';
 const EVENT_DATE_TEXT = '1 сентября 2026 года';
-const ADDRESS = 'Площадь Свободы, 8';
+export const MINSK_ZOOM = 'https://us06web.zoom.us/j/8954571284?pwd=G7yvsAdaV7ZrPUFnXDIf4tfKR3f9fX.1';
 const GOALS_URL = 'https://academy-strateg-trainer.vercel.app/goals.html';
 const PDF_URL = 'https://academy-strateg-trainer.vercel.app/academy-strateg-goals.pdf';
 const ROUTE_URL = 'https://drive.google.com/drive/folders/1SwBmFviGh5MaS81T_89iARM5_Hjygd9-?usp=drive_link';
@@ -91,15 +92,15 @@ async function bookableSlots(now = new Date()) {
   return timed.filter(slot => (bySlot[slot] || 0) < CAPACITY);
 }
 
-async function inviteKeyboard(now = new Date()) {
+export async function inviteKeyboard(now = new Date()) {
   const rows = [[{ text: 'Изучить Цели Академии', url: GOALS_URL }, { text: 'Скачать PDF', url: PDF_URL }]];
   const available = await bookableSlots(now);
   for(let index=0;index<available.length;index+=2) rows.push(available.slice(index,index+2).map(slot => ({ text: `Записаться на ${SLOTS[slot]}`, callback_data: `offline_minsk_${EVENT_DATE.replaceAll('-', '')}_${slot}` })));
   return { inline_keyboard: rows };
 }
 
-function bookingKeyboard() {
-  return { inline_keyboard: [[{ text: 'Изменить время', callback_data: `offline_change_${EVENT_DATE.replaceAll('-', '')}` }]] };
+export function bookingKeyboard() {
+  return { inline_keyboard: [[{ text: 'Подключиться к Zoom', url: MINSK_ZOOM }]] };
 }
 
 async function changeTimeKeyboard(currentSlot, now = new Date()) {
@@ -115,8 +116,8 @@ async function changeTimeKeyboard(currentSlot, now = new Date()) {
   return { inline_keyboard: rows };
 }
 
-function invitationText() {
-  return `Спасибо, что заполнили анкету и завершили Тест 1.\n\nПриглашаем вас на следующий этап — дальнейшее тестирование и личное собеседование в Академии Стратег.\n\nДата: <b>${EVENT_DATE_TEXT}</b>\nАдрес: <b>${ADDRESS}</b>\n\nВыберите одно доступное время по кнопке ниже. Каждый слот предназначен для одного кандидата.\n\nДо собеседования ознакомьтесь и изучите Цели Академии Стратег.\n\n<a href="${ROUTE_URL}">Фото и видео — как пройти</a>`;
+export function invitationText() {
+  return `Спасибо, что заполнили анкету и завершили Тест 1.\n\nПриглашаем вас на интервью на продуктивность в Академии Стратег. Встреча пройдёт онлайн в Zoom. Приезжать в офис не нужно.\n\nДата: <b>${EVENT_DATE_TEXT}</b>\n\nВыберите доступное время по кнопке ниже. Время — по Минску. Каждый слот предназначен для одного кандидата. После записи выбранное время закрепляется без переноса.\n\nДо собеседования ознакомьтесь и изучите Цели Академии Стратег. Ссылку Zoom получите в подтверждении записи.`;
 }
 
 export async function sendOfflineInvites() {
@@ -160,9 +161,9 @@ export async function sendOfflineInvites() {
 
 export async function refreshInvitationKeyboards() {
   const replyMarkup = await inviteKeyboard();
-  const rows = (await sql`SELECT c.chat_id,i.telegram_message_id FROM offline_interview_invites i JOIN candidates c ON c.id=i.candidate_id WHERE i.event_date=${EVENT_DATE}::date AND i.telegram_message_id IS NOT NULL AND i.status IN ('sent','booked')`).rows;
+  const rows = (await sql`SELECT c.chat_id,i.telegram_message_id,i.status FROM offline_interview_invites i JOIN candidates c ON c.id=i.candidate_id WHERE i.event_date=${EVENT_DATE}::date AND i.telegram_message_id IS NOT NULL AND i.status IN ('sent','booked')`).rows;
   for (const row of rows) {
-    try { await telegramApi('editMessageReplyMarkup', { chat_id: row.chat_id, message_id: Number(row.telegram_message_id), reply_markup: replyMarkup }); }
+    try { await telegramApi('editMessageReplyMarkup', { chat_id: row.chat_id, message_id: Number(row.telegram_message_id), reply_markup: row.status === 'booked' ? bookingKeyboard() : replyMarkup }); }
     catch (error) { console.error('[offline] keyboard refresh failed', { chatId: row.chat_id, messageId: row.telegram_message_id, message: String(error) }); }
   }
 }
@@ -225,9 +226,8 @@ async function existingBooking(candidateId) {
   return (await sql`SELECT slot_time,slot_position FROM offline_interview_bookings WHERE candidate_id=${candidateId} AND event_date=${EVENT_DATE}::date AND status='booked' LIMIT 1`).rows[0];
 }
 
-function confirmationText(slot, changed = false) {
-  const title = changed ? '🔄 <b>Время собеседования изменено</b>' : '✅ <b>Вы записаны на дальнейшее тестирование и личное собеседование</b>';
-  return `${title}\n\nДата: <b>${EVENT_DATE_TEXT}</b>\nВремя: <b>${SLOTS[slot]}</b>\nАдрес: <b>${ADDRESS}</b>\n\nДо встречи ознакомьтесь и изучите Цели Академии Стратег.\n\n<a href="${GOALS_URL}">Изучить Цели Академии</a>\n<a href="${PDF_URL}">Скачать Цели в PDF</a>\n<a href="${ROUTE_URL}">Фото и видео — как пройти</a>`;
+export function confirmationText(slot, changed = false) {
+  return `✅ <b>Вы записаны на интервью на продуктивность в Zoom</b>\n\nДата: <b>${EVENT_DATE_TEXT}</b>\nВремя: <b>${SLOTS[slot]} — по Минску</b>\n\nПриезжать в офис не нужно. Подключитесь в назначенное время по кнопке ниже.\n\nДо встречи ознакомьтесь и изучите Цели Академии Стратег.\n\n<a href="${GOALS_URL}">Изучить Цели Академии</a>\n<a href="${PDF_URL}">Скачать Цели в PDF</a>`;
 }
 
 async function sendBookingConfirmation(candidate, slot, changed = false) {
@@ -250,6 +250,10 @@ async function sendCoordinationChange(candidate, previousSlot, slot) {
 }
 
 export async function handleOfflineInterviewChoice(callback) {
+  if (/^offline_(change_20260901|keep_20260901|move_20260901_\d{4}|preview_change|preview_move_\d{4})$/.test(callback.data || '')) {
+    await telegramApi('answerCallbackQuery', {callback_query_id:callback.id,text:'Встреча проходит в Zoom. Выбранное время сохраняется, перенос закрыт.',show_alert:true});
+    return true;
+  }
   const previewChange = callback.data === 'offline_preview_change';
   const previewMove = callback.data?.match(/^offline_preview_move_(\d{4})$/);
   if (previewChange || previewMove) {
@@ -346,7 +350,7 @@ export async function handleOfflineInterviewChoice(callback) {
   const username = candidate.username ? `@${candidate.username}` : 'не указан';
   const drive = (await sql`SELECT folder_url FROM candidate_drive WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0];
   const driveLine = drive?.folder_url ? `<a href="${esc(drive.folder_url)}">Папка кандидата в Google Drive</a>` : 'Папка кандидата в Google Drive создаётся';
-  const notice = `✅ <b>Новая запись на офлайн-собеседование</b>\n\nКандидат: <b>${esc(candidate.full_name)}</b>\nГород: Минск\nTelegram: ${esc(username)}\nТелефон: ${esc(candidate.phone || 'не указан')}\nДата: ${EVENT_DATE_TEXT}\nВремя: <b>${SLOTS[slot]}</b>\n${driveLine}\n\n${summary.text}\n\n<a href="https://academy-strateg-trainer.vercel.app/operator.html">Открыть операторскую панель</a>`;
+  const notice = `✅ <b>Новая запись на интервью в Zoom</b>\n\nКандидат: <b>${esc(candidate.full_name)}</b>\nГород: Минск\nTelegram: ${esc(username)}\nТелефон: ${esc(candidate.phone || 'не указан')}\nДата: ${EVENT_DATE_TEXT}\nВремя: <b>${SLOTS[slot]}</b>\n${driveLine}\n\n${summary.text}\n\n<a href="https://academy-strateg-trainer.vercel.app/operator.html">Открыть операторскую панель</a>`;
   await telegram(COORDINATION_CHAT_ID, notice, { message_thread_id: COORDINATION_THREAD_ID, disable_web_page_preview: true });
   if (summary.counts[slot] >= CAPACITY) await refreshInvitationKeyboards();
   await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: `Запись на ${SLOTS[slot]} сохранена.` });
@@ -377,6 +381,10 @@ export async function sendOfflineReschedulePreviewToCoordination() {
 }
 
 export default async function handler(req, res) {
+  if(req.query?.action==='zoom036'){
+    if(req.method!=='POST'||Date.now()>1788087703136||createHash('sha256').update(String(req.headers['x-maintenance-token']||'')).digest('hex')!=='f5a2e4b1afcabfbb0949baf3c245bf614e229dc9ad0bb1767ab7600822d0c5a1')return json(res,403,{error:'Forbidden'});
+    try{await init();const {migrateMinskZoom}=await import('../lib/minsk-zoom-migration.js');return json(res,200,await migrateMinskZoom(req.body||{}));}catch(e){return json(res,500,{error:String(e.message)});}
+  }
   if (!operator(req)) return json(res, 401, { error: 'Неверный код доступа' });
   if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
   try {
