@@ -13,7 +13,7 @@ test('scoped history works without optional new console tables and never writes'
 test('exact task and entry history is scoped to selected candidate',async()=>{
  await db.exec(`CREATE TABLE candidates(id bigint,interview_at timestamptz,slot_id text);CREATE TABLE candidate_zoom_entries(candidate_id bigint,clicked_at timestamptz,interview_at timestamptz,slot_id text);CREATE TABLE funnel_tasks(kind text,due_at timestamptz,state text,error text,payload jsonb);
  INSERT INTO candidates VALUES(1,'2026-09-01T05:00:00Z','tue-0800');
- INSERT INTO candidate_zoom_entries VALUES(1,now(),'2026-09-01T05:00:00Z','tue-0800');
+ INSERT INTO candidate_zoom_entries VALUES(1,'2026-09-01T05:00:00Z','2026-09-01T05:00:00Z','tue-0800');
  INSERT INTO funnel_tasks VALUES('primary_session',now(),'pending',null,'{"at":"2026-09-01T05:00:00.000Z","slot":"tue-0800"}'),('primary_session',now(),'pending',null,'{"at":"2026-09-02T05:00:00.000Z","slot":"wed-0800"}');`);
  const r=await candidateProgress(1);assert.deepEqual(r.errors,[]);assert.equal(r.primaryEntry.length,1);assert.equal(r.timers.length,1);await db.close();
 });

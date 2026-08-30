@@ -1,4 +1,5 @@
-import { init, json, telegram, telegramApi, sql, slots } from './_core.js';
+import { init, json, telegram, sql, slots } from './_core.js';
+import {runPrimaryFollowup} from '../lib/primary-followup.js';
 import crypto from 'node:crypto';
 import {entryKeyboard} from '../lib/primary-evidence.js';
 const trustedScope = Symbol('exact-session');
@@ -11,8 +12,6 @@ export async function runExactSession(scope) {
 }
 
 const reminderText = '⏰ Напоминаем: ваше собеседование с Академией Стратег начнётся примерно через 30 минут. Пожалуйста, проверьте связь и подготовьтесь к встрече.';
-const noShowText = 'Здравствуйте! Вы были записаны на собеседование с Академией Стратег. Если сегодня не получилось подключиться, выберите новое удобное время ниже.\n\nЕсли вакансия для вас больше не актуальна, напишите в ответ: <b>не актуально</b>.';
-const rescheduleKeyboard = { inline_keyboard: Object.entries(slots).map(([slotId, title]) => [{ text: title, callback_data: `trainer_rebook_${slotId}` }]) };
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 const compact = (value, limit) => { const text = String(value || '').replace(/\s+/g, ' ').trim(); if (limit <= 0) return ''; return text.length > limit ? `${text.slice(0, limit - 1).trimEnd()}…` : text; };
 const moscowDate = value => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value));
@@ -27,17 +26,6 @@ async function briefDestination() {
   return { chatId, threadId };
 }
 
-async function candidateGroupChatId() {
-  const setting = (await sql`SELECT value FROM app_settings WHERE key='candidate_group_chat_id' LIMIT 1`).rows[0]?.value;
-  const chatId = setting || process.env.CANDIDATE_GROUP_CHAT_ID || '';
-  if (!chatId) throw new Error('Candidate group chat is not configured');
-  return String(chatId);
-}
-
-async function isCandidateGroupMember(userId, groupChatId) {
-  const member = await telegramApi('getChatMember', { chat_id: groupChatId, user_id: Number(userId) });
-  return ['creator', 'administrator', 'member', 'restricted'].includes(member?.status);
-}
 
 function panelLink(req, session) {
   const host = String(req.headers['x-forwarded-host'] || req.headers.host || 'academy-strateg-trainer.vercel.app').split(',')[0].trim();
@@ -150,41 +138,8 @@ export default async function handler(req, res) {
       }
       if (offset + batchSize < due.length) await new Promise(resolve => setTimeout(resolve, 500));
     }
-    const noShows = (await sql`SELECT id FROM candidates WHERE status='interview_booked' AND consent=true AND no_show_followup_sent=false AND (${scopeAt}::timestamptz IS NULL OR interview_at=${scopeAt}::timestamptz) AND (${scopeSlot}::text IS NULL OR slot_id=${scopeSlot}) AND interview_at <= NOW() - INTERVAL '90 minutes' AND interview_at >= NOW() - INTERVAL '7 days' ORDER BY id`).rows;
-    let followupSent = 0, followupFailed = 0, followupSkippedInGroup = 0, followupMembershipCheckFailed = 0;
-    const groupChatId = noShows.length ? await candidateGroupChatId() : '';
-    for (let offset = 0; offset < noShows.length; offset += batchSize) {
-      const results = await Promise.allSettled(noShows.slice(offset, offset + batchSize).map(async ({ id }) => {
-        const candidate = (await sql`SELECT * FROM candidates WHERE id=${id} AND status='interview_booked' AND consent=true AND no_show_followup_sent=false LIMIT 1`).rows[0];
-        if (!candidate) return 'skipped';
-        try {
-          if (await isCandidateGroupMember(candidate.chat_id, groupChatId)) return 'in_group';
-        } catch (error) {
-          throw Object.assign(error, { candidateId: candidate.id, membershipCheckFailed: true });
-        }
-        const claimed = (await sql`UPDATE candidates SET no_show_followup_sent=true,updated_at=NOW() WHERE id=${id} AND status='interview_booked' AND consent=true AND no_show_followup_sent=false RETURNING *`).rows[0];
-        if (!claimed) return 'skipped';
-        try {
-          const messageId = await telegram(claimed.chat_id, noShowText, { reply_markup: rescheduleKeyboard });
-          await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${claimed.id},'out','no_show_followup',${noShowText},'delivered',${String(messageId || '')})`;
-          return 'sent';
-        } catch (error) {
-          await sql`UPDATE candidates SET no_show_followup_sent=false,updated_at=NOW() WHERE id=${claimed.id}`;
-          throw Object.assign(error, { candidateId: claimed.id });
-        }
-      }));
-      for (const result of results) {
-        if (result.status === 'fulfilled' && result.value === 'sent') followupSent++;
-        if (result.status === 'fulfilled' && result.value === 'in_group') followupSkippedInGroup++;
-        if (result.status === 'rejected') {
-          if (result.reason?.membershipCheckFailed) followupMembershipCheckFailed++;
-          else followupFailed++;
-          console.error('[reminders] no-show follow-up failed', { candidateId: result.reason?.candidateId, message: String(result.reason) });
-        }
-      }
-      if (offset + batchSize < noShows.length) await new Promise(resolve => setTimeout(resolve, 500));
-    }
-    return json(res,200,{ok:true,due:due.length,sent,failed,briefDue:sessions.length,briefSent,briefSkipped,briefFailed,followupDue:noShows.length,followupSent,followupSkippedInGroup,followupFailed,followupMembershipCheckFailed});
+    const followup=await runPrimaryFollowup({at:scopeAt,slot:scopeSlot});
+    return json(res,200,{ok:true,due:due.length,sent,failed,briefDue:sessions.length,briefSent,briefSkipped,briefFailed,followupDue:followup.due,followupSent:followup.sent,followupFailed:followup.failed});
   } catch (error) {
     console.error('[reminders] run failed', { message: String(error) });
     return json(res, 500, { error: 'Reminder failed' });

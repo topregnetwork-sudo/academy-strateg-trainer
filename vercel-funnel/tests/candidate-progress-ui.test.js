@@ -27,5 +27,14 @@ test('progress distinguishes completed test, delivered invitation, draft and mis
  fixture.progress.primaryEntry=[{clicked_at:'2026-08-29T18:00:00Z'}];show();assert.match(w.document.querySelector('.candidate-compact-summary').textContent,/1 ч./);
  fixture.progress.primaryEntry=[{clicked_at:'2026-08-30T18:00:00Z'}];show();assert.match(w.document.querySelector('.candidate-compact-summary').textContent,/срок не вычисляется/);
  assert.ok(w.document.querySelector('#replyText'));assert.ok(w.document.querySelector('#broadcastText'));
+ fixture.candidate.id=45;fixture.candidate.status='finalist';show();
+ assert.equal(w.document.querySelector('.candidate-head>div').firstElementChild.className,'manual-stage');
+ const calls=[];w.fetch=async(url,opts)=>{calls.push(JSON.parse(opts.body));return {ok:true,json:async()=>({ok:true})};};
+ let selector=w.document.querySelector('#status');selector.value='productivity_passed';await selector.onchange();
+ assert.deepEqual(calls,[{candidateId:45,status:'productivity_passed'}]);
+ assert.match(w.document.querySelector('[role=status]').textContent,/Сохранено/);
+ assert.match(w.document.querySelector('.candidate-progress').textContent,/Теперь расшифруйте/);
+ w.fetch=async()=>({ok:false,json:async()=>({error:'Ошибка проверки'})});selector.value='productivity_failed';await selector.onchange();
+ assert.equal(selector.value,'productivity_passed');assert.match(w.document.querySelector('[role=status]').textContent,/Не сохранено/);
  dom.window.close();
 });

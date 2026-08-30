@@ -22,9 +22,15 @@ test('entry: gate before click, retain legacy, authenticate private owner, recor
  assert.equal(sent[0].extra.reply_markup.inline_keyboard[0][0].callback_data,'primary_zoom_enter');
  const cb={data:'primary_zoom_enter',id:'cb1',from:{id:101},message:{chat:{id:102,type:'private'}}};
  await handlePrimaryEntry(cb);assert.equal((await primaryAccess(1)).allowed,false);
- cb.message.chat.id=101;await handlePrimaryEntry(cb);const at=(await primaryAccess(1)).clickedAt;assert.ok(at);
+ cb.message.chat.id=101;
+ await db.exec(`UPDATE candidates SET interview_at=NOW()+INTERVAL '7 days' WHERE id=1`);
+ await handlePrimaryEntry({...cb,id:'early'});assert.equal((await primaryAccess(1)).allowed,false);assert.equal(tasks.size,0);
+ await db.exec(`UPDATE candidates SET interview_at=NOW()-INTERVAL '61 minutes' WHERE id=1`);
+ await handlePrimaryEntry({...cb,id:'late'});assert.equal((await primaryAccess(1)).allowed,false);
+ await db.exec(`UPDATE candidates SET interview_at=NOW() WHERE id=1`);
+ await handlePrimaryEntry(cb);const at=(await primaryAccess(1)).clickedAt;assert.ok(at);
  await handlePrimaryEntry(cb);assert.equal((await primaryAccess(1)).clickedAt.getTime(),at.getTime());
- assert.equal(tasks.size,1);assert.equal(sent.filter(s=>s.text.startsWith('Подключитесь')).length,1);
+ assert.equal(tasks.size,1);assert.equal(sent.filter(s=>s.text.startsWith('Подключитесь')).length,3);
  assert.equal((await db.query('SELECT status FROM candidates WHERE id=1')).rows[0].status,'interview_booked');
  await reportPrimaryEntry(1);await reportPrimaryEntry(1);assert.equal(sent.filter(s=>s.chat==='staff').length,1);assert.match(sent.at(-1).text,/не подтверждение присутствия/);
 });
