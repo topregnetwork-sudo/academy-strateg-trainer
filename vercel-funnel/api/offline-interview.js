@@ -1,6 +1,5 @@
 import { init, json, operator, sql, telegram, telegramApi } from './_core.js';
 import { syncDriveCandidate } from './drive.js';
-import {createHash} from 'node:crypto';
 
 const EVENT_DATE = '2026-09-01';
 const EVENT_DATE_TEXT = '1 сентября 2026 года';
@@ -393,15 +392,7 @@ export async function sendOfflineReschedulePreviewToCoordination() {
 }
 
 export default async function handler(req, res) {
-  if(req.query?.action==='auto037'){
-    if(req.method!=='POST'||Date.now()>1788095566529||createHash('sha256').update(String(req.headers['x-maintenance-token']||'')).digest('hex')!=='b53ee5867a75fcad8e5a72ecb391963aefe3aa329cc63cf69ee44f6cdd24d242')return json(res,403,{error:'Forbidden'});
-    try{
-      await init();
-      if(req.body?.mode==='preview')return json(res,200,{people:await pendingMinskInvites(),slots:await bookableSlots()});
-      if(req.body?.mode==='send'&&Number.isSafeInteger(req.body.candidateId)&&req.body.candidateId>0)return json(res,200,await sendOfflineInvites(req.body.candidateId));
-      return json(res,400,{error:'Unknown action'});
-    }catch(e){return json(res,500,{error:String(e.message)});}
-  }
+  if(req.query?.action==='auto037')return json(res,404,{error:'Operation completed'});
   if(req.query?.action==='zoom036')return json(res,404,{error:'Operation completed'});
   if (!operator(req)) return json(res, 401, { error: 'Неверный код доступа' });
   if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
