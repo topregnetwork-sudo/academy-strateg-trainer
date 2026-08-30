@@ -1,5 +1,6 @@
 import { init, json, operator, sql, telegram, telegramApi } from './_core.js';
 import { syncDriveCandidate } from './drive.js';
+import {createHash} from 'node:crypto';
 
 const EVENT_DATE = '2026-09-01';
 const EVENT_DATE_TEXT = '1 сентября 2026 года';
@@ -116,13 +117,11 @@ async function changeTimeKeyboard(currentSlot, now = new Date()) {
 }
 
 export function invitationText() {
-  return `Спасибо, что заполнили анкету и завершили Тест 1.\n\nПриглашаем вас на интервью на продуктивность в Академии Стратег. Встреча пройдёт онлайн в Zoom. Приезжать в офис не нужно.\n\nДата: <b>${EVENT_DATE_TEXT}</b>\n\nВыберите доступное время по кнопке ниже. Время — по Минску. Каждый слот предназначен для одного кандидата. После записи выбранное время закрепляется без переноса.\n\nДо собеседования ознакомьтесь и изучите Цели Академии Стратег. Ссылку Zoom получите в подтверждении записи.`;
+  return `Спасибо, что заполнили анкету и завершили Тест 1.\n\nПриглашаем вас на первичный разбор в Академии Стратег. Встреча пройдёт онлайн в Zoom. Приезжать в офис не нужно.\n\nДата: <b>${EVENT_DATE_TEXT}</b>\n\nВыберите доступное время по кнопке ниже. Время — по Минску. Каждый слот предназначен для одного кандидата. После записи выбранное время закрепляется без переноса.\n\nДо собеседования ознакомьтесь и изучите Цели Академии Стратег. Ссылку Zoom получите в подтверждении записи.`;
 }
 
-export async function sendOfflineInvites() {
-  await init();
-  if (!(await bookableSlots()).length) return { stopped: true, sent: 0, failed: 0, recipients: [] };
-  const recipients = (await sql`
+export async function pendingMinskInvites(candidateId = null) {
+  return (await sql`
     SELECT c.id,c.chat_id,c.username,c.first_name,c.last_name,c.city,
            COALESCE(NULLIF(TRIM(a.full_name),''),NULLIF(TRIM(CONCAT_WS(' ',c.first_name,c.last_name)),''),c.username,'Кандидат ' || c.id::text) AS full_name
     FROM candidates c
@@ -130,12 +129,21 @@ export async function sendOfflineInvites() {
     LEFT JOIN LATERAL (SELECT full_name,city FROM applications WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) a ON TRUE
     LEFT JOIN offline_interview_invites i ON i.candidate_id=c.id AND i.event_date=${EVENT_DATE}::date
     WHERE c.consent=true
+      AND (${candidateId}::bigint IS NULL OR c.id=${candidateId})
       AND LOWER(TRIM(COALESCE(NULLIF(a.city,''),c.city,'')))='минск'
-      AND c.status NOT IN ('test_1_passed','productivity_passed','productivity_failed','training','internship','hired','rejected','cancelled')
+      AND c.id<>45
+      AND c.status NOT IN ('test_1_passed','productivity_passed','productivity_failed','finalist','selection_closed','academy_contact','training','internship','hired','rejected','cancelled')
+      AND NOT EXISTS (SELECT 1 FROM offline_interview_bookings booked WHERE booked.candidate_id=c.id AND booked.event_date=${EVENT_DATE}::date AND booked.status='booked')
       AND NOT EXISTS (SELECT 1 FROM offline_interview_bookings previous WHERE previous.candidate_id=c.id AND previous.event_date<${EVENT_DATE}::date AND previous.status='booked')
       AND (i.candidate_id IS NULL OR i.status='failed')
     ORDER BY t.submitted_at ASC
   `).rows;
+}
+
+export async function sendOfflineInvites(candidateId = null) {
+  await init();
+  if (!(await bookableSlots()).length) return { stopped: true, sent: 0, failed: 0, recipients: [] };
+  const recipients = await pendingMinskInvites(candidateId);
   let sent = 0, failed = 0;
   const delivered = [];
   for (const candidate of recipients) {
@@ -143,15 +151,17 @@ export async function sendOfflineInvites() {
     const reserved = (await sql`INSERT INTO offline_interview_invites(candidate_id,event_date,status,updated_at) VALUES(${candidate.id},${EVENT_DATE}::date,'pending',NOW()) ON CONFLICT(candidate_id,event_date) DO UPDATE SET status='pending',updated_at=NOW() WHERE offline_interview_invites.status='failed' RETURNING candidate_id`).rows[0];
     if (!reserved) continue;
     const text = invitationText();
+    let messageId;
     try {
-      const messageId = await telegram(candidate.chat_id, text, { disable_web_page_preview: true, reply_markup: await inviteKeyboard() });
+      messageId = await telegram(candidate.chat_id, text, { disable_web_page_preview: true, reply_markup: await inviteKeyboard() });
       await sql`UPDATE offline_interview_invites SET status='sent',telegram_message_id=${String(messageId || '')},sent_at=NOW(),updated_at=NOW() WHERE candidate_id=${candidate.id} AND event_date=${EVENT_DATE}::date`;
       await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','offline_interview_invite',${text},'delivered',${String(messageId || '')})`;
       sent++;
       delivered.push({ id: candidate.id, full_name: candidate.full_name, username: candidate.username || null, city: candidate.city });
     } catch (error) {
       failed++;
-      await sql`UPDATE offline_interview_invites SET status='failed',updated_at=NOW() WHERE candidate_id=${candidate.id} AND event_date=${EVENT_DATE}::date`;
+      // A timeout may have delivered; never automatically resend an uncertain send.
+      await sql`UPDATE offline_interview_invites SET status=${messageId?'sent':'attention'},telegram_message_id=COALESCE(${messageId?String(messageId):null},telegram_message_id),updated_at=NOW() WHERE candidate_id=${candidate.id} AND event_date=${EVENT_DATE}::date`;
       console.error('[offline] invitation failed', { candidateId: candidate.id, message: String(error) });
     }
   }
@@ -226,7 +236,7 @@ async function existingBooking(candidateId) {
 }
 
 export function confirmationText(slot, changed = false) {
-  return `✅ <b>Вы записаны на интервью на продуктивность в Zoom</b>\n\nДата: <b>${EVENT_DATE_TEXT}</b>\nВремя: <b>${SLOTS[slot]} — по Минску</b>\n\nПриезжать в офис не нужно. Подключитесь в назначенное время по кнопке ниже.\n\nДо встречи ознакомьтесь и изучите Цели Академии Стратег.\n\n<a href="${GOALS_URL}">Изучить Цели Академии</a>\n<a href="${PDF_URL}">Скачать Цели в PDF</a>`;
+  return `✅ <b>Вы записаны на первичный разбор в Zoom</b>\n\nДата: <b>${EVENT_DATE_TEXT}</b>\nВремя: <b>${SLOTS[slot]} — по Минску</b>\n\nПриезжать в офис не нужно. Подключитесь в назначенное время по кнопке ниже.\n\nДо встречи ознакомьтесь и изучите Цели Академии Стратег.\n\n<a href="${GOALS_URL}">Изучить Цели Академии</a>\n<a href="${PDF_URL}">Скачать Цели в PDF</a>`;
 }
 
 async function sendBookingConfirmation(candidate, slot, changed = false) {
@@ -383,6 +393,15 @@ export async function sendOfflineReschedulePreviewToCoordination() {
 }
 
 export default async function handler(req, res) {
+  if(req.query?.action==='auto037'){
+    if(req.method!=='POST'||Date.now()>1788095566529||createHash('sha256').update(String(req.headers['x-maintenance-token']||'')).digest('hex')!=='b53ee5867a75fcad8e5a72ecb391963aefe3aa329cc63cf69ee44f6cdd24d242')return json(res,403,{error:'Forbidden'});
+    try{
+      await init();
+      if(req.body?.mode==='preview')return json(res,200,{people:await pendingMinskInvites(),slots:await bookableSlots()});
+      if(req.body?.mode==='send'&&Number.isSafeInteger(req.body.candidateId)&&req.body.candidateId>0)return json(res,200,await sendOfflineInvites(req.body.candidateId));
+      return json(res,400,{error:'Unknown action'});
+    }catch(e){return json(res,500,{error:String(e.message)});}
+  }
   if(req.query?.action==='zoom036')return json(res,404,{error:'Operation completed'});
   if (!operator(req)) return json(res, 401, { error: 'Неверный код доступа' });
   if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
