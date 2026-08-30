@@ -17,5 +17,7 @@ test('progress distinguishes completed test, delivered invitation, draft and mis
  fixture.progress.errors=['bookings'];assert.match(show(),/Данные неполные/);
  assert.equal(w.document.querySelector('#status').value,'test_1_completed');
  assert.match(w.document.querySelector('.message-purpose').textContent,/не приглашение/);
+ fixture.candidate.status='productivity_passed';assert.match(show(),/Теперь расшифруйте Тест 1/);
+ assert.equal(w.document.querySelector('#status').value,'productivity_passed');
  dom.window.close();
 });

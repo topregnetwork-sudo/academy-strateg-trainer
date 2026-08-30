@@ -1,7 +1,7 @@
 export const ACTIONS = {
   primary_invite: { label: 'Пригласить на первичное Zoom-собеседование', status: null },
-  invite: { label: 'Пригласить на встречу', status: 'productivity_invited' },
-  test_passed: { label: 'Тест 1 пройден → пригласить', status: 'test_1_passed' },
+  invite: { label: 'После Теста 1 → интервью на продуктивность', status: 'productivity_invited' },
+  test_passed: { label: 'Пригласить на продуктивность (прежнее действие)', status: 'productivity_invited' },
   finalist: { label: 'Прошёл в финал', status: 'finalist' },
   not_passed: { label: 'Не прошёл → предложить оставаться на связи', status: 'selection_closed' },
   contact: { label: 'Контакт Академии', status: 'academy_contact', remove: true },
