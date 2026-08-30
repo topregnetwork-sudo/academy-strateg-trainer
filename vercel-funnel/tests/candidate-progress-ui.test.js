@@ -21,5 +21,11 @@ test('progress distinguishes completed test, delivered invitation, draft and mis
  assert.equal(w.document.querySelector('#status').value,'productivity_passed');
  fixture.candidate.status='productivity_failed';assert.match(show(),/Дальнейшее тестирование не продолжаем/);
  assert.equal(w.document.querySelector('#status').value,'productivity_failed');
+ fixture.candidate.test_answer='Послание к Гарсии: не отмечено';assert.match(show(),/Галочка не отмечена/);
+ fixture.candidate.garcia_confirmed=true;assert.match(show(),/☑ Да/);
+ assert.match(w.document.querySelector('.candidate-compact-summary').textContent,/не зафиксировано/);
+ fixture.progress.primaryEntry=[{clicked_at:'2026-08-29T18:00:00Z'}];show();assert.match(w.document.querySelector('.candidate-compact-summary').textContent,/1 ч./);
+ fixture.progress.primaryEntry=[{clicked_at:'2026-08-30T18:00:00Z'}];show();assert.match(w.document.querySelector('.candidate-compact-summary').textContent,/срок не вычисляется/);
+ assert.ok(w.document.querySelector('#replyText'));assert.ok(w.document.querySelector('#broadcastText'));
  dom.window.close();
 });

@@ -3,6 +3,7 @@ import { handleOfflineInterviewChoice } from './offline-interview.js';
 import { cleanupRemovalService } from './_removal-service.js';
 import { handleFunnelCallback } from '../lib/funnel-engine.js';
 import { schedulePrimary } from '../lib/funnel-primary.js';
+import {entryKeyboard,handlePrimaryEntry,requirePrimaryAccess} from '../lib/primary-evidence.js';
 
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
 const CANDIDATE_GROUP_COMMAND = /^\/candidate_group(?:@stazherskaya_bot)?(?:\s|$)/i;
@@ -156,6 +157,7 @@ async function handleCandidateGroupKeyword(message) {
     return true;
   }
 
+  if(!await requirePrimaryAccess(candidate))return true;
   const inviteUrl = await getCandidateGroupInviteUrl();
   if (!inviteUrl) {
     await telegram(chatId, 'Группа кандидатов сейчас настраивается. Напишите координатору, и мы пришлём ссылку.');
@@ -200,6 +202,7 @@ async function handleCandidateTestKeyword(message) {
     await telegram(chatId, 'Не удалось найти вашу анкету. Откройте бота по кнопке с сайта вакансии и повторите попытку.');
     return true;
   }
+  if(!await requirePrimaryAccess(candidate))return true;
   const questionnaireTwo=(await sql`SELECT * FROM candidate_questionnaire_two WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0];
   if(!questionnaireTwo?.submitted_at){
     let questionnaire=questionnaireTwo;
@@ -379,7 +382,7 @@ async function handleSlotChoice(callback) {
   const reply = `✅ <b>Вы записаны на собеседование</b>\n\nДата: <b>${date}</b>\nВремя: <b>${slots[slotId]}</b>\n\n${zoom ? 'Ссылка Zoom — по кнопке ниже.' : 'Координатор пришлёт ссылку Zoom в этот чат.'}\n\nЗа 30 минут до встречи придёт напоминание.`;
   let messageId;
   try {
-    messageId = await telegram(chatId, reply, zoom ? { reply_markup: { inline_keyboard: [[{ text: 'Открыть Zoom', url: zoom }]] } } : {});
+    messageId = await telegram(chatId, reply, zoom ? { reply_markup: entryKeyboard() } : {});
   } catch (error) {
     await sql`UPDATE candidates SET slot_id=NULL,interview_at=NULL,status='new',reminded_30m=false,updated_at=NOW() WHERE id=${candidate.id}`;
     await sql`UPDATE applications SET slot_id=NULL WHERE id=${app.id}`;
@@ -413,7 +416,7 @@ async function handleRescheduleChoice(callback) {
   const reply = `✅ <b>Новое время собеседования сохранено</b>\n\nДата: <b>${date}</b>\nВремя: <b>${slots[slotId]}</b>\n\n${zoom ? 'Ссылка Zoom — по кнопке ниже.' : 'Координатор пришлёт ссылку Zoom в этот чат.'}\n\nЗа 30 минут до встречи придёт напоминание.`;
   let messageId;
   try {
-    messageId = await telegram(chatId, reply, zoom ? { reply_markup: { inline_keyboard: [[{ text: 'Открыть Zoom', url: zoom }]] } } : {});
+    messageId = await telegram(chatId, reply, zoom ? { reply_markup: entryKeyboard() } : {});
   } catch (error) {
     await sql`UPDATE candidates SET slot_id=${candidate.slot_id},interview_at=${candidate.interview_at},status='interview_booked',reminded_30m=true,no_show_followup_sent=true,updated_at=NOW() WHERE id=${candidate.id}`;
     await sql`UPDATE applications SET slot_id=${candidate.slot_id} WHERE candidate_id=${candidate.id}`;
@@ -519,7 +522,7 @@ export default async function handler(req, res) {
     const callback = update.callback_query;
     if (callback) {
       await init();
-      if (!await handleFunnelCallback(callback) && !await handleOfflineInterviewChoice(callback) && !await handleNadezhdaFinalistChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
+      if (!await handlePrimaryEntry(callback) && !await handleFunnelCallback(callback) && !await handleOfflineInterviewChoice(callback) && !await handleNadezhdaFinalistChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
       return json(res, 200, { ok: true });
     }
     const message = update.message;

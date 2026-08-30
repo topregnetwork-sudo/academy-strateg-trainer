@@ -1,5 +1,6 @@
 import { init, json, telegram, telegramApi, sql, slots } from './_core.js';
 import crypto from 'node:crypto';
+import {entryKeyboard} from '../lib/primary-evidence.js';
 const trustedScope = Symbol('exact-session');
 export async function runExactSession(scope) {
   let status=200,result;
@@ -48,7 +49,7 @@ function panelLink(req, session) {
 async function participantsFor(session) {
   return (await sql`
     SELECT c.id,c.first_name,c.last_name,c.username,c.city,c.slot_id,c.interview_at,a.full_name,a.age,a.motivation,a.trainer_experience_level
-    FROM candidates c LEFT JOIN applications a ON a.candidate_id=c.id
+    FROM candidates c LEFT JOIN LATERAL(SELECT * FROM applications WHERE candidate_id=c.id ORDER BY created_at DESC,id DESC LIMIT 1) a ON TRUE
     WHERE c.status='interview_booked' AND c.consent=true AND c.interview_at=${session.interview_at} AND c.slot_id=${session.slot_id}
     ORDER BY COALESCE(NULLIF(a.full_name,''),NULLIF(c.first_name,''),NULLIF(c.username,'')),c.id
   `).rows;
@@ -128,8 +129,9 @@ export default async function handler(req, res) {
         const claimed = (await sql`UPDATE candidates SET reminded_30m=true,updated_at=NOW() WHERE id=${id} AND status='interview_booked' AND consent=true AND reminded_30m=false RETURNING *`).rows[0];
         if (!claimed) return false;
         try {
-          const messageId = await telegram(claimed.chat_id, reminderText);
-          await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${claimed.id},'out','text',${reminderText},'delivered',${String(messageId || '')})`;
+          const text=reminderText+`\nДата: ${moscowReadableDate(claimed.interview_at)}\nВремя: ${slots[claimed.slot_id]}\nВ назначенное время нажмите «Открыть Zoom».`;
+          const messageId = await telegram(claimed.chat_id, text,{reply_markup:entryKeyboard()});
+          await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${claimed.id},'out','primary_reminder_30m',${text},'delivered',${String(messageId || '')})`;
           return true;
         } catch (error) {
           await sql`UPDATE candidates SET reminded_30m=false,updated_at=NOW() WHERE id=${claimed.id}`;
@@ -147,7 +149,7 @@ export default async function handler(req, res) {
     }
     const noShows = (await sql`SELECT id FROM candidates WHERE status='interview_booked' AND consent=true AND no_show_followup_sent=false AND (${scopeAt}::timestamptz IS NULL OR interview_at=${scopeAt}::timestamptz) AND (${scopeSlot}::text IS NULL OR slot_id=${scopeSlot}) AND interview_at <= NOW() - INTERVAL '90 minutes' AND interview_at >= NOW() - INTERVAL '7 days' ORDER BY id`).rows;
     let followupSent = 0, followupFailed = 0, followupSkippedInGroup = 0, followupMembershipCheckFailed = 0;
-    const groupChatId = await candidateGroupChatId();
+    const groupChatId = noShows.length ? await candidateGroupChatId() : '';
     for (let offset = 0; offset < noShows.length; offset += batchSize) {
       const results = await Promise.allSettled(noShows.slice(offset, offset + batchSize).map(async ({ id }) => {
         const candidate = (await sql`SELECT * FROM candidates WHERE id=${id} AND status='interview_booked' AND consent=true AND no_show_followup_sent=false LIMIT 1`).rows[0];

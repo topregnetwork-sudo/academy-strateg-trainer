@@ -342,6 +342,8 @@ export async function handleOfflineInterviewChoice(callback) {
   }
   const existing = await existingBooking(candidate.id);
   if (existing) {
+    const {scheduleMinskReminder}=await import('../lib/review-reminders.js');
+    await scheduleMinskReminder(existing.slot_time);
     await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: `Вы уже записаны на ${SLOTS[existing.slot_time]}.`, show_alert: true });
     return true;
   }
@@ -351,6 +353,8 @@ export async function handleOfflineInterviewChoice(callback) {
     return true;
   }
   await sql`UPDATE offline_interview_invites SET status='booked',updated_at=NOW() WHERE candidate_id=${candidate.id} AND event_date=${EVENT_DATE}::date`;
+  const {scheduleMinskReminder}=await import('../lib/review-reminders.js');
+  try{await scheduleMinskReminder(slot);}catch(e){console.error('[review-timer]',candidate.id,e.message);}
   try { await syncDriveCandidate(candidate.id); }
   catch (error) { console.error('[offline] Drive sync failed after booking', { candidateId: candidate.id, message: String(error) }); }
   const summary = await slotSummary();
@@ -392,6 +396,7 @@ export async function sendOfflineReschedulePreviewToCoordination() {
 }
 
 export default async function handler(req, res) {
+  if(req.query?.action==='evidence038'){const {evidenceMaintenance}=await import('../lib/evidence-maintenance.js');return evidenceMaintenance(req,res);}
   if(req.query?.action==='auto037')return json(res,404,{error:'Operation completed'});
   if(req.query?.action==='zoom036')return json(res,404,{error:'Operation completed'});
   if (!operator(req)) return json(res, 401, { error: 'Неверный код доступа' });

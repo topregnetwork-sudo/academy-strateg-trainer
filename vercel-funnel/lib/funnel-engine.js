@@ -103,7 +103,7 @@ export async function bookingFollowup(bookingId, version) {
   const at = new Date(booking.starts_at), label = at.toLocaleString('ru-RU',{timeZone:'Europe/Moscow'});
   await coordinate(`booking-brief:${bookingId}:${version}`,`✅ <b>${Number(version)>1?'Изменение времени':'Новая запись'} — ${esc(session.config.name)}</b>\n${esc(c.full_name || c.first_name)} · ${esc(c.city)}\nTelegram: @${esc(c.username || 'не указан')}\nТелефон: ${esc(c.phone)}\n${esc(label)} МСК\n${c.folder_url?`<a href="${esc(c.folder_url)}">Папка кандидата</a>`:'Папка пока недоступна'}\n<a href="${SITE}/operator.html?funnel_session=${session.id}">Участники встречи в панели</a>`);
   await sendSessionSummary(session.id,`booking-summary:${bookingId}:${version}`);
-  const due = +at-session.config.reminder*60000;
+  const due = +at-30*60000; // All cities: fixed 30-minute reminder per user rule.
   if (due>Date.now()) {
     const id=stableId(`reminder:${bookingId}:${version}`);
     await createTask('booking_reminder',{bookingId,version},new Date(due),id);
@@ -127,6 +127,8 @@ export async function sendSessionSummary(sessionId,key,slotId=null) {
   for(let i=0;i<chunks.length;i++)await coordinate(`${key}:${i}`,chunks[i],{inline_keyboard:[[{text:'Участники в панели',url:`${SITE}/operator.html?funnel_session=${sessionId}`}]]});
 }
 export async function runFunnelTask(task) {
+  if(task.kind==='primary_entry_report'){const {reportPrimaryEntry}=await import('./primary-evidence.js');await reportPrimaryEntry(task.payload.candidateId);return {done:true};}
+  if(task.kind==='minsk_review_30m'){const {runMinskReminder}=await import('./review-reminders.js');await runMinskReminder(task.payload);return {done:true};}
   if(task.kind==='primary_session') { const {runExactSession}=await import('../api/reminders.js');await runExactSession(task.payload);return {done:true}; }
   if(task.kind==='campaign') return processCampaign(task.payload.jobId);
   if(task.kind==='booking_followup')return bookingFollowup(task.payload.bookingId,task.payload.version);
@@ -138,7 +140,7 @@ export async function runFunnelTask(task) {
     const b=(await sql`SELECT b.*,s.starts_at FROM funnel_bookings b JOIN funnel_slots s ON s.id=b.slot_id WHERE b.id=${task.payload.bookingId}`).rows[0];
     if(b&&Number(b.version)===Number(task.payload.version)&&new Date(b.starts_at)>new Date()){
       const c=await candidateById(b.candidate_id),s=await sessionById(b.session_id);
-      if(s.active&&c.status==='productivity_booked')await sendLogged(`task:${task.id}`,c,renderText('Напоминаем о встрече Академии Стратег.\nДата: {date}\nВремя: {time} МСК\n{location}',c,s.config,b.starts_at));
+      if(s.active&&c.consent&&!['cancelled','rejected','selection_closed','academy_contact','productivity_failed'].includes(c.status))await sendLogged(`task:${task.id}`,c,renderText('Напоминаем о встрече Академии Стратег.\nДата: {date}\nВремя: {time} МСК\n{location}',c,s.config,b.starts_at));
     }
   }
   if(task.kind==='choice'){
