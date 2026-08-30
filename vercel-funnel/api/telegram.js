@@ -1,5 +1,6 @@
 import { body, init, json, nextInterview, slots, telegram, telegramApi, sql } from './_core.js';
 import { handleOfflineInterviewChoice } from './offline-interview.js';
+import { cleanupRemovalService } from './_removal-service.js';
 
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
 const CANDIDATE_GROUP_COMMAND = /^\/candidate_group(?:@stazherskaya_bot)?(?:\s|$)/i;
@@ -522,6 +523,12 @@ export default async function handler(req, res) {
 
     if (message.chat?.type && message.chat.type !== 'private') {
       await init();
+      if (message.left_chat_member) {
+        const groupId = (await sql`SELECT value FROM app_settings WHERE key='candidate_group_chat_id' LIMIT 1`).rows[0]?.value;
+        const cleaned = await cleanupRemovalService(message, { groupId, api: telegramApi });
+        if (cleaned) console.info('[removal-service] deleted', { chatId: message.chat.id, messageId: message.message_id });
+        return json(res, 200, { ok: true });
+      }
       if (await handleNewCandidateGroupMembers(message)) return json(res, 200, { ok: true });
       if (!TOPIC_COMMAND.test(message.text || '') && !CANDIDATE_GROUP_COMMAND.test(message.text || '')) return json(res, 200, { ok: true });
       try {
@@ -547,6 +554,8 @@ export default async function handler(req, res) {
     return json(res, 200, { ok: true });
   } catch (error) {
     console.error('[telegram] webhook failed', { message: String(error), stack: error?.stack });
+    // Only retry this isolated service event; do not replay unrelated funnel actions.
+    if (update?.message?.left_chat_member) return json(res, 503, { ok: false });
     return json(res, 200, { ok: true });
   }
 }
