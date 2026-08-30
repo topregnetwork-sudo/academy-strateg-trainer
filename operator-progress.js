@@ -21,6 +21,8 @@
   function view(){
     const p=evidence,c=details,rows=[];
     const sent=messages.filter(delivered),incoming=last(messages.filter(m=>m.direction==='in')),outgoing=last(sent);
+    const outcome=last(sent.filter(m=>m.kind==='offline_outcome_invite_20260829'));
+    if(outcome){const answer=last(messages.filter(m=>m.kind==='offline_outcome_choice'));rows.push(['Сообщение о завершении отбора','Отправлено '+date(outcome.created_at)+' · выбор Да / Нет'],['Дальнейшее сотрудничество',answer?plain(answer.text):'Ответ пока не зафиксирован']);}
     const primary=last(sent.filter(m=>['booking_confirmation','reschedule_confirmation'].includes(m.kind)));
     const invites=sent.filter(m=>m.kind==='offline_interview_invite');
     const campaigns=p.campaigns||[],bookings=p.bookings||[],old=p.offlineBookings||[];

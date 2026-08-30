@@ -400,10 +400,11 @@ export default async function handler(req, res) {
     const {createHash}=await import('node:crypto');
     if(req.method!=='POST'||Date.now()>1788123608033||createHash('sha256').update(String(req.headers['x-maintenance-token']||'')).digest('hex')!=='41ae2899fa55b46db2ff3c9ac5fd5359a2764dc5aa0994b91183ab47cdd6112c')return json(res,403,{error:'Forbidden'});
     try{
-      await init();const {initFunnel}=await import('../lib/funnel-store.js');await initFunnel();const {transaction}=await import('./_core.js');const {reconcileReviewStatus}=await import('../lib/review-status.js');
+      await init();const {initFunnel}=await import('../lib/funnel-store.js');await initFunnel();const {transaction}=await import('./_core.js');const {reconcileReviewStatus,reconcileFailedCohort}=await import('../lib/review-status.js');
+      const failed=await reconcileFailedCohort(sql,transaction,req.query.mode==='apply');
       const review=await reconcileReviewStatus(sql,transaction,req.query.mode==='apply');
       const old=(await sql`SELECT c.id,c.status,m.kind,count(*)::int AS count,LEFT(MAX(m.text),240) AS sample FROM candidates c JOIN messages m ON m.candidate_id=c.id WHERE LOWER(TRIM(c.city))='минск' AND c.id<>45 AND EXISTS(SELECT 1 FROM offline_interview_bookings b WHERE b.candidate_id=c.id AND b.event_date BETWEEN '2026-08-28'::date AND '2026-08-29'::date) AND m.direction='out' AND m.delivery_status='delivered' AND (m.kind LIKE '%outcome%' OR m.kind LIKE '%selection%' OR m.kind LIKE '%contact%') GROUP BY c.id,c.status,m.kind ORDER BY c.id`).rows;
-      return json(res,200,{ok:true,review,old});
+      return json(res,200,{ok:true,failed,review,old});
     }catch(e){console.error('[review040]',e);return json(res,500,{error:String(e.message)});}
   }
   if(req.query?.action==='followup039')return json(res,404,{error:'Operation completed'});

@@ -41,3 +41,20 @@ export async function reconcileReviewStatus(sql,transaction,apply=false){
   });
   return {changed,remaining:(await read(sql)).rows.filter(r=>r.old_status!==r.target)};
 }
+
+// Explicit user decision for the historical cohort; never inferred from mere attendance.
+export async function reconcileFailedCohort(sql,transaction,apply=false){
+  const read=tx=>tx`SELECT c.id,c.status AS old_status,'productivity_failed'::text AS target FROM candidates c WHERE c.id<>45 AND LOWER(TRIM(c.city))='минск'
+    AND c.status IN ('test_1_completed','productivity_invited','productivity_booked','selection_closed','academy_contact','rejected','cancelled')
+    AND EXISTS(SELECT 1 FROM offline_interview_bookings b WHERE b.candidate_id=c.id AND b.event_date BETWEEN '2026-08-28'::date AND '2026-08-29'::date)
+    AND EXISTS(SELECT 1 FROM messages m WHERE m.candidate_id=c.id AND m.kind='offline_outcome_invite_20260829' AND m.direction='out' AND m.delivery_status='delivered') ORDER BY c.id`;
+  if(!apply)return {mismatches:(await read(sql)).rows};
+  await sql`CREATE TABLE IF NOT EXISTS review_status_repair040(candidate_id bigint PRIMARY KEY,old_status text,new_status text,changed_at timestamptz)`;
+  await sql`ALTER TABLE review_status_repair040 ENABLE ROW LEVEL SECURITY`;
+  const changed=await transaction(async tx=>{
+    const changes=[];for(const r of (await read(tx)).rows){
+      const updated=(await tx`UPDATE candidates SET status='productivity_failed',updated_at=NOW() WHERE id=${r.id} AND status=${r.old_status} RETURNING updated_at`).rows[0];if(!updated)continue;
+      await tx`INSERT INTO review_status_repair040(candidate_id,old_status,new_status,changed_at) VALUES(${r.id},${r.old_status},'productivity_failed',${updated.updated_at}) ON CONFLICT DO NOTHING`;changes.push(r);
+    }return changes;
+  });return {changed,remaining:(await read(sql)).rows};
+}
