@@ -179,7 +179,7 @@ async function handleCandidateGroupKeyword(message) {
   try {
     const messageId = await telegram(chatId, text, { reply_markup: { inline_keyboard: [[{ text: 'Перейти в группу кандидатов', url: inviteUrl }],[{ text: 'Заполнить Анкету 2', url: questionnaireUrl }]] } });
     await sql`UPDATE candidate_questionnaire_two SET status=CASE WHEN submitted_at IS NULL THEN 'sent' ELSE status END,sent_at=COALESCE(sent_at,NOW()),updated_at=NOW() WHERE id=${questionnaire.id}`;
-    if (!questionnaire.submitted_at) await sql`UPDATE candidates SET status='questionnaire',updated_at=NOW() WHERE id=${candidate.id}`;
+    if (!questionnaire.submitted_at) await sql`UPDATE candidates SET status='questionnaire',updated_at=NOW() WHERE id=${candidate.id} AND status IN ('interview_booked','interviewed','questionnaire')`;
     try {
       await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','candidate_group_invite',${text},'delivered',${String(messageId || '')})`;
     } catch (historyError) {
@@ -187,7 +187,7 @@ async function handleCandidateGroupKeyword(message) {
     }
   } catch (error) {
     if (previousStatus === 'interview_booked') {
-      await sql`UPDATE candidates SET status='interview_booked',updated_at=NOW() WHERE id=${candidate.id}`;
+      await sql`UPDATE candidates SET status='interview_booked',updated_at=NOW() WHERE id=${candidate.id} AND status='interviewed'`;
     }
     throw error;
   }
@@ -467,7 +467,7 @@ async function handleOfflineOutcomeChoice(callback) {
     : 'Спасибо, что ответили.\n\nВаше участие в текущем отборе завершено, поэтому мы отключим вас от рабочей группы кандидатов.\n\nМы благодарны вам за время, внимание и усилия, которые вы вложили в прохождение отбора и знакомство с Академией Стратег.\n\nЖелаем вам успехов, новых интересных возможностей и подходящей команды.\n\nДо новых встреч!';
   const messageId = await telegram(chatId, reply);
   await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out',${choice === 'yes' ? 'academy_contact_confirmation' : 'selection_closed_confirmation'},${reply},'delivered',${String(messageId || '')})`;
-  await sql`UPDATE candidates SET status=${choice === 'yes' ? 'academy_contact' : 'rejected'},consent=${choice === 'yes'},updated_at=NOW() WHERE id=${candidate.id}`;
+  await sql`UPDATE candidates SET status=CASE WHEN status='productivity_failed' THEN status ELSE ${choice === 'yes' ? 'academy_contact' : 'rejected'} END,consent=${choice === 'yes'},updated_at=NOW() WHERE id=${candidate.id}`;
   let removal;
   try { removal = await removeFromCandidateGroup(candidate); }
   catch (error) { removal = { removed: false, reason: String(error?.message || error) }; console.error('[offline-outcome] group removal failed', { candidateId: candidate.id, message: removal.reason }); }

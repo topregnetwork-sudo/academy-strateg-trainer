@@ -81,7 +81,7 @@ export async function book(sessionId, slotId, candidateId) {
     const session = (await tx`SELECT * FROM funnel_sessions WHERE id=${sessionId} FOR UPDATE`).rows[0];
     if (!session?.active) throw new Error('Запись закрыта');
     const c = (await tx`SELECT * FROM candidates WHERE id=${candidateId} FOR UPDATE`).rows[0];
-    if (!c || ['rejected','cancelled','academy_contact','selection_closed','productivity_failed','finalist','hired','training','internship'].includes(c.status) || c.city !== session.config.city) throw new Error('Запись для вашего этапа недоступна');
+    if (!c || ['rejected','cancelled','academy_contact','selection_closed','productivity_passed','productivity_failed','test_1_passed','finalist','hired','training','internship'].includes(c.status) || c.city !== session.config.city) throw new Error('Запись для вашего этапа недоступна');
     const authorized = (await tx`SELECT 1 FROM funnel_recipients r JOIN funnel_jobs j ON j.id=r.job_id WHERE r.candidate_id=${candidateId} AND r.state='sent' AND (j.config->>'sessionId')::bigint=${sessionId} LIMIT 1`).rows[0];
     if (!authorized) throw new Error('Сначала дождитесь персонального приглашения');
     const slot = (await tx`SELECT * FROM funnel_slots WHERE id=${slotId} AND session_id=${sessionId} AND starts_at>NOW()+${session.config.cutoff}*INTERVAL '1 minute'`).rows[0];
@@ -152,7 +152,7 @@ export async function runFunnelTask(task) {
         const reason=eligibility(c,{action:'close'},null);if(reason)throw new Error(reason);
         const status=choice==='yes'?'academy_contact':'rejected';
         await sendLogged(`choice:${jobId}:${candidateId}`,c,choice==='yes'?'Спасибо за ваш ответ! Позднее расскажем о возможностях взаимодействия. Участие в отборе завершено, поэтому мы отключим вас от рабочей группы кандидатов.':'Спасибо, что ответили. Благодарим за время и участие. Отбор завершён, мы отключим вас от рабочей группы кандидатов. До новых встреч!');
-        await sql`UPDATE candidates SET status=${status},updated_at=NOW() WHERE id=${candidateId}`;
+        await sql`UPDATE candidates SET status=CASE WHEN status='productivity_failed' THEN status ELSE ${status} END,updated_at=NOW() WHERE id=${candidateId}`;
         await remove(c,`choice-remove:${jobId}:${candidateId}`);
       }
       await coordinate(`choice-coord:${jobId}:${candidateId}`,`Ответ кандидата: <b>${esc(c.full_name||c.first_name)}</b> · ${esc(c.city)}\nВыбор: <b>${esc(choice)}</b>`);
