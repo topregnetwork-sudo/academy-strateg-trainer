@@ -1,5 +1,12 @@
 import { init, json, telegram, telegramApi, sql, slots } from './_core.js';
 import crypto from 'node:crypto';
+const trustedScope = Symbol('exact-session');
+export async function runExactSession(scope) {
+  let status=200,result;
+  await handler({headers:{host:'academy-strateg-trainer.vercel.app'},[trustedScope]:scope},{status(s){status=s;return this;},json(v){result=v;return v;}});
+  if(status!==200||result?.failed||result?.briefFailed||result?.followupFailed||result?.followupMembershipCheckFailed)throw new Error('Не все действия напоминания завершены');
+  return result;
+}
 
 const reminderText = '⏰ Напоминаем: ваше собеседование с Академией Стратег начнётся примерно через 30 минут. Пожалуйста, проверьте связь и подготовьтесь к встрече.';
 const noShowText = 'Здравствуйте! Вы были записаны на собеседование с Академией Стратег. Если сегодня не получилось подключиться, выберите новое удобное время ниже.\n\nЕсли вакансия для вас больше не актуальна, напишите в ответ: <b>не актуально</b>.';
@@ -101,17 +108,19 @@ export default async function handler(req, res) {
   const supplied=String(req.headers.authorization||'').replace(/^Bearer\s+/,'');
   const suppliedHash=crypto.createHash('sha256').update(supplied).digest('hex');
   const scheduledHash='1b54055576c6ca87193e5dda67e5fcf17eb2a786b9d27a28813737bb18670154';
-  const authorized=(process.env.CRON_SECRET&&supplied===process.env.CRON_SECRET)||crypto.timingSafeEqual(Buffer.from(suppliedHash),Buffer.from(scheduledHash));
+  const authorized=Boolean(req[trustedScope])||(process.env.CRON_SECRET&&supplied===process.env.CRON_SECRET)||crypto.timingSafeEqual(Buffer.from(suppliedHash),Buffer.from(scheduledHash));
   if (!authorized) return json(res, 401, { error: 'Unauthorized' });
   try {
     await init();
-    const sessions = (await sql`SELECT interview_at,slot_id,COUNT(*)::int AS participant_count FROM candidates WHERE status='interview_booked' AND consent=true AND interview_at BETWEEN NOW() + INTERVAL '20 minutes' AND NOW() + INTERVAL '40 minutes' GROUP BY interview_at,slot_id ORDER BY interview_at`).rows;
+    const scopeAt=req[trustedScope]?.at||null,scopeSlot=req[trustedScope]?.slot||null;
+    if(!scopeAt&&(await sql`SELECT value FROM app_settings WHERE key='funnel_primary_timers_migrated'`).rows[0]?.value==='yes')return json(res,200,{ok:true,mode:'exact_tasks',legacyScanSkipped:true});
+    const sessions = (await sql`SELECT interview_at,slot_id,COUNT(*)::int AS participant_count FROM candidates WHERE status='interview_booked' AND consent=true AND (${scopeAt}::timestamptz IS NULL OR interview_at=${scopeAt}::timestamptz) AND (${scopeSlot}::text IS NULL OR slot_id=${scopeSlot}) AND interview_at BETWEEN NOW() + INTERVAL '20 minutes' AND NOW() + INTERVAL '40 minutes' GROUP BY interview_at,slot_id ORDER BY interview_at`).rows;
     let briefSent = 0, briefSkipped = 0, briefFailed = 0;
     for (const session of sessions) {
       try { const result = await sendBrief(req, session); if (result.skipped) briefSkipped++; else briefSent++; }
       catch (error) { briefFailed++; console.error('[reminders] interview brief failed', { interviewAt: session.interview_at, slotId: session.slot_id, message: String(error) }); }
     }
-    const due = (await sql`SELECT id FROM candidates WHERE status='interview_booked' AND consent=true AND reminded_30m=false AND interview_at BETWEEN NOW() + INTERVAL '20 minutes' AND NOW() + INTERVAL '40 minutes' ORDER BY id`).rows;
+    const due = (await sql`SELECT id FROM candidates WHERE status='interview_booked' AND consent=true AND reminded_30m=false AND (${scopeAt}::timestamptz IS NULL OR interview_at=${scopeAt}::timestamptz) AND (${scopeSlot}::text IS NULL OR slot_id=${scopeSlot}) AND interview_at BETWEEN NOW() + INTERVAL '20 minutes' AND NOW() + INTERVAL '40 minutes' ORDER BY id`).rows;
     let sent = 0, failed = 0;
     const batchSize = 10;
     for (let offset = 0; offset < due.length; offset += batchSize) {
@@ -136,7 +145,7 @@ export default async function handler(req, res) {
       }
       if (offset + batchSize < due.length) await new Promise(resolve => setTimeout(resolve, 500));
     }
-    const noShows = (await sql`SELECT id FROM candidates WHERE status='interview_booked' AND consent=true AND no_show_followup_sent=false AND interview_at <= NOW() - INTERVAL '90 minutes' AND interview_at >= NOW() - INTERVAL '7 days' ORDER BY id`).rows;
+    const noShows = (await sql`SELECT id FROM candidates WHERE status='interview_booked' AND consent=true AND no_show_followup_sent=false AND (${scopeAt}::timestamptz IS NULL OR interview_at=${scopeAt}::timestamptz) AND (${scopeSlot}::text IS NULL OR slot_id=${scopeSlot}) AND interview_at <= NOW() - INTERVAL '90 minutes' AND interview_at >= NOW() - INTERVAL '7 days' ORDER BY id`).rows;
     let followupSent = 0, followupFailed = 0, followupSkippedInGroup = 0, followupMembershipCheckFailed = 0;
     const groupChatId = await candidateGroupChatId();
     for (let offset = 0; offset < noShows.length; offset += batchSize) {

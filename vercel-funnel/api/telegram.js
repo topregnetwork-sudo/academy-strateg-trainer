@@ -1,6 +1,8 @@
 import { body, init, json, nextInterview, slots, telegram, telegramApi, sql } from './_core.js';
 import { handleOfflineInterviewChoice } from './offline-interview.js';
 import { cleanupRemovalService } from './_removal-service.js';
+import { handleFunnelCallback } from '../lib/funnel-engine.js';
+import { schedulePrimary } from '../lib/funnel-primary.js';
 
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
 const CANDIDATE_GROUP_COMMAND = /^\/candidate_group(?:@stazherskaya_bot)?(?:\s|$)/i;
@@ -385,6 +387,7 @@ async function handleSlotChoice(callback) {
   }
   await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${row.id},'out','booking_confirmation',${reply},'delivered',${String(messageId || '')})`;
   await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Время сохранено' });
+  try { await schedulePrimary(row); } catch (e) { console.error('[primary-timer]', row.id, e.message); }
   try {
     await deliverHrBrief(row, await getHrDestination());
   } catch (error) {
@@ -418,6 +421,7 @@ async function handleRescheduleChoice(callback) {
   }
   await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','reschedule_confirmation',${reply},'delivered',${String(messageId || '')})`;
   await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Новое время сохранено' });
+  try { await schedulePrimary(row); } catch (e) { console.error('[primary-timer]', row.id, e.message); }
   try { await deliverHrBrief(row, await getHrDestination()); }
   catch (error) { console.error('[telegram] rescheduled HR brief delivery failed', { candidateId: row.id, message: String(error) }); }
   return true;
@@ -515,7 +519,7 @@ export default async function handler(req, res) {
     const callback = update.callback_query;
     if (callback) {
       await init();
-      if (!await handleOfflineInterviewChoice(callback) && !await handleNadezhdaFinalistChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
+      if (!await handleFunnelCallback(callback) && !await handleOfflineInterviewChoice(callback) && !await handleNadezhdaFinalistChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
       return json(res, 200, { ok: true });
     }
     const message = update.message;

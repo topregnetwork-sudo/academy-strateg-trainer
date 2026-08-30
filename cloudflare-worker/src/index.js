@@ -1,3 +1,5 @@
+import { scheduleRequest } from './funnel-timer.js';
+export { FunnelTimer } from './funnel-timer.js';
 const STATIC_EXTENSIONS = /\.(?:css|js|png|jpe?g|gif|svg|webp|ico|mp4|webm|woff2?|txt|map)$/i;
 
 function targetOrigin(pathname, env) {
@@ -34,6 +36,7 @@ function responseHeaders(response, pathname) {
 export default {
   async fetch(request, env) {
     const incoming = new URL(request.url);
+    if(incoming.pathname === '/_funnel/schedule')return scheduleRequest(request,env);
     if (incoming.pathname === "/_health") {
       return Response.json({ ok: true, route: "academy-strateg-fallback" }, {
         headers: { "Cache-Control": "no-store" },

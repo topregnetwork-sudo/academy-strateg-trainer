@@ -3,6 +3,14 @@ main = "src/index.js"
 compatibility_date = "2026-08-21"
 workers_dev = true
 
+[[durable_objects.bindings]]
+name = "FUNNEL_TIMERS"
+class_name = "FunnelTimer"
+
+[[migrations]]
+tag = "funnel-timers-v1"
+new_sqlite_classes = ["FunnelTimer"]
+
 [assets]
 directory = "./public"
 binding = "ASSETS"
