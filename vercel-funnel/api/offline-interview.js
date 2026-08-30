@@ -1,6 +1,5 @@
 import { init, json, operator, sql, telegram, telegramApi } from './_core.js';
 import { syncDriveCandidate } from './drive.js';
-import {createHash} from 'node:crypto';
 
 const EVENT_DATE = '2026-09-01';
 const EVENT_DATE_TEXT = '1 сентября 2026 года';
@@ -370,6 +369,8 @@ export async function sendOfflinePreview() {
 }
 
 export async function sendOfflineReschedulePreviewToCoordination() {
+  return {disabled:true,reason:'Перенос времени встречи 1 сентября отключён пользователем'};
+  /* Historical preview retained below; never sent after the online switch.
   await init();
   const keyboard = { inline_keyboard: [
     [{ text: 'Изменить время', callback_data: 'offline_preview_change' }],
@@ -378,13 +379,11 @@ export async function sendOfflineReschedulePreviewToCoordination() {
   const text = `🧪 <b>ТЕСТ — изменение времени</b>\n\nПосле записи кандидат видит кнопку «Изменить время».\n\nСтарое место не отменяется, пока новое не занято. Если новое время уже забрали, прежняя запись сохраняется.\n\nПосле успешного переноса в этой теме придёт карточка «Было / Стало» и обновлённая общая сводка.\n\nКнопки ниже тестовые: они не меняют реальные записи.`;
   const messageId = await telegram(COORDINATION_CHAT_ID, text, { message_thread_id: COORDINATION_THREAD_ID, disable_web_page_preview: true, reply_markup: keyboard });
   return { messageId };
+  */
 }
 
 export default async function handler(req, res) {
-  if(req.query?.action==='zoom036'){
-    if(req.method!=='POST'||Date.now()>1788087703136||createHash('sha256').update(String(req.headers['x-maintenance-token']||'')).digest('hex')!=='f5a2e4b1afcabfbb0949baf3c245bf614e229dc9ad0bb1767ab7600822d0c5a1')return json(res,403,{error:'Forbidden'});
-    try{await init();const {migrateMinskZoom}=await import('../lib/minsk-zoom-migration.js');return json(res,200,await migrateMinskZoom(req.body||{}));}catch(e){return json(res,500,{error:String(e.message)});}
-  }
+  if(req.query?.action==='zoom036')return json(res,404,{error:'Operation completed'});
   if (!operator(req)) return json(res, 401, { error: 'Неверный код доступа' });
   if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
   try {

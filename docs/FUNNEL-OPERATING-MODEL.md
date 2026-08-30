@@ -1,5 +1,7 @@
 # Академия Стратег — рабочая модель воронки найма тренеров
 
+MINSK-ZOOM-036: встреча Минск 1 сентября теперь ONLINE, URL https://us06web.zoom.us/j/8954571284?pwd=G7yvsAdaV7ZrPUFnXDIf4tfKR3f9fX.1. Existing legacy slots retained; no rescheduling, previous callbacks disabled. Five booked candidates notified, coordination sample598. Future confirmations use Zoom only. Prior statements describing this event as offline are historical and superseded.
+
 PRODUCTIVITY-RESULT-035: решение по продуктивности принимает оператор вручную: «Продуктивность пройдена — расшифровать Тест 1» / «Продуктивность не пройдена». Ни заполнение теста, ни запись на встречу не означают успех интервью. При ручном отрицательном результате не отправляется сообщение и не производится исключение из группы; эти действия выбираются отдельно. Не прошедшим продуктивность новые приглашения на неё недоступны.
 
 ## Уточнение пользователя PRODUCTIVITY-ORDER-034 — приоритет над прежней схемой
