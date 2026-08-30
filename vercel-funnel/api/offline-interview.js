@@ -396,11 +396,7 @@ export async function sendOfflineReschedulePreviewToCoordination() {
 }
 
 export default async function handler(req, res) {
-  if(req.query?.action==='followup039'){
-    const {createHash}=await import('node:crypto');
-    if(req.method!=='POST'||Date.now()>1788121657137||createHash('sha256').update(String(req.headers['x-maintenance-token']||'')).digest('hex')!=='6fc9fec6942d6f113f552c236b1ef43e97d4c33bb8ea09fa627b6a6addee3108')return json(res,403,{error:'Forbidden'});
-    try{await init();const {initPrimaryEvidence}=await import('../lib/primary-evidence.js');await initPrimaryEvidence();const {migrateNoEntryTimers}=await import('../lib/funnel-primary.js');return json(res,200,{ok:true,...await migrateNoEntryTimers()});}catch(e){console.error('[followup039]',e);return json(res,500,{error:'Migration failed'});}
-  }
+  if(req.query?.action==='followup039')return json(res,404,{error:'Operation completed'});
   if(req.query?.action==='evidence038')return json(res,404,{error:'Operation completed'});
   if(req.query?.action==='auto037')return json(res,404,{error:'Operation completed'});
   if(req.query?.action==='zoom036')return json(res,404,{error:'Operation completed'});
