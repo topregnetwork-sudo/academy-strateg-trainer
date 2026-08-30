@@ -70,7 +70,7 @@ export function eligibility(candidate, config, session) {
     if (!candidate.test_completed) return 'Тест 1 не завершён';
     if (!session || !session.active) return 'Нет активной встречи';
     if (candidate.city !== session.config.city) return 'Другой город';
-    if (['finalist', 'training', 'internship', 'hired', 'rejected', 'cancelled', 'academy_contact', 'selection_closed'].includes(candidate.status)) return 'Этап уже завершён';
+    if (['finalist', 'training', 'internship', 'hired', 'rejected', 'cancelled', 'academy_contact', 'selection_closed', 'productivity_failed'].includes(candidate.status)) return 'Этап уже завершён';
     if (candidate.booked_session) return 'Уже есть запись на эту встречу';
     if (candidate.invited_session) return 'Приглашение на эту встречу уже отправлено';
   }

@@ -131,7 +131,7 @@ export async function sendOfflineInvites() {
     LEFT JOIN offline_interview_invites i ON i.candidate_id=c.id AND i.event_date=${EVENT_DATE}::date
     WHERE c.consent=true
       AND LOWER(TRIM(COALESCE(NULLIF(a.city,''),c.city,'')))='минск'
-      AND c.status NOT IN ('test_1_passed','training','internship','hired','rejected','cancelled')
+      AND c.status NOT IN ('test_1_passed','productivity_passed','productivity_failed','training','internship','hired','rejected','cancelled')
       AND NOT EXISTS (SELECT 1 FROM offline_interview_bookings previous WHERE previous.candidate_id=c.id AND previous.event_date<${EVENT_DATE}::date AND previous.status='booked')
       AND (i.candidate_id IS NULL OR i.status='failed')
     ORDER BY t.submitted_at ASC
@@ -217,7 +217,7 @@ async function candidateForChat(chatId) {
     FROM candidates c
     JOIN candidate_tests t ON t.candidate_id=c.id AND t.submitted_at IS NOT NULL
     LEFT JOIN LATERAL (SELECT full_name,city FROM applications WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) a ON TRUE
-    WHERE c.chat_id=${chatId} AND LOWER(TRIM(COALESCE(NULLIF(a.city,''),c.city,'')))='минск' LIMIT 1
+    WHERE c.chat_id=${chatId} AND c.status<>'productivity_failed' AND LOWER(TRIM(COALESCE(NULLIF(a.city,''),c.city,'')))='минск' LIMIT 1
   `).rows[0];
 }
 

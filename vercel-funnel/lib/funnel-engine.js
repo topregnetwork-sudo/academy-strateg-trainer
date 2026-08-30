@@ -81,7 +81,7 @@ export async function book(sessionId, slotId, candidateId) {
     const session = (await tx`SELECT * FROM funnel_sessions WHERE id=${sessionId} FOR UPDATE`).rows[0];
     if (!session?.active) throw new Error('Запись закрыта');
     const c = (await tx`SELECT * FROM candidates WHERE id=${candidateId} FOR UPDATE`).rows[0];
-    if (!c || ['rejected','cancelled','academy_contact','selection_closed','finalist','hired','training','internship'].includes(c.status) || c.city !== session.config.city) throw new Error('Запись для вашего этапа недоступна');
+    if (!c || ['rejected','cancelled','academy_contact','selection_closed','productivity_failed','finalist','hired','training','internship'].includes(c.status) || c.city !== session.config.city) throw new Error('Запись для вашего этапа недоступна');
     const authorized = (await tx`SELECT 1 FROM funnel_recipients r JOIN funnel_jobs j ON j.id=r.job_id WHERE r.candidate_id=${candidateId} AND r.state='sent' AND (j.config->>'sessionId')::bigint=${sessionId} LIMIT 1`).rows[0];
     if (!authorized) throw new Error('Сначала дождитесь персонального приглашения');
     const slot = (await tx`SELECT * FROM funnel_slots WHERE id=${slotId} AND session_id=${sessionId} AND starts_at>NOW()+${session.config.cutoff}*INTERVAL '1 minute'`).rows[0];

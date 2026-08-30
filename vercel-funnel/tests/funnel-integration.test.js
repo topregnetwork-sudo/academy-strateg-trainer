@@ -33,6 +33,7 @@ test('input validation preserves scope and protects finalist',()=>{
   assert.throws(()=>validateMessage({action:'message',text:'x',buttons:[{text:'x',url:'javascript:alert(1)'}]}));
   assert.throws(()=>validateSession({}));
   assert.ok(eligibility({id:45,chat_id:'145',status:'test_1_completed'},{action:'close'}));
+  assert.equal(eligibility({id:5,chat_id:'105',city:'Минск',test_completed:true,status:'productivity_failed'},{action:'invite'},{active:true,config:{city:'Минск'}}),'Этап уже завершён');
 });
 test('create configurable session and append template versions',async()=>{
   const date=new Date(Date.now()+86400000*10).toISOString().slice(0,10);
