@@ -27,6 +27,7 @@ export default async function handler(req,res){
     if(req.method==='PATCH'){
       const accepted=['new','experienced_not_target','interview_booked','interviewed','questionnaire','test_1_completed','test_1_passed','productivity_invited','productivity_booked','productivity_passed','productivity_failed','finalist','selection_closed','academy_contact','training','internship','hired','rejected','cancelled'];
       if(!accepted.includes(v.status))return json(res,400,{error:'Недопустимый статус'});
+      if(v.status==='cancelled'){const {cancelCandidate}=await import('../lib/candidate-decline.js');return json(res,200,{ok:true,...await cancelCandidate(v.candidateId,'operator')});}
       await sql`UPDATE candidates SET status=${v.status},updated_at=NOW() WHERE id=${Number(v.candidateId)}`;
       return json(res,200,{ok:true});
     }

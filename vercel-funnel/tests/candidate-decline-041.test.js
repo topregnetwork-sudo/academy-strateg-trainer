@@ -1,0 +1,31 @@
+import {test,mock} from 'node:test';import assert from 'node:assert/strict';import {PGlite} from '@electric-sql/pglite';
+const db=new PGlite(),sent=[],tasks=[],effects=new Map(),edits=[];const tag=conn=>(s,...v)=>conn.query(s.reduce((a,b,i)=>a+(i?'$'+i:'')+b,''),v);
+await db.exec(`CREATE TABLE candidates(id bigint PRIMARY KEY,status text,consent boolean,updated_at timestamptz,first_name text,last_name text,city text,interview_at timestamptz,slot_id text);
+CREATE TABLE applications(candidate_id bigint,full_name text,created_at timestamptz);
+CREATE TABLE offline_interview_bookings(candidate_id bigint,event_date date,slot_time text,slot_position int,status text,PRIMARY KEY(candidate_id,event_date),UNIQUE(event_date,slot_time,slot_position));
+CREATE TABLE funnel_bookings(id bigint PRIMARY KEY,candidate_id bigint,session_id bigint,slot_id bigint);
+CREATE TABLE funnel_slots(id bigint,starts_at timestamptz);
+CREATE TABLE funnel_tasks(id text PRIMARY KEY,kind text,payload jsonb,due_at timestamptz);
+CREATE TABLE app_settings(key text,value text);
+INSERT INTO candidates VALUES(1,'cancelled',true,NOW(),'Виктория','Капустинская','Минск',NULL,NULL),(2,'productivity_booked',true,NOW(),'Другой','','Минск',NULL,NULL);
+INSERT INTO applications VALUES(1,'Виктория Капустинская',NOW());
+INSERT INTO offline_interview_bookings VALUES(1,CURRENT_DATE+10,'1100',1,'booked'),(1,CURRENT_DATE-2,'1100',1,'booked'),(2,CURRENT_DATE+10,'1115',1,'booked');
+INSERT INTO funnel_slots VALUES(1,NOW()+INTERVAL '10 days');INSERT INTO funnel_bookings VALUES(1,1,1,1);`);
+await mock.module('../api/_core.js',{namedExports:{sql:tag(db),transaction:fn=>db.transaction(tx=>fn(tag(tx))),telegram:async(chat,text,options)=>{sent.push({chat,text,options});return sent.length;},telegramApi:async()=>{}}});
+await mock.module('../lib/funnel-store.js',{namedExports:{initFunnel:async()=>{},createTask:async(...a)=>tasks.push(a),effect:async(k,fn)=>{if(effects.has(k))return effects.get(k);const r=await fn();effects.set(k,r);return r;}}});
+await mock.module('../api/offline-interview.js',{namedExports:{slotSummary:async()=>({text:'Общая сводка: место свободно'}),refreshInvitationKeyboards:async opts=>edits.push(opts)}});
+await mock.module('../lib/funnel-engine.js',{namedExports:{sendSessionSummary:async()=>{},sessionKeyboard:async()=>({})}});
+// No native invitees in this fixture; mock tables match production reads.
+await db.exec(`CREATE TABLE funnel_jobs(id text,config jsonb);CREATE TABLE funnel_recipients(job_id text,candidate_id bigint,state text,message_id text);ALTER TABLE candidates ADD COLUMN chat_id text;`);
+const {cancelCandidate,notifyCancellation}=await import('../lib/candidate-decline.js');
+test('already-declined candidate: release future legacy/native slots, archive intact, repeat safe, real unique slot reusable; staff only',async()=>{
+ const r=await cancelCandidate(1,'operator',{dispatch:false});assert.equal(r.freed,2);
+ assert.equal((await db.query('SELECT * FROM offline_interview_bookings WHERE candidate_id=1')).rows.length,1);assert.equal((await db.query('SELECT * FROM funnel_bookings')).rows.length,0);
+ const e=(await db.query('SELECT snapshot FROM candidate_decline_events')).rows[0];assert.equal(e.snapshot.legacy.length,1);assert.equal(e.snapshot.native.length,1);
+ assert.equal((await db.query('SELECT consent FROM candidates WHERE id=1')).rows[0].consent,false);
+ assert.equal((await cancelCandidate(1,'operator',{dispatch:false})).eventId,r.eventId);
+ await db.exec(`INSERT INTO offline_interview_bookings VALUES(3,CURRENT_DATE+10,'1100',1,'booked')`);
+ assert.equal((await db.query('SELECT status FROM candidates WHERE id=2')).rows[0].status,'productivity_booked');
+ await notifyCancellation(r.eventId);await notifyCancellation(r.eventId);assert.equal(sent.length,2);assert.ok(sent.every(m=>m.chat==='-1004397133749'&&m.options.message_thread_id===30));assert.equal(edits.length,1);assert.equal(edits[0].onlyUnbooked,true);
+ assert.equal((await db.query('SELECT * FROM candidate_decline_events')).rows.length,1);await db.close();
+});

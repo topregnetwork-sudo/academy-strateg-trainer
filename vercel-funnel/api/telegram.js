@@ -238,7 +238,8 @@ async function handleCandidateTestKeyword(message) {
 async function handleNotRelevant(message) {
   if (!NOT_RELEVANT_KEYWORD.test(message.text || '')) return false;
   const chatId = String(message.chat.id);
-  const candidate = (await sql`UPDATE candidates SET status='cancelled',consent=false,updated_at=NOW() WHERE chat_id=${chatId} RETURNING id`).rows[0];
+  const candidate = (await sql`SELECT id FROM candidates WHERE chat_id=${chatId}`).rows[0];
+  if(candidate){const {cancelCandidate}=await import('../lib/candidate-decline.js');await cancelCandidate(candidate.id,'bot');}
   const text = candidate
     ? 'Спасибо, что сообщили. Мы отметили, что вакансия для вас больше не актуальна, и не будем присылать дальнейшие сообщения по этому набору.'
     : 'Спасибо, что сообщили. Мы не будем присылать дальнейшие сообщения по этому набору.';

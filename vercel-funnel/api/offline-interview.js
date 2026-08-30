@@ -16,7 +16,7 @@ function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, symbol => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[symbol]);
 }
 
-async function slotSummary({ ensureDrive = false } = {}) {
+export async function slotSummary({ ensureDrive = false } = {}) {
   let rows = (await sql`
     SELECT b.candidate_id,b.slot_time,b.slot_position,
            COALESCE(NULLIF(TRIM(a.full_name),''),NULLIF(TRIM(CONCAT_WS(' ',c.first_name,c.last_name)),''),c.username,'Кандидат ' || c.id::text) AS full_name,
@@ -167,13 +167,16 @@ export async function sendOfflineInvites(candidateId = null) {
   return { stopped: false, sent, failed, recipients: delivered };
 }
 
-export async function refreshInvitationKeyboards() {
+export async function refreshInvitationKeyboards({onlyUnbooked=false,strict=false}={}) {
   const replyMarkup = await inviteKeyboard();
-  const rows = (await sql`SELECT c.chat_id,i.telegram_message_id,i.status FROM offline_interview_invites i JOIN candidates c ON c.id=i.candidate_id WHERE i.event_date=${EVENT_DATE}::date AND i.telegram_message_id IS NOT NULL AND i.status IN ('sent','booked')`).rows;
+  const rows = (await sql`SELECT c.chat_id,i.telegram_message_id,i.status FROM offline_interview_invites i JOIN candidates c ON c.id=i.candidate_id WHERE i.event_date=${EVENT_DATE}::date AND i.telegram_message_id IS NOT NULL AND i.status IN ('sent','booked') AND (${onlyUnbooked}::boolean=false OR (i.status='sent' AND c.consent=true AND c.status IN ('test_1_completed','productivity_invited') AND NOT EXISTS(SELECT 1 FROM offline_interview_bookings b WHERE b.candidate_id=c.id AND b.event_date=i.event_date AND b.status='booked')))` ).rows;
+  let failed=0,edited=0;
   for (const row of rows) {
-    try { await telegramApi('editMessageReplyMarkup', { chat_id: row.chat_id, message_id: Number(row.telegram_message_id), reply_markup: row.status === 'booked' ? bookingKeyboard() : replyMarkup }); }
-    catch (error) { console.error('[offline] keyboard refresh failed', { chatId: row.chat_id, messageId: row.telegram_message_id, message: String(error) }); }
+    try { await telegramApi('editMessageReplyMarkup', { chat_id: row.chat_id, message_id: Number(row.telegram_message_id), reply_markup: row.status === 'booked' ? bookingKeyboard() : replyMarkup });edited++; }
+    catch (error) { if(!/message is not modified/i.test(error.message)){failed++;console.error('[offline] keyboard refresh failed', { chatId: row.chat_id, messageId: row.telegram_message_id, message: String(error) });} }
   }
+  if(strict&&failed)throw Error(`Не обновлены кнопки ${failed} приглашений`);
+  return {edited,failed};
 }
 
 export async function enableRescheduleControlsForBookedCandidates() {
@@ -204,8 +207,11 @@ export async function enableRescheduleControlsForBookedCandidates() {
 }
 
 async function allocate(candidateId, slot) {
+  const {transaction}=await import('./_core.js');
+  return transaction(async tx=>{
+  const c=(await tx`SELECT id FROM candidates WHERE id=${candidateId} AND consent=true AND status IN ('test_1_completed','productivity_invited','productivity_booked') FOR UPDATE`).rows[0];if(!c)return null;
   for (let attempt = 0; attempt < 8; attempt++) {
-    const row = (await sql`
+    const row = (await tx`
       INSERT INTO offline_interview_bookings(candidate_id,event_date,slot_time,slot_position,status)
       SELECT ${candidateId},${EVENT_DATE}::date,${slot},position,'booked'
       FROM generate_series(1,${CAPACITY}) position
@@ -217,6 +223,7 @@ async function allocate(candidateId, slot) {
     if (row) return row;
   }
   return null;
+  });
 }
 
 async function candidateForChat(chatId) {
@@ -396,6 +403,23 @@ export async function sendOfflineReschedulePreviewToCoordination() {
 }
 
 export default async function handler(req, res) {
+  if(req.query?.action==='decline041'){
+    const {createHash}=await import('node:crypto');
+    if(req.method!=='POST'||Date.now()>1788127160042||createHash('sha256').update(String(req.headers['x-maintenance-token']||'')).digest('hex')!=='c2b8afbd30fd002c0d6ac02fccefcbbc1d1a894c0c560a6b5ac52c7541e59552')return json(res,403,{error:'Forbidden'});
+    try{
+      await init();const {initDeclines,cancelCandidate,notifyCancellation}=await import('../lib/candidate-decline.js');await initDeclines();
+      const found=(await sql`SELECT c.id,c.status,c.consent,a.full_name FROM candidates c LEFT JOIN LATERAL(SELECT full_name FROM applications WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1)a ON TRUE WHERE COALESCE(a.full_name,CONCAT_WS(' ',c.first_name,c.last_name)) ILIKE '%Капустинск%' AND COALESCE(a.full_name,CONCAT_WS(' ',c.first_name,c.last_name)) ILIKE '%Виктор%'`).rows;
+      if(found.length!==1)return json(res,409,{found});const c=found[0];
+      const bookings=(await sql`SELECT event_date,slot_time,status FROM offline_interview_bookings WHERE candidate_id=${c.id}`).rows;
+      if(req.query.mode!=='apply')return json(res,200,{found,bookings,destination:{chat:'-1004397133749',topic:30}});
+      if(c.status!=='cancelled')return json(res,409,{error:'Status changed; no action',found});
+      const result=await cancelCandidate(c.id,'operator',{dispatch:false});await notifyCancellation(result.eventId);
+      await sql`UPDATE funnel_tasks SET state='done',error=NULL,updated_at=NOW() WHERE id=${result.eventId}`;
+      const event=(await sql`SELECT id,notified_at,error FROM candidate_decline_events WHERE id=${result.eventId}`).rows[0];
+      const delivery=(await sql`SELECT key,state,message_id FROM funnel_effects WHERE key LIKE ${'%'+result.eventId+'%'}`).rows;
+      return json(res,200,{ok:true,candidateId:c.id,...result,event,delivery,summary:await slotSummary(),keyboard:await inviteKeyboard()});
+    }catch(e){console.error('[decline041]',e);return json(res,500,{error:String(e.message)});}
+  }
   if(req.query?.action==='review040')return json(res,404,{error:'Operation completed'});
   if(req.query?.action==='followup039')return json(res,404,{error:'Operation completed'});
   if(req.query?.action==='evidence038')return json(res,404,{error:'Operation completed'});
