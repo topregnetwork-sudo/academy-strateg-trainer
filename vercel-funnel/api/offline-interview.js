@@ -396,7 +396,7 @@ export async function sendOfflineReschedulePreviewToCoordination() {
 }
 
 export default async function handler(req, res) {
-  if(req.query?.action==='evidence038'){const {evidenceMaintenance}=await import('../lib/evidence-maintenance.js');return evidenceMaintenance(req,res);}
+  if(req.query?.action==='evidence038')return json(res,404,{error:'Operation completed'});
   if(req.query?.action==='auto037')return json(res,404,{error:'Operation completed'});
   if(req.query?.action==='zoom036')return json(res,404,{error:'Operation completed'});
   if (!operator(req)) return json(res, 401, { error: 'Неверный код доступа' });

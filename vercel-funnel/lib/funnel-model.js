@@ -53,7 +53,7 @@ export function validateSession(v, now = Date.now()) {
     assert(Number.isFinite(+at) && +at - cutoff * 60000 > now, 'Дата или срок записи уже прошли');
     slots.push(at.toISOString());
   }
-  return { name: v.name.trim(), city: v.city.trim(), format: v.format, date: v.date, location: v.location.trim(), interval, capacity, cutoff, reminder, slots,
+  return { name: v.name.trim(), city: v.city.trim(), format: v.format, date: v.date, location: v.location.trim(), interval, capacity, cutoff, reminder:30, slots,
     confirmation: String(v.confirmation || 'Вы записаны на встречу Академии Стратег.\nДата: {date}\nВремя: {time} МСК\n{location}').slice(0, 2000) };
 }
 export function renderText(text, candidate, session, at) {

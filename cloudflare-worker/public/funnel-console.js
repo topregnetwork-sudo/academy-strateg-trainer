@@ -27,7 +27,7 @@
   <div class="fc-pair"><label>С<input id="fsStart" type="time" value="11:00"></label><label>По<input id="fsEnd" type="time" value="13:30"></label></div>
   <div class="fc-pair"><label>Интервал, минут<input id="fsInterval" type="number" min="5" max="240" value="15"></label><label>Мест на слот<input id="fsCapacity" type="number" min="1" max="50" value="1"></label></div>
   <label>Адрес / ссылка на онлайн-встречу<input id="fsLocation"></label>
-  <div class="fc-pair"><label>Закрыть запись за, минут<input id="fsCutoff" type="number" min="0" value="60"></label><label>Напомнить за, минут<input id="fsReminder" type="number" min="0" value="30"></label></div>
+  <div class="fc-pair"><label>Закрыть запись за, минут<input id="fsCutoff" type="number" min="0" value="60"></label><label>Напоминание всем за 30 минут<input id="fsReminder" type="number" value="30" readonly></label></div>
   <label>Подтверждение записи<textarea id="fsConfirmation" rows="4">Вы записаны на встречу Академии Стратег.
 Дата: {date}
 Время: {time} МСК
