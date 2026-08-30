@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import {entryKeyboard} from '../lib/primary-evidence.js';
 const trustedScope = Symbol('exact-session');
 export async function runExactSession(scope) {
+  if(!scope?.at||!slots[scope.slot]||!Number.isFinite(Date.parse(scope.at)))throw new Error('Точная дата и слот задачи отсутствуют');
   let status=200,result;
   await handler({headers:{host:'academy-strateg-trainer.vercel.app'},[trustedScope]:scope},{status(s){status=s;return this;},json(v){result=v;return v;}});
   if(status!==200||result?.failed||result?.briefFailed||result?.followupFailed||result?.followupMembershipCheckFailed)throw new Error('Не все действия напоминания завершены');

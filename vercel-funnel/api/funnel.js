@@ -25,14 +25,14 @@ export default async function handler(req,res) {
       const config=validateMessage(v.config);assert(typeof v.name==='string'&&v.name.trim()&&v.name.length<=100,'Укажите название');
       const row=await transaction(async tx=>{
         await tx`SELECT pg_advisory_xact_lock(32032)`;
-        return (await tx`INSERT INTO funnel_templates(name,version,config) SELECT ${v.name.trim()},COALESCE(MAX(version),0)+1,${JSON.stringify(config)}::jsonb FROM funnel_templates WHERE name=${v.name.trim()} RETURNING *`).rows[0];
+        return (await tx`INSERT INTO funnel_templates(name,version,config) SELECT ${v.name.trim()},COALESCE(MAX(version),0)+1,${JSON.stringify(config)}::text::jsonb FROM funnel_templates WHERE name=${v.name.trim()} RETURNING *`).rows[0];
       });
       return json(res,200,{ok:true,template:row});
     }
     if(v.action==='save_session'){
       const config=validateSession(v.config);
       const session=await transaction(async tx=>{
-        const s=(await tx`INSERT INTO funnel_sessions(config) VALUES(${JSON.stringify(config)}::jsonb) RETURNING *`).rows[0];
+        const s=(await tx`INSERT INTO funnel_sessions(config) VALUES(${JSON.stringify(config)}::text::jsonb) RETURNING *`).rows[0];
         for(const at of config.slots)await tx`INSERT INTO funnel_slots(session_id,starts_at,capacity) VALUES(${s.id},${at},${config.capacity})`;
         return s;
       });
@@ -57,13 +57,13 @@ export default async function handler(req,res) {
       const ids=[...new Set((v.candidateIds||[]).map(Number))];
       assert(ids.length&&ids.length<=300&&ids.every(i=>Number.isSafeInteger(i)&&i>0),'Выберите от 1 до 300 кандидатов');
       const rows=(await sql`SELECT c.*,a.full_name,EXISTS(SELECT 1 FROM candidate_tests t WHERE t.candidate_id=c.id AND t.submitted_at IS NOT NULL) AS test_completed,EXISTS(SELECT 1 FROM funnel_bookings b WHERE b.candidate_id=c.id AND b.session_id=${config.sessionId||0}) AS booked_session,EXISTS(SELECT 1 FROM funnel_recipients r JOIN funnel_jobs j ON j.id=r.job_id WHERE r.candidate_id=c.id AND r.state='sent' AND j.config->>'sessionId'=${String(config.sessionId||0)}) AS invited_session
-        FROM candidates c LEFT JOIN LATERAL(SELECT full_name FROM applications WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) a ON TRUE WHERE c.id IN(SELECT value::bigint FROM jsonb_array_elements_text(${JSON.stringify(ids)}::jsonb)) ORDER BY c.id`).rows;
+        FROM candidates c LEFT JOIN LATERAL(SELECT full_name FROM applications WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) a ON TRUE WHERE c.id IN(SELECT value::bigint FROM jsonb_array_elements_text(${JSON.stringify(ids)}::text::jsonb)) ORDER BY c.id`).rows;
       const excluded=[],recipients=[];for(const c of rows){const reason=eligibility(c,config,session);if(reason)excluded.push({id:c.id,name:c.full_name||c.first_name,reason});else recipients.push(c);}
       for(const id of ids)if(!rows.some(c=>Number(c.id)===id))excluded.push({id,reason:'Кандидат не найден'});
       assert(recipients.length,'Нет подходящих получателей: '+excluded.map(c=>c.reason).join('; '));
       const id=crypto.randomUUID();
       await transaction(async tx=>{
-        await tx`INSERT INTO funnel_jobs(id,config) VALUES(${id},${JSON.stringify(config)}::jsonb)`;
+        await tx`INSERT INTO funnel_jobs(id,config) VALUES(${id},${JSON.stringify(config)}::text::jsonb)`;
         for(const c of recipients)await tx`INSERT INTO funnel_recipients(job_id,candidate_id,original_status) VALUES(${id},${c.id},${c.status})`;
       });
       return json(res,200,{ok:true,jobId:id,recipients:recipients.map(c=>({id:c.id,name:c.full_name||c.first_name,username:c.username,city:c.city,status:c.status,text:renderText(config.text,c,session?.config)})),excluded,config});

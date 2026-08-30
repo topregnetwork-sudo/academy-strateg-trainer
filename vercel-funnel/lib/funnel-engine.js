@@ -127,6 +127,8 @@ export async function sendSessionSummary(sessionId,key,slotId=null) {
   for(let i=0;i<chunks.length;i++)await coordinate(`${key}:${i}`,chunks[i],{inline_keyboard:[[{text:'Участники в панели',url:`${SITE}/operator.html?funnel_session=${sessionId}`}]]});
 }
 export async function runFunnelTask(task) {
+  if(typeof task.payload==='string')task={...task,payload:JSON.parse(task.payload)};
+  if(!task.payload||typeof task.payload!=='object')throw new Error('Некорректные параметры задачи');
   if(task.kind==='primary_entry_report'){const {reportPrimaryEntry}=await import('./primary-evidence.js');await reportPrimaryEntry(task.payload.candidateId);return {done:true};}
   if(task.kind==='minsk_review_30m'){const {runMinskReminder}=await import('./review-reminders.js');await runMinskReminder(task.payload);return {done:true};}
   if(task.kind==='primary_session') { const {runExactSession}=await import('../api/reminders.js');await runExactSession(task.payload);return {done:true}; }

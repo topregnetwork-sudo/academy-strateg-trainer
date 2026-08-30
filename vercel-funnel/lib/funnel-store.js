@@ -53,7 +53,8 @@ export async function armTask(id) {
 }
 export async function createTask(kind, payload, dueAt = new Date(), id = crypto.randomUUID()) {
   await initFunnel();
-  await sql`INSERT INTO funnel_tasks(id,kind,payload,due_at) VALUES(${id},${kind},${JSON.stringify(payload)}::jsonb,${dueAt}) ON CONFLICT DO NOTHING`;
+  // postgres.js serializes JSONB parameters itself; bind as text first to avoid double encoding.
+  await sql`INSERT INTO funnel_tasks(id,kind,payload,due_at) VALUES(${id},${kind},${JSON.stringify(payload)}::text::jsonb,${dueAt}) ON CONFLICT DO NOTHING`;
   await armTask(id);
   return id;
 }

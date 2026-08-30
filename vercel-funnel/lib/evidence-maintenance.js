@@ -11,6 +11,13 @@ export async function evidenceMaintenance(req,res){
  if(req.method!=='POST'||Date.now()>EXPIRES||crypto.createHash('sha256').update(String(req.headers['x-maintenance-token']||'')).digest('hex')!==HASH)return json(res,404,{error:'Not found'});
  await init();await initFunnel();await initPrimaryEvidence();
  const mode=req.query?.mode;
+ if(mode==='normalize_tasks'){
+  const fixed=(await sql`UPDATE funnel_tasks SET payload=(payload#>>'{}')::jsonb WHERE jsonb_typeof(payload)='string' RETURNING id`).rows;
+  const sessions=(await sql`UPDATE funnel_sessions SET config=(config#>>'{}')::jsonb WHERE jsonb_typeof(config)='string' RETURNING id`).rows;
+  const jobs=(await sql`UPDATE funnel_jobs SET config=(config#>>'{}')::jsonb WHERE jsonb_typeof(config)='string' RETURNING id`).rows;
+  const templates=(await sql`UPDATE funnel_templates SET config=(config#>>'{}')::jsonb WHERE jsonb_typeof(config)='string' RETURNING id`).rows;
+  return json(res,200,{tasks:fixed.length,sessions:sessions.length,jobs:jobs.length,templates:templates.length});
+ }
  if(mode==='audit'){
   const primary=await sessions();
   const review=(await sql`SELECT slot_time,count(*)::int AS participants FROM offline_interview_bookings WHERE event_date='2026-09-01' AND status='booked' GROUP BY slot_time ORDER BY slot_time`).rows;
