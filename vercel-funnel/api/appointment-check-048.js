@@ -3,7 +3,7 @@ import {sql,json} from './_core.js';
 import {readProductivityAppointment,appointmentFields} from '../lib/interview-appointment.js';
 export default async function handler(req,res){
  const hash=crypto.createHash('sha256').update(String(req.headers['x-check-key']||'')).digest('hex');
- if(req.method!=='GET'||Date.now()>1788194778254||hash!=='d5f0f4991ef78ba0b36364ea57d90dc16472f865b9d8a028d09b3c1182512c03')return json(res,404,{error:'Not found'});
+ if(req.method!=='GET'||Date.now()>1788206946212||hash!=='d5f0f4991ef78ba0b36364ea57d90dc16472f865b9d8a028d09b3c1182512c03')return json(res,404,{error:'Not found'});
  try{
   const candidate=(await sql`SELECT id,username,status,group_joined_at FROM candidates WHERE id=94 AND lower(username)='losiandr'`).rows[0];
   if(!candidate)return json(res,404,{error:'Not found'});
