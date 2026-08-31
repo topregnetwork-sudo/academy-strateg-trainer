@@ -98,7 +98,7 @@ function textFile(name, content, mimeType = 'text/html', nativeType = null, repl
   return { name, mimeType, data: base64(content), nativeType, replaceNames };
 }
 
-export function testAnswersCsv({ candidate, application, test }) {
+function testAnswersCsv({ candidate, application, test }) {
   const name = application?.full_name || candidate.full_name || [candidate.first_name, candidate.last_name].filter(Boolean).join(' ') || candidate.username || `Кандидат ${candidate.id}`;
   const telegram = candidate.username ? `@${candidate.username}` : 'не указан';
   const submitted = test.submitted_at ? new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Moscow', dateStyle: 'short', timeStyle: 'short' }).format(new Date(test.submitted_at)) : '';
@@ -113,8 +113,7 @@ export function testAnswersCsv({ candidate, application, test }) {
     rows.push(line);
   }
   const cell = value => { const text = String(value ?? ''); return /[;"\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; };
-  // Google Sheets setValues requires a rectangular matrix, including metadata rows.
-  return `\uFEFF${rows.map(row => [...row, ...Array(Math.max(0, 20 - row.length)).fill('')].map(cell).join(';')).join('\r\n')}`;
+  return `\uFEFF${rows.map(row => row.map(cell).join(';')).join('\r\n')}`;
 }
 
 export async function syncDriveCandidate(candidateId) {
@@ -142,7 +141,7 @@ export async function syncDriveCandidate(candidateId) {
   const cityFolder = await ensureCityFolder(candidate);
   const existing = useInterview ? (await sql`SELECT folder_id FROM candidate_drive WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0] : null;
   const result = await callBridge(folderName, files, cityFolder.id, useInterview ? {
-    interview: interviewPayload({candidate, application, questionnaireTwo, test}),
+    interview: interviewPayload({candidate, application, questionnaireTwo}),
     existingFolderId: existing?.folder_id || null
   } : {});
   if (useInterview && !result.interview?.id) throw new Error('Мост не подтвердил сохранение бланка интервью');

@@ -5,7 +5,7 @@
     "instructions": "docs/PRODUCTIVITY-INTERVIEW-SHEET.md",
     "manifest": "docs/INTERVIEW-SHEET-047-MANIFEST.md",
     "template_id": "1BqxBeDOmNBzil3IECT-DRXGPhF4mbQDUQgZmnLCfzrs",
-    "next": "Publish updated existing Apps Script bridge, verify capability, then deploy and enable GOOGLE_DRIVE_INTERVIEW_SHEET_047; never activate before bridge verification",
+    "next": "047A: Q1/Q2 only; Test1 exporter restored to db81883; test summary removed from interview; temporary checker removed. Seven local tests passed. Bridge capability previously verified. Production activation still pending; do not recreate candidate sheets or change Test1 export.",
     "preserved": "old files, manual interview answers, candidate statuses, messages, slots, reminders; no production deployment"
   },
   "project": "academy-strateg-trainer",

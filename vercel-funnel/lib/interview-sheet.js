@@ -18,7 +18,8 @@ export function splitJobs(raw = '') {
   });
 }
 
-export function interviewPayload({ candidate, application = {}, questionnaireTwo, test }) {
+export function interviewPayload({ candidate, application, questionnaireTwo }) {
+  application = application || {};
   const q = questionnaireTwo?.answers || {};
   const cells = [];
   const add = (sheet, cell, value, rows = 1, source = 'Анкета 2') => {
@@ -32,7 +33,6 @@ export function interviewPayload({ candidate, application = {}, questionnaireTwo
   add('Начало', 'B14', `Телефон: ${candidate.phone || application.phone || 'не указан'} • Telegram: ${candidate.username ? '@' + candidate.username : 'не указан'} • Возраст: ${application.age || 'не указан'}\nОпыт бизнес-тренера: ${application.trainer_experience_level || candidate.trainer_experience_level || 'не указан'} • «Вы такой человек?» — ${garcia}`, 2, 'Анкета 1 и бот');
   add('Начало', 'B35', q.goals, 2);
   add('Начало', 'B38', q.achievements, 3);
-  if (test?.submitted_at) add('Начало', 'F76', `Тест 1 заполнен; ответов: ${Array.isArray(test.answers) ? test.answers.length : 'нет данных'}. Расшифровка здесь не указана.`, 1, 'Тест 1');
   add('Итог', 'B14', application.motivation, 2, 'Анкета 1');
   add('Итог', 'F16', q.income);
   for (const [cell, key, rows] of [['F49','strengths',3],['F52','development',3],['F55','hobbies',2],['F57','family',1],['F58','children',1],['F59','readiness',1],['F60','work_history',5]]) add('Итог', cell, q[key], rows);

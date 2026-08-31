@@ -17,7 +17,19 @@ test('all Q2 fields map directly, no invented decisions, dates, or formula value
   assert.equal(get('Начало','F9'),undefined);
   assert.equal(get('Итог','F17'),undefined);
   assert.equal(get('Начало','B70'),undefined);
+  assert.equal(get('Начало','F76'),undefined);
+  assert.ok(p.cells.every(c => !c.source.includes('Тест')));
   for (const value of Object.values(answers)) assert.ok(p.cells.some(c => c.text === String(value)));
+});
+
+test('interview takes only Q1 and Q2; Test 1 data cannot affect any field', () => {
+  const input = {candidate:{id:2,username:'candidate',phone:'123'},application:{full_name:'ФИО',city:'Минск',age:32,motivation:'Ответ анкеты 1',garcia_confirmed:true},questionnaireTwo:{answers:{goals:'Ответ анкеты 2'}}};
+  const expected = interviewPayload(input);
+  assert.deepEqual(interviewPayload({...input,test:{submitted_at:'2026-08-31',answers:Array(200).fill('+'),score:100}}),expected);
+  assert.deepEqual(interviewPayload({...input,test:{submitted_at:null,answers:[]}}),expected);
+  assert.ok(expected.cells.some(c=>c.text==='Ответ анкеты 1'));
+  assert.ok(expected.cells.some(c=>c.text==='Ответ анкеты 2'));
+  assert.doesNotThrow(()=>interviewPayload({candidate:{id:3},application:null}));
 });
 
 test('ambiguous job descriptions preserved, not fabricated', () => {
