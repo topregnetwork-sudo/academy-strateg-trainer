@@ -32,10 +32,12 @@ test('database timeline reads one candidate timestamps only',async()=>{
  CREATE TABLE candidate_interview_result_events049(candidate_id int,status text,recorded_at timestamptz);
  INSERT INTO candidates VALUES(1,'productivity_passed',NULL),(2,'productivity_failed',NULL);
  INSERT INTO candidate_zoom_entries VALUES(1,'2026-08-31T04:00Z'),(2,'2026-08-30T04:00Z');
- INSERT INTO candidate_interview_result_events049 VALUES(1,'productivity_passed','2026-09-01T09:00Z');`);
+ INSERT INTO candidate_interview_result_events049 VALUES(1,'productivity_passed','2026-09-01T09:00Z');
+ INSERT INTO offline_interview_invites VALUES(1,'booked','2026-08-31T08:00Z');`);
  const sql=(strings,...values)=>db.query(strings.reduce((s,p,i)=>s+(i?'$'+i:'')+p,''),values);
  const p=await readInterviewTimeline(sql,1,null);
  assert.equal(p.B6.iso,'2026-08-31T04:00:00.000Z');assert.equal(p.B17.iso,'2026-09-01T09:00:00.000Z');
+ assert.equal(p.B14.iso,'2026-08-31T08:00:00.000Z');
  assert.equal(p.B19,undefined);await db.close();
 });
 

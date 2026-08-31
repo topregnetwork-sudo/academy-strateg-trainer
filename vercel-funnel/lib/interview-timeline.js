@@ -18,7 +18,7 @@ export async function readInterviewTimeline(db,id,booking) {
     (SELECT MIN(clicked_at) FROM candidate_zoom_entries WHERE candidate_id=c.id) AS clicked_at,
     q.sent_at AS q_sent,q.opened_at AS q_opened,q.submitted_at AS q_submitted,
     t.sent_at AS t_sent,t.opened_at AS t_opened,t.submitted_at AS t_submitted,
-    (SELECT MIN(sent_at) FROM offline_interview_invites WHERE candidate_id=c.id AND status='sent') AS legacy_invited_at,
+    (SELECT MIN(sent_at) FROM offline_interview_invites WHERE candidate_id=c.id AND sent_at IS NOT NULL) AS legacy_invited_at,
     (SELECT MIN(r.updated_at) FROM funnel_recipients r JOIN funnel_jobs j ON j.id=r.job_id
      WHERE r.candidate_id=c.id AND r.state='sent' AND j.config->>'action' IN ('invite','test_passed')) AS native_invited_at,
     (SELECT MAX(recorded_at) FROM candidate_interview_result_events049 WHERE candidate_id=c.id AND status=c.status) AS result_at

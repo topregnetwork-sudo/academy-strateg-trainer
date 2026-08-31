@@ -9,6 +9,12 @@ export default async function handler(req,res){
  const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({secret,action:'capabilities'}),signal:AbortSignal.timeout(15000)});
  const capabilities=await response.json();
  if(req.method==='POST'){
+ if(req.query.action==='template'){
+ const {interviewPayload}=await import('../lib/interview-sheet.js');
+ const interview=interviewPayload({candidate:{id:'release-check-049',username:'test049'},application:{full_name:'Проверка моста 049 — не кандидат',city:'Проверка',trainer_experience:'none'},questionnaireTwo:{answers:{goals:'Проверка переноса ответа Анкеты 2'}}});
+ const testResponse=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.timeout(45000),body:JSON.stringify({secret,parentFolderId:'1WAkR2zT0lvgkhF8Ne0tL2YjQke7RE7H_',folderName:'Проверка моста 049 — технический образец',files:[],interview})});
+ return res.status(200).json(await testResponse.json());
+ }
  const {syncInterviewAppointment}=await import('../lib/interview-appointment.js');
  return res.status(200).json({capabilities,result:await syncInterviewAppointment(94)});
  }
