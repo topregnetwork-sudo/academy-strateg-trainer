@@ -68,8 +68,8 @@ export async function syncInterviewAppointment(candidateId) {
 }
 
 export async function queueInterviewAppointment(candidateId) {
-  // Do not activate against the older bridge. No new timer until both sides are released.
-  if(process.env.INTERVIEW_APPOINTMENT_048!=='true')return {disabled:true};
+  // Bridge049 verified live. Explicit false remains the emergency off switch.
+  if(process.env.INTERVIEW_APPOINTMENT_048==='false')return {disabled:true};
   const {createTask}=await import('./funnel-store.js');
   try { return {taskId:await createTask('interview_appointment_048',{candidateId:Number(candidateId)})}; }
   catch(error) { console.error('[interview-appointment-048] task requires attention',candidateId,error.message);return {warning:error.message}; }

@@ -161,7 +161,7 @@ export async function runFunnelTask(task) {
   if(typeof task.payload==='string')task={...task,payload:JSON.parse(task.payload)};
   if(!task.payload||typeof task.payload!=='object')throw new Error('Некорректные параметры задачи');
   if(task.kind==='interview_appointment_048'){
-    if(process.env.INTERVIEW_APPOINTMENT_048!=='true')return {done:true};
+    if(process.env.INTERVIEW_APPOINTMENT_048==='false')return {done:true};
     const {syncInterviewAppointment}=await import('./interview-appointment.js');
     await syncInterviewAppointment(task.payload.candidateId);return {done:true};
   }

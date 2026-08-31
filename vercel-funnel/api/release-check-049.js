@@ -8,7 +8,16 @@ export default async function handler(req,res){
  const secret=process.env.GOOGLE_DRIVE_BRIDGE_SECRET||process.env.OPERATOR_ACCESS_KEY;
  const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({secret,action:'capabilities'}),signal:AbortSignal.timeout(15000)});
  const capabilities=await response.json();
+ if(req.method==='GET' && req.query.action==='task'){
+ const {sql}=await import('../lib/funnel-store.js');
+ const rows=(await sql`SELECT id,state,error FROM funnel_tasks WHERE kind='interview_appointment_048' AND payload->>'candidateId'='94' ORDER BY updated_at DESC LIMIT 1`).rows;
+ return res.status(200).json({tasks:rows});
+ }
  if(req.method==='POST'){
+ if(req.query.action==='queue'){
+ const {queueInterviewAppointment}=await import('../lib/interview-appointment.js');
+ return res.status(200).json(await queueInterviewAppointment(94));
+ }
  if(req.query.action==='template'){
  const {interviewPayload}=await import('../lib/interview-sheet.js');
  const interview=interviewPayload({candidate:{id:'release-check-049',username:'test049'},application:{full_name:'Проверка моста 049 — не кандидат',city:'Проверка',trainer_experience:'none'},questionnaireTwo:{answers:{goals:'Проверка переноса ответа Анкеты 2'}}});
