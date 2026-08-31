@@ -1,4 +1,5 @@
 # LOGS-TOPIC-045
+Implementation9b38c0b. Two local tests passed including actual core Telegram transport with mock network. Preview/main deployment succeeded. Live confirmation631 returned message_thread_id619. No personal/candidate sends or history moves. Scoped logs045 route disabled after verification.
 Baselinec0d3c4a. rollback/logs-topic-before-045.
 User supplied https://t.me/c/4397133749/619. New sends previously directed to group-1004397133749/topic30 now go to619. Central transport mapping catches existing exact timed tasks too, no rescheduling/scan needed.
 Includes registration/slot summaries, productivity reminders/briefs, decline/released-slot notifications, campaign summaries, button responses, inactivity/closure/error reports and new previews addressed to coordination.
