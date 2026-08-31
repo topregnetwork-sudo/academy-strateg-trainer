@@ -536,6 +536,7 @@ export default async function handler(req, res) {
         const groupId = (await sql`SELECT value FROM app_settings WHERE key='candidate_group_chat_id' LIMIT 1`).rows[0]?.value;
         const cleaned = await cleanupRemovalService(message, { groupId, api: telegramApi });
         if (cleaned) console.info('[removal-service] deleted', { chatId: message.chat.id, messageId: message.message_id });
+        if(cleaned&&(await sql`SELECT to_regclass('public.incomplete042') AS t`).rows[0]?.t){await sql`UPDATE incomplete042 SET service_deleted_id=${String(message.message_id)} WHERE snapshot->>'chat_id'=${String(message.left_chat_member.id)}`;}
         return json(res, 200, { ok: true });
       }
       if (await handleNewCandidateGroupMembers(message)) return json(res, 200, { ok: true });

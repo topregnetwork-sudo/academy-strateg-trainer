@@ -1,11 +1,12 @@
 import {sql,transaction,telegram,telegramApi} from '../api/_core.js';
 import {initFunnel,effect} from './funnel-store.js';
 export const TEXT='Здравствуйте!\n\nСпасибо за интерес к работе в Академии Стратег и участие в отборе.\n\nНа данный момент мы не получили от вас завершённый Тест 1. Поэтому на этом этапе завершаем ваше участие в отборе и продолжим его с кандидатами, которые выполнили этот шаг.\n\nДоступ к рабочей группе кандидатов будет закрыт. Благодарим за уделённое время и желаем успехов в дальнейшей работе!';
-export function protectedCandidate(c){return Number(c.id)===45||c.completed||!['new','interview_booked','interviewed','questionnaire'].includes(c.status)||/hracademystrateg/i.test(c.username||'');}
+export function protectedCandidate(c){return [30,45].includes(Number(c.id))||c.completed||!['new','interview_booked','interviewed','questionnaire'].includes(c.status)||/^(hracademystrateg|itopreg)$/i.test(c.username||'');}
 async function setup(){
  await initFunnel();
  await sql`CREATE TABLE IF NOT EXISTS incomplete042(candidate_id BIGINT PRIMARY KEY,snapshot JSONB NOT NULL,message_id TEXT,removed_at TIMESTAMPTZ,error TEXT,created_at TIMESTAMPTZ DEFAULT NOW())`;
  await sql`ALTER TABLE incomplete042 ENABLE ROW LEVEL SECURITY`;
+ await sql`ALTER TABLE incomplete042 ADD COLUMN IF NOT EXISTS service_deleted_id TEXT`;
 }
 async function group(){const id=(await sql`SELECT value FROM app_settings WHERE key='candidate_group_chat_id'`).rows[0]?.value;if(!id)throw Error('No candidate group');return id;}
 async function candidates(){return (await sql`SELECT c.*,a.full_name,q.submitted_at AS questionnaire_submitted_at,
@@ -47,7 +48,7 @@ export async function execute(id){
  }catch(e){await sql`UPDATE incomplete042 SET error=${String(e.message)} WHERE candidate_id=${c.id}`;return {id,error:String(e.message)};}
 }
 export async function summary(send=false){
- await setup();const rows=(await sql`SELECT candidate_id,snapshot->>'full_name' AS name,snapshot->>'first_name' AS first_name,snapshot->>'username' AS username,snapshot->>'city' AS city,message_id,removed_at,error FROM incomplete042 ORDER BY candidate_id`).rows;
+ await setup();const rows=(await sql`SELECT candidate_id,snapshot->>'full_name' AS name,snapshot->>'first_name' AS first_name,snapshot->>'username' AS username,snapshot->>'city' AS city,message_id,removed_at,error,service_deleted_id FROM incomplete042 ORDER BY candidate_id`).rows;
  if(send){const lines=rows.map(r=>`${r.name||r.first_name||r.candidate_id} · ${r.city||'город не указан'}${r.username?' · @'+r.username:''} — ${r.removed_at?'исключён':r.error?'ошибка: '+r.error:'отправлено, исключение не подтверждено'}`);
  const chunks=[];let t='📋 Завершение отбора: Тест 1 не заполнен\n\nИсключено: '+rows.filter(r=>r.removed_at).length+'\nТребуют проверки: '+rows.filter(r=>!r.removed_at).length+'\n\n';
  for(const l of lines){if((t+l).length>3000){chunks.push(t);t='Продолжение сводки\n\n';}t+=l+'\n';}chunks.push(t+'\nЗавершившие Тест 1 сохранены. Минск и Челябинск, ожидающие нас, не затронуты.');
