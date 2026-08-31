@@ -254,6 +254,9 @@ async function sendBookingConfirmation(candidate, slot, changed = false) {
 }
 
 async function sendCoordinationChange(candidate, previousSlot, slot) {
+  if(process.env.INTERVIEW_APPOINTMENT_048!=='true'){
+    try { await syncDriveCandidate(candidate.id); } catch(error) { console.error('[offline] Drive sync failed after reschedule',String(error)); }
+  }
   await queueInterviewAppointment(candidate.id);
   const summary = await slotSummary({ ensureDrive: true });
   const username = candidate.username ? `@${candidate.username}` : 'не указан';
@@ -362,6 +365,9 @@ export async function handleOfflineInterviewChoice(callback) {
   await sql`UPDATE offline_interview_invites SET status='booked',updated_at=NOW() WHERE candidate_id=${candidate.id} AND event_date=${EVENT_DATE}::date`;
   const {scheduleMinskReminder}=await import('../lib/review-reminders.js');
   try{await scheduleMinskReminder(slot);}catch(e){console.error('[review-timer]',candidate.id,e.message);}
+  if(process.env.INTERVIEW_APPOINTMENT_048!=='true'){
+    try { await syncDriveCandidate(candidate.id); } catch(error) { console.error('[offline] Drive sync failed after booking',String(error)); }
+  }
   await queueInterviewAppointment(candidate.id);
   const summary = await slotSummary();
   await sendBookingConfirmation(candidate, slot);
