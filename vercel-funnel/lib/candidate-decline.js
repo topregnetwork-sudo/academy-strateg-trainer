@@ -37,6 +37,7 @@ export async function notifyCancellation(eventId){
  await initDeclines();
  const e=(await sql`SELECT * FROM candidate_decline_events WHERE id=${eventId}`).rows[0];if(!e||e.notified_at)return {done:true};
  const s=e.snapshot,c=s.candidate,review=s.legacy.length||s.native.length;
+ if(review){const {queueInterviewAppointment}=await import('./interview-appointment.js');await queueInterviewAppointment(c.id);}
  const settings=Object.fromEntries((await sql`SELECT key,value FROM app_settings WHERE key IN ('hr_brief_chat_id','hr_brief_thread_id')`).rows.map(r=>[r.key,r.value]));
  const chat=review?'-1004397133749':settings.hr_brief_chat_id||process.env.HR_BRIEF_CHAT_ID;
  const thread=review?reviewThread(c.city):Number(settings.hr_brief_thread_id||0);if(!chat)throw Error('Тема брифов не настроена');

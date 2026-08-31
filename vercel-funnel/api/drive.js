@@ -154,6 +154,8 @@ export async function syncDriveCandidate(candidateId) {
   const folder = result.folder;
   await sql`INSERT INTO candidate_drive(candidate_id,folder_id,folder_url,folder_name,synced_at,updated_at) VALUES(${candidate.id},${folder.id},${folder.url},${folder.name},NOW(),NOW()) ON CONFLICT(candidate_id) DO UPDATE SET folder_id=EXCLUDED.folder_id,folder_url=EXCLUDED.folder_url,folder_name=EXCLUDED.folder_name,synced_at=NOW(),updated_at=NOW()`;
   for (const file of result.files || []) await sql`INSERT INTO candidate_drive_files(candidate_id,file_kind,file_name,file_url,drive_file_id,mime_type,updated_at) VALUES(${candidate.id},${file.name},${file.name},${file.url},${file.id},${file.mimeType || 'application/octet-stream'},NOW()) ON CONFLICT(candidate_id,file_kind) DO UPDATE SET file_name=EXCLUDED.file_name,file_url=EXCLUDED.file_url,drive_file_id=EXCLUDED.drive_file_id,mime_type=EXCLUDED.mime_type,updated_at=NOW()`;
+  const {queueInterviewAppointment}=await import('../lib/interview-appointment.js');
+  await queueInterviewAppointment(candidate.id);
   return { cityFolder, folder, files: result.files || [] };
 }
 
@@ -178,6 +180,10 @@ export default async function handler(req, res) {
   try {
     const v = await body(req);
     if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+    if (v.action === 'sync_interview_appointment') {
+      const {syncInterviewAppointment}=await import('../lib/interview-appointment.js');
+      return json(res,200,await syncInterviewAppointment(v.candidateId));
+    }
     if (v.action === 'sync_candidate') return json(res, 200, { ok: true, ...(await syncDriveCandidate(v.candidateId)) });
     if (v.action === 'upload_file') return json(res, 200, { ok: true, ...(await uploadDriveFile(v.candidateId, v)) });
     return json(res, 400, { error: 'Неизвестное действие Google Drive' });

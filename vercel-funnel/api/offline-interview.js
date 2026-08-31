@@ -1,5 +1,6 @@
 import { init, json, operator, sql, telegram, telegramApi } from './_core.js';
 import { syncDriveCandidate } from './drive.js';
+import { queueInterviewAppointment } from '../lib/interview-appointment.js';
 
 const EVENT_DATE = '2026-09-01';
 const EVENT_DATE_TEXT = '1 сентября 2026 года';
@@ -253,8 +254,7 @@ async function sendBookingConfirmation(candidate, slot, changed = false) {
 }
 
 async function sendCoordinationChange(candidate, previousSlot, slot) {
-  try { await syncDriveCandidate(candidate.id); }
-  catch (error) { console.error('[offline] Drive sync failed after reschedule', { candidateId: candidate.id, message: String(error) }); }
+  await queueInterviewAppointment(candidate.id);
   const summary = await slotSummary({ ensureDrive: true });
   const username = candidate.username ? `@${candidate.username}` : 'не указан';
   const drive = (await sql`SELECT folder_url FROM candidate_drive WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0];
@@ -362,8 +362,7 @@ export async function handleOfflineInterviewChoice(callback) {
   await sql`UPDATE offline_interview_invites SET status='booked',updated_at=NOW() WHERE candidate_id=${candidate.id} AND event_date=${EVENT_DATE}::date`;
   const {scheduleMinskReminder}=await import('../lib/review-reminders.js');
   try{await scheduleMinskReminder(slot);}catch(e){console.error('[review-timer]',candidate.id,e.message);}
-  try { await syncDriveCandidate(candidate.id); }
-  catch (error) { console.error('[offline] Drive sync failed after booking', { candidateId: candidate.id, message: String(error) }); }
+  await queueInterviewAppointment(candidate.id);
   const summary = await slotSummary();
   await sendBookingConfirmation(candidate, slot);
   const username = candidate.username ? `@${candidate.username}` : 'не указан';

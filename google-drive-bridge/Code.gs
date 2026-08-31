@@ -125,13 +125,50 @@ function saveInterview047_(folder, item) {
   return {id:file.getId(),name:file.getName(),url:file.getUrl(),mimeType:file.getMimeType(),preservedCells:preserved};
 }
 
+// Only four appointment cells. This action cannot create files or export test answers.
+function updateInterviewAppointment048_(payload) {
+  if (!payload.existingFolderId || !payload.candidateId || !payload.fields || !payload.bookingKey) throw new Error('Invalid appointment payload');
+  const allowed = ['F9','F10','F11','F12'];
+  if (Object.keys(payload.fields).length !== 4 || Object.keys(payload.fields).some(k => allowed.indexOf(k) < 0)) throw new Error('Unapproved appointment cell');
+  const folder = DriveApp.getFolderById(payload.existingFolderId), files = folder.getFiles(), matches = [];
+  while (files.hasNext()) {
+    const file = files.next();
+    if (file.getMimeType() === MimeType.GOOGLE_SHEETS && file.getName().indexOf('Интервью на продуктивность — ') === 0) matches.push(file);
+  }
+  if (matches.length !== 1) throw new Error(matches.length ? 'Несколько бланков интервью; обновление остановлено' : 'Бланк ещё не создан; повторить после создания');
+  const file = matches[0], sheet = SpreadsheetApp.openById(file.getId()).getSheetByName('Начало');
+  if (!sheet || !/^Дата интервью/.test(String(sheet.getRange('B9').getValue())) || !/^Время/.test(String(sheet.getRange('B10').getValue()))) throw new Error('Неизвестная структура бланка');
+  const preserved = [], changed = [], prefix = 'AUTO_APPOINTMENT_048:';
+  allowed.forEach(function(address) {
+    const cell = sheet.getRange(address), value = String(payload.fields[address] || ''), current = String(cell.getValue());
+    let previous = null;
+    const note = cell.getNote() || '';
+    if (note.indexOf(prefix) === 0) { try { previous = JSON.parse(note.slice(prefix.length)); } catch (_) {} }
+    const ours = previous && previous.candidateId === String(payload.candidateId) && previous.value === current;
+    if (cell.getFormula() || (current !== '' && current !== value && !ours)) { preserved.push(address); return; }
+    if (current !== value) {
+      cell.setRichTextValue(SpreadsheetApp.newRichTextValue().setText(value).build());
+      changed.push(address);
+    }
+    // Existing user notes are not erased, and subsequent automatic transfers remain traceable.
+    cell.setNote(prefix + JSON.stringify({candidateId:String(payload.candidateId),bookingKey:payload.bookingKey,value:value,previousNote:previous ? previous.previousNote : note}));
+  });
+  SpreadsheetApp.flush();
+  return {ok:true,appointment048:true,id:file.getId(),url:file.getUrl(),changed:changed,preserved:preserved,bookingKey:payload.bookingKey};
+}
+
 function doPost(event) {
   let lock = null;
   try {
     const payload = JSON.parse(event.postData && event.postData.contents || '{}');
     const expected = PropertiesService.getScriptProperties().getProperty('BRIDGE_SECRET');
     if (!expected || payload.secret !== expected) return json_({ ok: false, error: 'Unauthorized' });
-    if (payload.action === 'capabilities') return json_({ok:true,interviewSheet047:true});
+    if (payload.action === 'capabilities') return json_({ok:true,interviewSheet047:true,appointment048:true});
+    if (payload.action === 'interview_appointment_048') {
+      lock = LockService.getScriptLock();
+      if (!lock.tryLock(12000)) throw new Error('Drive занят, повторите адресное событие');
+      return json_(updateInterviewAppointment048_(payload));
+    }
     if (!payload.parentFolderId || !payload.folderName) return json_({ ok: false, error: 'Folder is not specified' });
     lock = LockService.getScriptLock();
     if (!lock.tryLock(20000)) throw new Error('Drive занят другим сохранением; повторите это событие');

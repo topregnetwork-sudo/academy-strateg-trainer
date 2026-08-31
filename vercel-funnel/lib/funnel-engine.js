@@ -4,6 +4,7 @@ import { sql, transaction, initFunnel, sessionById, candidateById, effect, creat
 import { ACTIONS, eligibility, renderText } from './funnel-model.js';
 import {withGoals} from './goals-links.js';
 import {reviewThread,confirmationKeyboard} from './review-presentation.js';
+import {queueInterviewAppointment} from './interview-appointment.js';
 const COORD = '-1004397133749', THREAD = 30;
 const SITE = 'https://academy-strateg-trainer.vercel.app';
 const goals = [[{ text: 'Изучить Цели Академии', url: SITE + '/goals.html' }, { text: 'Скачать PDF', url: SITE + '/academy-strateg-goals.pdf' }]];
@@ -114,6 +115,7 @@ export async function bookingFollowup(bookingId, version) {
   }
   await createTask('session_brief',{sessionId:session.id,slotId:booking.slot_id},new Date(Math.max(Date.now()+1000,due)),stableId(`brief:${session.id}:${booking.slot_id}`));
   if(session.config.allowCancel)await refreshSessionInvites(session.id);
+  await queueInterviewAppointment(c.id);
   return {done:true};
 }
 export async function refreshSessionInvites(sessionId){
@@ -157,9 +159,15 @@ export async function sendSessionSummary(sessionId,key,slotId=null) {
 export async function runFunnelTask(task) {
   if(typeof task.payload==='string')task={...task,payload:JSON.parse(task.payload)};
   if(!task.payload||typeof task.payload!=='object')throw new Error('Некорректные параметры задачи');
+  if(task.kind==='interview_appointment_048'){
+    if(process.env.INTERVIEW_APPOINTMENT_048!=='true')return {done:true};
+    const {syncInterviewAppointment}=await import('./interview-appointment.js');
+    await syncInterviewAppointment(task.payload.candidateId);return {done:true};
+  }
   if(task.kind==='review_booking_cancelled'){
     const {candidateId,sessionId,startsAt}=task.payload,c=await candidateById(candidateId),s=await sessionById(sessionId);
     if(!c||!s)return {done:true};
+    await queueInterviewAppointment(candidateId);
     const booked=(await sql`SELECT 1 FROM funnel_bookings WHERE session_id=${sessionId} AND candidate_id=${candidateId}`).rows[0];
     if(!booked&&c.status==='productivity_invited'&&c.consent)await sendLogged(`cancel-confirm:${task.id}`,c,'Ваша запись на интервью отменена, место освобождено. Вы можете выбрать другое доступное время по кнопке ниже.',await sessionKeyboard(sessionId,candidateId));
     await coordinate(`cancel-notice:${task.id}`,`❌ Отменена запись на интервью\n${esc(c.full_name||c.first_name)} · ${esc(c.city)}\n${esc(new Date(startsAt).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'}))} МСК\nМесто освобождено. Это не отказ от отбора.`,undefined,c.city);
