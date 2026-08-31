@@ -1,4 +1,5 @@
 import { body, init, json, operator, sql } from './_core.js';
+import { interviewPayload } from '../lib/interview-sheet.js';
 
 const parentFolderId = () => process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID || '1fpKRJQZIdFeqYCVQ6aWfN_4_xuLyMX4D';
 const bridgeUrl = () => process.env.GOOGLE_DRIVE_BRIDGE_URL || 'https://script.google.com/macros/s/AKfycbyUI5L871jnAwoExsqOTFbcBL5K37UYv_Z0RzpA3ZuTaE_Ovp69jpgNbZGkK_vkosa6Xg/exec';
@@ -31,12 +32,12 @@ function csvCell(value) {
   return /[;"\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-async function callBridge(folderName, files, targetParentFolderId = parentFolderId()) {
+async function callBridge(folderName, files, targetParentFolderId = parentFolderId(), extra = {}) {
   const config = bridgeConfig();
   const response = await fetch(config.url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ secret: config.secret, parentFolderId: targetParentFolderId, folderName, files })
+    body: JSON.stringify({ secret: config.secret, parentFolderId: targetParentFolderId, folderName, files, ...extra })
   });
   const result = await response.json().catch(() => null);
   if (!response.ok || !result?.ok) throw new Error(result?.error || 'Google Drive не принял файл');
@@ -127,13 +128,29 @@ export async function syncDriveCandidate(candidateId) {
   const messageEvents = (await sql`SELECT kind,direction,text,created_at FROM messages WHERE candidate_id=${candidate.id} ORDER BY created_at ASC`).rows;
   if (!questionnaireTwo?.submitted_at || !test?.submitted_at) return { pending: true, message: 'Папка кандидата появится после заполнения Теста 1' };
   const folderName = candidateFolderName(candidate, test.submitted_at);
+  // Explicit rollout gate: do not activate until the published Apps Script bridge is verified.
+  const useInterview = process.env.GOOGLE_DRIVE_INTERVIEW_SHEET_047 === 'true';
+  if (useInterview) {
+    const capabilities = await callBridge('', [], parentFolderId(), { action: 'capabilities' });
+    if (!capabilities.interviewSheet047) throw new Error('Сначала обновите мост Google Drive до версии 047');
+  }
   const files = [
-    textFile('00 — Карточка кандидата', printableCard({ candidate, application, questionnaireTwo, test, messageEvents }), 'text/html', 'document', ['00 — Карточка кандидата.html']),
+    ...(!useInterview ? [textFile('00 — Карточка кандидата', printableCard({ candidate, application, questionnaireTwo, test, messageEvents }), 'text/html', 'document', ['00 — Карточка кандидата.html'])] : []),
     textFile('03 — Тест 1 — ответы', testAnswersCsv({ candidate, application, test }), 'text/csv;charset=utf-8', 'spreadsheet', ['03 — Тест 1 — ответы.csv'])
   ];
   const cityFolder = await ensureCityFolder(candidate);
-  const result = await callBridge(folderName, files, cityFolder.id);
-  await sql`DELETE FROM candidate_drive_files WHERE candidate_id=${candidate.id} AND (file_name LIKE '00 — Карточка кандидата%' OR file_name LIKE '01 — Анкета 1%' OR file_name LIKE '02 — Анкета 2%' OR file_name LIKE '03 — Тест 1 — ответы%')`;
+  const existing = useInterview ? (await sql`SELECT folder_id FROM candidate_drive WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0] : null;
+  const result = await callBridge(folderName, files, cityFolder.id, useInterview ? {
+    interview: interviewPayload({candidate, application, questionnaireTwo, test}),
+    existingFolderId: existing?.folder_id || null
+  } : {});
+  if (useInterview && !result.interview?.id) throw new Error('Мост не подтвердил сохранение бланка интервью');
+  if (useInterview) {
+    // Keep old card/Anketa entries as well as their files; only refreshed Test 1 entries change.
+    await sql`DELETE FROM candidate_drive_files WHERE candidate_id=${candidate.id} AND file_name LIKE '03 — Тест 1 — ответы%'`;
+  } else {
+    await sql`DELETE FROM candidate_drive_files WHERE candidate_id=${candidate.id} AND (file_name LIKE '00 — Карточка кандидата%' OR file_name LIKE '01 — Анкета 1%' OR file_name LIKE '02 — Анкета 2%' OR file_name LIKE '03 — Тест 1 — ответы%')`;
+  }
   const folder = result.folder;
   await sql`INSERT INTO candidate_drive(candidate_id,folder_id,folder_url,folder_name,synced_at,updated_at) VALUES(${candidate.id},${folder.id},${folder.url},${folder.name},NOW(),NOW()) ON CONFLICT(candidate_id) DO UPDATE SET folder_id=EXCLUDED.folder_id,folder_url=EXCLUDED.folder_url,folder_name=EXCLUDED.folder_name,synced_at=NOW(),updated_at=NOW()`;
   for (const file of result.files || []) await sql`INSERT INTO candidate_drive_files(candidate_id,file_kind,file_name,file_url,drive_file_id,mime_type,updated_at) VALUES(${candidate.id},${file.name},${file.name},${file.url},${file.id},${file.mimeType || 'application/octet-stream'},NOW()) ON CONFLICT(candidate_id,file_kind) DO UPDATE SET file_name=EXCLUDED.file_name,file_url=EXCLUDED.file_url,drive_file_id=EXCLUDED.drive_file_id,mime_type=EXCLUDED.mime_type,updated_at=NOW()`;

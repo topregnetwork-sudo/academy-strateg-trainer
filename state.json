@@ -1,4 +1,13 @@
 {
+  "interview_sheet_047": {
+    "date": "2026-08-31",
+    "status": "25_native_sheets_created_filled_verified; existing_Petr_preserved; automation_prepared_not_deployed",
+    "instructions": "docs/PRODUCTIVITY-INTERVIEW-SHEET.md",
+    "manifest": "docs/INTERVIEW-SHEET-047-MANIFEST.md",
+    "template_id": "1BqxBeDOmNBzil3IECT-DRXGPhF4mbQDUQgZmnLCfzrs",
+    "next": "Publish updated existing Apps Script bridge, verify capability, then deploy and enable GOOGLE_DRIVE_INTERVIEW_SHEET_047; never activate before bridge verification",
+    "preserved": "old files, manual interview answers, candidate statuses, messages, slots, reminders; no production deployment"
+  },
   "project": "academy-strateg-trainer",
   "last_change": "MINSK-OFFLINE-SEPT1-024",
   "commit": "61b77d9, c9ab046, e2d8a62",

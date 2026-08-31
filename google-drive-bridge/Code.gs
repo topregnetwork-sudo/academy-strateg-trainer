@@ -77,17 +77,72 @@ function authorizeNativeFiles() {
   DriveApp.getFileById(spreadsheet.getId()).setTrashed(true);
 }
 
+// 047: approved template; never replace or clear an existing interview file.
+function saveInterview047_(folder, item) {
+  if (!item || item.version !== 47 || !item.candidateId) throw new Error('Invalid interview payload');
+  const templateId = '1BqxBeDOmNBzil3IECT-DRXGPhF4mbQDUQgZmnLCfzrs';
+  if (item.templateId !== templateId) throw new Error('Unknown interview template');
+  const matches = [], files = folder.getFiles();
+  while (files.hasNext()) {
+    const file = files.next();
+    if (file.getMimeType() === MimeType.GOOGLE_SHEETS && file.getName().indexOf('Интервью на продуктивность — ') === 0) matches.push(file);
+  }
+  if (matches.length > 1) throw new Error('В папке несколько бланков интервью — автоматическая перезапись запрещена');
+  const file = matches[0] || DriveApp.getFileById(templateId).makeCopy(item.name, folder);
+  const book = SpreadsheetApp.openById(file.getId());
+  if (matches.length && book.getSheetByName('Итог').getRange('B48').getValue() !== 'Дополнительные сведения кандидата • Анкета 2') {
+    return {id:file.getId(),name:file.getName(),url:file.getUrl(),mimeType:file.getMimeType(),legacyTemplatePreserved:true};
+  }
+  const allowed = {
+    'Начало': {F6:1,F7:1,F13:1,B14:2,B35:2,B38:3,F76:1},
+    'Итог': {B14:2,F16:1,F49:3,F52:3,F55:2,F57:1,F58:1,F59:1,F60:5},
+    'Работа 1': {F7:1,F8:1,F9:1,F10:1,F11:1,F12:1,F13:1},
+    'Работа 2': {F7:1,F8:1,F9:1,F10:1,F11:1,F12:1,F13:1},
+    'Работа 3': {F7:1,F8:1,F9:1,F10:1,F11:1,F12:1,F13:1}
+  };
+  const cells = (item.cells || []).concat([{sheet:'Начало',cell:'F13',text:folderUrl_(folder),rows:1,source:'Google Drive'}]);
+  const preserved = [];
+  cells.forEach(function(input) {
+    if (!allowed[input.sheet] || allowed[input.sheet][input.cell] !== input.rows) throw new Error('Unapproved interview cell');
+    const sheet = book.getSheetByName(input.sheet);
+    if (!sheet) throw new Error('Interview template sheet missing: ' + input.sheet);
+    const cell = sheet.getRange(input.cell);
+    // Empty-only writes preserve notes, formulas, interviewer answers and previous imports.
+    if (cell.getFormula() || cell.getValue() !== '') { preserved.push(input.sheet + '!' + input.cell); return; }
+    const value = String(input.text == null ? '' : input.text);
+    if (!value) return;
+    cell.setRichTextValue(SpreadsheetApp.newRichTextValue().setText(value).build());
+    cell.setNote('Источник: ' + input.source + '; кандидат ID ' + item.candidateId + '. Автозаполнение 047. Ручные ответы не перезаписываются.');
+    cell.setWrap(true);
+    const width = input.cell.charAt(0) === 'B' ? 95 : 60;
+    const lines = value.split('\n').reduce(function(total, line) { return total + Math.max(1, Math.ceil(line.length / width)); }, 0);
+    const height = Math.max(30, Math.ceil((lines * 18 + 16) / input.rows));
+    for (let row = cell.getRow(); row < cell.getRow() + input.rows; row++) {
+      if (sheet.getRowHeight(row) < height) sheet.setRowHeight(row, height);
+    }
+  });
+  SpreadsheetApp.flush();
+  return {id:file.getId(),name:file.getName(),url:file.getUrl(),mimeType:file.getMimeType(),preservedCells:preserved};
+}
+
 function doPost(event) {
+  let lock = null;
   try {
     const payload = JSON.parse(event.postData && event.postData.contents || '{}');
     const expected = PropertiesService.getScriptProperties().getProperty('BRIDGE_SECRET');
     if (!expected || payload.secret !== expected) return json_({ ok: false, error: 'Unauthorized' });
+    if (payload.action === 'capabilities') return json_({ok:true,interviewSheet047:true});
     if (!payload.parentFolderId || !payload.folderName) return json_({ ok: false, error: 'Folder is not specified' });
-
-    const folder = getFolder_(payload.parentFolderId, payload.folderName);
+    lock = LockService.getScriptLock();
+    if (!lock.tryLock(20000)) throw new Error('Drive занят другим сохранением; повторите это событие');
+    const folder = payload.existingFolderId ? DriveApp.getFolderById(payload.existingFolderId) : getFolder_(payload.parentFolderId, payload.folderName);
+    const interview = payload.interview ? saveInterview047_(folder, payload.interview) : null;
     const files = (payload.files || []).map(item => saveFile_(folder, item));
-    return json_({ ok: true, folder: { id: folder.getId(), name: folder.getName(), url: folderUrl_(folder) }, files });
+    if (interview) files.push(interview);
+    return json_({ ok: true, folder: { id: folder.getId(), name: folder.getName(), url: folderUrl_(folder) }, files, interview });
   } catch (error) {
     return json_({ ok: false, error: String(error && error.message || error) });
+  } finally {
+    if (lock) lock.releaseLock();
   }
 }
