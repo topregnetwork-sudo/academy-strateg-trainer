@@ -20,7 +20,7 @@ export async function audit046(){
  const session=(await sql`SELECT * FROM funnel_sessions WHERE config->>'campaignKey'=${KEY} LIMIT 1`).rows[0];
  const recipients=(await sql`SELECT r.candidate_id,r.original_status,r.state,r.error,r.message_id,c.first_name,c.last_name,c.city,c.status FROM funnel_recipients r JOIN candidates c ON c.id=r.candidate_id WHERE r.job_id=${JOB} ORDER BY r.candidate_id`).rows;
  const task=(await sql`SELECT id,state,error FROM funnel_tasks WHERE id=${stableId('campaign:'+JOB)}`).rows[0];
- const effects=(await sql`SELECT key,state,message_id,error FROM funnel_effects WHERE key IN (${KEY+':sample'},${'job-summary:'+JOB})`).rows;
+ const effects=(await sql`SELECT key,state,message_id,error FROM funnel_effects WHERE key IN (${KEY+':sample'},${KEY+':sample-v2'},${'job-summary:'+JOB})`).rows;
  return {eligible:rows.filter(eligible046).map(({chat_id,...r})=>r),excluded:rows.filter(c=>!eligible046(c)).map(({chat_id,...r})=>r),session,recipients,task,effects,
  slots:session?(await sql`SELECT s.id,s.starts_at,s.capacity,count(b.id)::int AS used FROM funnel_slots s LEFT JOIN funnel_bookings b ON b.slot_id=s.id WHERE s.session_id=${session.id} GROUP BY s.id ORDER BY s.starts_at`).rows:[]};
 }
@@ -42,9 +42,10 @@ export async function setup046(){
 export async function launch046(){
  const state=await audit046();if(!state.session||!state.recipients.length)throw Error('Сначала создать встречу и проверить получателей');
  const id=state.session.id;
- await effect(KEY+':sample',()=>telegram('-1004397133749','🧪 Образец приглашения кандидатам — Челябинск\nКнопки времени тестовые: места не занимают. Имя в личном сообщении будет персональным.\n\n'+renderText(TEXT,{full_name:'Имя кандидата'},state.session.config),{message_thread_id:635,parse_mode:undefined,disable_web_page_preview:true,reply_markup:null}));
+ const keyboard=await sessionKeyboard(id,0,true);
+ await effect(KEY+':sample-v2',()=>telegram('-1004397133749','🧪 Образец приглашения кандидатам — Челябинск\nКнопки времени тестовые: места не занимают. Имя в личном сообщении будет персональным.\n\n'+renderText(TEXT,{full_name:'Имя кандидата'},state.session.config),{message_thread_id:635,parse_mode:undefined,disable_web_page_preview:true,reply_markup:keyboard}));
  // Keyboard is attached using the same generator as actual candidates, with inert time callbacks.
- const sample=(await sql`SELECT message_id FROM funnel_effects WHERE key=${KEY+':sample'} AND state='done'`).rows[0];
+ const sample=(await sql`SELECT message_id FROM funnel_effects WHERE key=${KEY+':sample-v2'} AND state='done'`).rows[0];
  const {telegramApi}=await import('../api/_core.js');
  try{await telegramApi('editMessageReplyMarkup',{chat_id:'-1004397133749',message_id:Number(sample.message_id),reply_markup:await sessionKeyboard(id,0,true)});}catch(e){if(!/message is not modified/i.test(e.message))throw e;}
  await sql`UPDATE funnel_jobs SET state='queued' WHERE id=${JOB} AND state='draft'`;

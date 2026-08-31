@@ -82,7 +82,7 @@ test('046 Chelyabinsk launch:8 slots, safe sample, city logs, confirmation, remi
  await launch046();await processCampaign(JOB);let state=await audit046();assert.equal(state.recipients[0].state,'sent');
  const dm=sent.find(x=>x.chat==='103'&&x.text?.includes('интервью на продуктивность'));assert.ok(dm.text.includes('/goals.html'));assert.equal(dm.extra.reply_markup.inline_keyboard.flat().length,10);
  const sample=sent.find(x=>x.text?.includes('Образец приглашения'));assert.equal(sample.extra.message_thread_id,635);
- const sampleButtons=sent.find(x=>x.method==='editMessageReplyMarkup'&&x.args.message_id===Number(state.effects.find(x=>x.key.endsWith(':sample')).message_id)).args.reply_markup.inline_keyboard.flat();assert.equal(sampleButtons.filter(x=>x.callback_data==='fc_demo').length,8);
+ const sampleButtons=sample.extra.reply_markup.inline_keyboard.flat();assert.equal(sampleButtons.filter(x=>x.callback_data==='fc_demo').length,8);
  const n=sent.filter(x=>x.chat==='103').length;await processCampaign(JOB);assert.equal(sent.filter(x=>x.chat==='103').length,n);
  const slots=state.slots;const result=await book(Number(setup.sessionId),Number(slots[0].id),3);await bookingFollowup(result.booking.id,result.booking.version);
  const confirm=sent.filter(x=>x.chat==='103').at(-1);assert.ok(confirm.text.includes('16:00 по Челябинску'));assert.equal(confirm.extra.reply_markup.inline_keyboard[0][0].url,ZOOM);assert.deepEqual(confirm.extra.reply_markup.inline_keyboard.flat().map(x=>x.text),['Подключиться к Zoom','Изменить время','Отменить запись']);
