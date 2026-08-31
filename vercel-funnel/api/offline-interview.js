@@ -403,6 +403,14 @@ export async function sendOfflineReschedulePreviewToCoordination() {
 }
 
 export default async function handler(req, res) {
+  if(req.query?.action==='logs045'){
+    const {createHash}=await import('node:crypto');
+    if(req.method!=='POST'||Date.now()>1788172259834||createHash('sha256').update(String(req.headers['x-maintenance-token']||'')).digest('hex')!=='b3fab4b03a6789046027aa8a977d3c5ea378dced1d649b177686fc90015f8b84')return json(res,404,{error:'Not found'});
+    try{const {initFunnel,effect}=await import('../lib/funnel-store.js');await initFunnel();
+      const messageId=await effect('logs-topic045:confirmation',async()=>{const sent=await telegramApi('sendMessage',{chat_id:'-1004397133749',message_thread_id:30,text:'✅ Тема «Логи» подключена.\n\nВсе новые автоматические брифы и уведомления, которые ранее отправлялись в «Координацию», теперь будут приходить сюда. Старые сообщения остаются на прежнем месте. Личные сообщения кандидатам и тема «Тренеры собеседования» не изменены.'});if(sent.message_thread_id!==619)throw Error('Unexpected topic');return sent.message_id;});
+      return json(res,200,{ok:true,messageId,threadId:619});
+    }catch(e){return json(res,500,{error:String(e.message)});}
+  }
   if(req.query?.action==='goals044')return json(res,404,{error:'Operation completed'});
   if(req.query?.action==='incomplete042')return json(res,404,{error:'Operation completed'});
   if(req.query?.action==='decline041')return json(res,404,{error:'Operation completed'});
