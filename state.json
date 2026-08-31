@@ -1,5 +1,8 @@
 {
   "interview_sheet_047": {
+    "update_048": "Clean template 1t9lAc_Pc5EtJaR641EjbJTqqLdb103riF0yslSl3rNE created/verified; mapper+bridge48 ready; 19 tests pass; cloud Code.gs publication required; production NOT enabled; timeline event importer pending; do not recreate template or candidates. See google-drive-bridge/UPDATE-048.md",
+    "review_048": "docs/INTERVIEW-APPOINTMENT-048.md; sample updated from actual DB candidate94; separate Final/Q2/timeline sheets; 17 tests passed; preview only; Apps Script update and clean template migration pending; production unchanged",
+    "review_047B": "docs/INTERVIEW-SHEET-047B-REVIEW.md; sample 1ZcQLAQ3062CwyY4Cqud_6NJkMCZptPzsYMvcd9VksDk updated; Alexey Sep1 11:15 verified from user Telegram brief screenshot; prompt updated; template/runtime migration pending before general rollout",
     "date": "2026-08-31",
     "status": "25_native_sheets_created_filled_verified; existing_Petr_preserved; automation_prepared_not_deployed",
     "instructions": "docs/PRODUCTIVITY-INTERVIEW-SHEET.md",

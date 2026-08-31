@@ -79,8 +79,9 @@ function authorizeNativeFiles() {
 
 // 047: approved template; never replace or clear an existing interview file.
 function saveInterview047_(folder, item) {
-  if (!item || item.version !== 47 || !item.candidateId) throw new Error('Invalid interview payload');
-  const templateId = '1BqxBeDOmNBzil3IECT-DRXGPhF4mbQDUQgZmnLCfzrs';
+  if (!item || [47,48].indexOf(item.version)<0 || !item.candidateId) throw new Error('Invalid interview payload');
+  const current = item.version === 48;
+  const templateId = current ? '1t9lAc_Pc5EtJaR641EjbJTqqLdb103riF0yslSl3rNE' : '1BqxBeDOmNBzil3IECT-DRXGPhF4mbQDUQgZmnLCfzrs';
   if (item.templateId !== templateId) throw new Error('Unknown interview template');
   const matches = [], files = folder.getFiles();
   while (files.hasNext()) {
@@ -90,12 +91,14 @@ function saveInterview047_(folder, item) {
   if (matches.length > 1) throw new Error('В папке несколько бланков интервью — автоматическая перезапись запрещена');
   const file = matches[0] || DriveApp.getFileById(templateId).makeCopy(item.name, folder);
   const book = SpreadsheetApp.openById(file.getId());
-  if (matches.length && book.getSheetByName('Итог').getRange('B48').getValue() !== 'Дополнительные сведения кандидата • Анкета 2') {
+  const hasCurrentLayout = book.getSheetByName('Начало').getRange('B14').getValue() === 'Телефон' && !!book.getSheetByName('Анкета 2 — сведения');
+  if (matches.length && (current ? !hasCurrentLayout : hasCurrentLayout || book.getSheetByName('Итог').getRange('B48').getValue() !== 'Дополнительные сведения кандидата • Анкета 2')) {
     return {id:file.getId(),name:file.getName(),url:file.getUrl(),mimeType:file.getMimeType(),legacyTemplatePreserved:true};
   }
   const allowed = {
-    'Начало': {F6:1,F7:1,F13:1,B14:2,B35:2,B38:3,F76:1},
-    'Итог': {B14:2,F16:1,F49:3,F52:3,F55:2,F57:1,F58:1,F59:1,F60:5},
+    'Начало': current ? {F6:1,F7:1,F13:1,F14:1,F15:1,F16:1,F17:1,F18:1,B38:2,B41:3} : {F6:1,F7:1,F13:1,B14:2,B35:2,B38:3},
+    'Итог': current ? {B14:2,F16:1} : {B14:2,F16:1,F49:3,F52:3,F55:2,F57:1,F58:1,F59:1,F60:5},
+    'Анкета 2 — сведения': current ? {F6:3,F9:3,F12:2,F14:1,F15:1,F16:1,F17:5} : {},
     'Работа 1': {F7:1,F8:1,F9:1,F10:1,F11:1,F12:1,F13:1},
     'Работа 2': {F7:1,F8:1,F9:1,F10:1,F11:1,F12:1,F13:1},
     'Работа 3': {F7:1,F8:1,F9:1,F10:1,F11:1,F12:1,F13:1}
@@ -112,7 +115,7 @@ function saveInterview047_(folder, item) {
     const value = String(input.text == null ? '' : input.text);
     if (!value) return;
     cell.setRichTextValue(SpreadsheetApp.newRichTextValue().setText(value).build());
-    cell.setNote('Источник: ' + input.source + '; кандидат ID ' + item.candidateId + '. Автозаполнение 047. Ручные ответы не перезаписываются.');
+    cell.setNote('Источник: ' + input.source + '; кандидат ID ' + item.candidateId + '. Автозаполнение ' + item.version + '. Ручные ответы не перезаписываются.');
     cell.setWrap(true);
     const width = input.cell.charAt(0) === 'B' ? 95 : 60;
     const lines = value.split('\n').reduce(function(total, line) { return total + Math.max(1, Math.ceil(line.length / width)); }, 0);
@@ -163,7 +166,7 @@ function doPost(event) {
     const payload = JSON.parse(event.postData && event.postData.contents || '{}');
     const expected = PropertiesService.getScriptProperties().getProperty('BRIDGE_SECRET');
     if (!expected || payload.secret !== expected) return json_({ ok: false, error: 'Unauthorized' });
-    if (payload.action === 'capabilities') return json_({ok:true,interviewSheet047:true,appointment048:true});
+    if (payload.action === 'capabilities') return json_({ok:true,interviewSheet047:true,interviewSheet048:true,appointment048:true});
     if (payload.action === 'interview_appointment_048') {
       lock = LockService.getScriptLock();
       if (!lock.tryLock(12000)) throw new Error('Drive занят, повторите адресное событие');

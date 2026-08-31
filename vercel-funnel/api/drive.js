@@ -132,7 +132,7 @@ export async function syncDriveCandidate(candidateId) {
   const useInterview = process.env.GOOGLE_DRIVE_INTERVIEW_SHEET_047 !== 'false';
   if (useInterview) {
     const capabilities = await callBridge('', [], parentFolderId(), { action: 'capabilities' });
-    if (!capabilities.interviewSheet047) throw new Error('Сначала обновите мост Google Drive до версии 047');
+    if (!capabilities.interviewSheet048) throw new Error('Сначала обновите мост Google Drive до версии 048');
   }
   const files = [
     ...(!useInterview ? [textFile('00 — Карточка кандидата', printableCard({ candidate, application, questionnaireTwo, test, messageEvents }), 'text/html', 'document', ['00 — Карточка кандидата.html'])] : []),

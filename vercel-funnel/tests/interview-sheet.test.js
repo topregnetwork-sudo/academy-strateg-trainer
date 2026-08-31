@@ -2,18 +2,18 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import {interviewPayload, splitJobs} from '../lib/interview-sheet.js';
+import {interviewPayload, splitJobs, experienceLabel, INTERVIEW_TEMPLATE_ID} from '../lib/interview-sheet.js';
 
 test('all Q2 fields map directly, no invented decisions, dates, or formula values', () => {
   const answers = {goals:'Цель',achievements:'Достижения',income:'3000$ через год',strengths:'Навыки',development:'Развитие',hobbies:'Хобби',family:'Нет',children:'Нет',readiness:0,work_history:'Орг / Сфера / Роль / 2020-2025'};
   const p = interviewPayload({candidate:{id:1,username:'sample'},application:{full_name:'Имя',garcia_confirmed:false,motivation:'Мотивация'},questionnaireTwo:{answers},test:{submitted_at:'2026-08-31',answers:Array(200).fill('+')}});
   const get = (s,c) => p.cells.find(x => x.sheet === s && x.cell === c)?.text;
-  assert.equal(get('Начало','B35'),'Цель');
-  assert.equal(get('Начало','B38'),'Достижения');
+  assert.equal(get('Начало','B38'),'Цель');
+  assert.equal(get('Начало','B41'),'Достижения');
   assert.equal(get('Итог','F16'),'3000$ через год');
-  assert.equal(get('Итог','F59'),'0');
+  assert.equal(get('Анкета 2 — сведения','F16'),'0');
   assert.equal(get('Работа 1','F10'),'Роль');
-  assert.match(get('Начало','B14'),/Не отмечено/);
+  assert.match(get('Начало','F18'),/Не отмечено/);
   assert.equal(get('Начало','F9'),undefined);
   assert.equal(get('Итог','F17'),undefined);
   assert.equal(get('Начало','B70'),undefined);
@@ -71,4 +71,30 @@ test('legacy interview sample remains untouched',()=>{
   const f=fixture();f.files.push(f.file);f.cells.get('Итог!B48').value='';
   const r=f.context.saveInterview047_(f.folder,{version:47,templateId:'1BqxBeDOmNBzil3IECT-DRXGPhF4mbQDUQgZmnLCfzrs',candidateId:'1',cells:[]});
   assert.equal(r.legacyTemplatePreserved,true);assert.equal(f.copies(),0);
+});
+
+test('048 separate fields and Russian experience; old workbooks are not remapped',()=>{
+  const p=interviewPayload({candidate:{id:1,username:'@sample',phone:'123'},application:{age:32,trainer_experience_level:'professional'},questionnaireTwo:{answers:{goals:'Цель'}}});
+  assert.equal(p.version,48); assert.equal(p.templateId,INTERVIEW_TEMPLATE_ID);
+  assert.equal(p.cells.find(c=>c.cell==='F14').text,'123');
+  assert.equal(p.cells.find(c=>c.cell==='F15').text,'@sample');
+  assert.equal(p.cells.find(c=>c.cell==='F17').text,'Один год или больше');
+  assert.equal(experienceLabel('under_one_year'),'Менее одного года');
+  const f=fixture(); f.files.push(f.file);
+  assert.equal(f.context.saveInterview047_(f.folder,p).legacyTemplatePreserved,true);
+  assert.equal(f.copies(),0);
+});
+
+test('048 updated layout writes once and keeps manual goals and final answers',()=>{
+  const f=fixture();f.cells.set('Начало!B14',{value:'Телефон'});
+  const p=interviewPayload({candidate:{id:1},questionnaireTwo:{answers:{goals:'Цель',strengths:'Сильные стороны'}}});
+  f.context.saveInterview047_(f.folder,p);
+  assert.equal(f.cells.get('Начало!B38').value,'Цель');
+  assert.equal(f.cells.get('Анкета 2 — сведения!F6').value,'Сильные стороны');
+  f.cells.get('Начало!B38').value='Ручное уточнение';
+  f.cells.set('Финал!B9',{value:'Ответ интервьюера'});
+  f.context.saveInterview047_(f.folder,p);
+  assert.equal(f.cells.get('Начало!B38').value,'Ручное уточнение');
+  assert.equal(f.cells.get('Финал!B9').value,'Ответ интервьюера');
+  assert.equal(f.copies(),1);
 });
