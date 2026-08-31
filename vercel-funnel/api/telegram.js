@@ -523,6 +523,7 @@ export default async function handler(req, res) {
     const callback = update.callback_query;
     if (callback) {
       await init();
+      if((await sql`SELECT id FROM candidates WHERE chat_id=${String(callback.from.id)} AND status='test_1_incomplete_removed'`).rows[0]){await telegramApi('answerCallbackQuery',{callback_query_id:callback.id,text:'Ваше участие в текущем отборе завершено.',show_alert:true});return json(res,200,{ok:true});}
       if (!await handlePrimaryEntry(callback) && !await handleFunnelCallback(callback) && !await handleOfflineInterviewChoice(callback) && !await handleNadezhdaFinalistChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
       return json(res, 200, { ok: true });
     }
@@ -555,6 +556,7 @@ export default async function handler(req, res) {
 
     await init();
     await savePrivateIncoming(message);
+    if((await sql`SELECT id FROM candidates WHERE chat_id=${String(message.chat.id)} AND status='test_1_incomplete_removed'`).rows[0])return json(res,200,{ok:true});
     if (await handleNotRelevant(message)) return json(res, 200, { ok: true });
     if (await handleCandidateGroupKeyword(message)) return json(res, 200, { ok: true });
     if (await handleCandidateTestKeyword(message)) return json(res, 200, { ok: true });

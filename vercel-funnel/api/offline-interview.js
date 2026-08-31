@@ -403,6 +403,16 @@ export async function sendOfflineReschedulePreviewToCoordination() {
 }
 
 export default async function handler(req, res) {
+  if(req.query?.action==='incomplete042'){
+    const {createHash}=await import('node:crypto');
+    if(Date.now()>1788154701351||createHash('sha256').update(String(req.headers['x-maintenance-token']||'')).digest('hex')!=='727e9f27da30da58c8e233acd2edb331a37664a7ee4fd4e4057c27e6fe0b5848')return json(res,404,{error:'Not found'});
+    try{await init();const op=await import('../lib/test-incomplete-042.js');
+      if(req.method==='GET')return json(res,200,req.query.mode==='summary'?await op.summary():await op.audit(Math.max(0,Number(req.query.offset)||0)));
+      if(req.method==='POST'&&req.query.mode==='summary')return json(res,200,await op.summary(true));
+      if(req.method==='POST'&&/^\d+$/.test(req.query.id||''))return json(res,200,await op.execute(Number(req.query.id)));
+      return json(res,400,{error:'Invalid operation'});
+    }catch(e){return json(res,500,{error:String(e.message)});}
+  }
   if(req.query?.action==='decline041')return json(res,404,{error:'Operation completed'});
   if(req.query?.action==='review040')return json(res,404,{error:'Operation completed'});
   if(req.query?.action==='followup039')return json(res,404,{error:'Operation completed'});

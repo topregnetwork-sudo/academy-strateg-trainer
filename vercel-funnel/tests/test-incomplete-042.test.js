@@ -1,0 +1,21 @@
+import {test,mock} from 'node:test';import assert from 'node:assert/strict';import {PGlite} from '@electric-sql/pglite';
+const db=new PGlite(),sent=[],removed=[],effects=new Map(),members=new Map([[1,'member'],[2,'member'],[45,'member'],[3,'administrator']]);const tag=d=>(s,...v)=>d.query(s.reduce((a,b,i)=>a+(i?'$'+i:'')+b,''),v);
+await db.exec(`CREATE TABLE candidates(id bigint PRIMARY KEY,chat_id text,status text,consent boolean,updated_at timestamptz,username text,first_name text,last_name text,city text);
+CREATE TABLE applications(id bigint,candidate_id bigint,full_name text,created_at timestamptz);
+CREATE TABLE candidate_tests(id bigint,candidate_id bigint,status text,submitted_at timestamptz);
+CREATE TABLE candidate_questionnaire_two(candidate_id bigint,submitted_at timestamptz);
+CREATE TABLE app_settings(key text,value text); INSERT INTO app_settings VALUES('candidate_group_chat_id','-123');
+CREATE TABLE messages(candidate_id bigint,direction text,kind text,text text,delivery_status text,telegram_message_id text);
+INSERT INTO candidates VALUES(1,'1','questionnaire',true,NOW(),'one','One','','Минск'),(2,'2','questionnaire',true,NOW(),'two','Two','','Челябинск'),(45,'45','questionnaire',true,NOW(),'n','Надежда','','Минск'),(3,'3','questionnaire',true,NOW(),'admin','Admin','','Минск');
+INSERT INTO candidate_tests VALUES(1,1,'sent',NULL),(2,2,'completed',NOW());`);
+await mock.module('../api/_core.js',{namedExports:{sql:tag(db),transaction:fn=>db.transaction(tx=>fn(tag(tx))),telegram:async(...a)=>{sent.push(a);return sent.length;},telegramApi:async(method,v)=>{if(method==='getChatMember')return {status:members.get(v.user_id)};if(method==='unbanChatMember'){removed.push(v.user_id);members.set(v.user_id,'left');return true;}throw Error(method);}}});
+await mock.module('../lib/funnel-store.js',{namedExports:{initFunnel:async()=>{},effect:async(k,fn)=>{if(effects.has(k))return effects.get(k);const r=await fn();effects.set(k,r);return r;}}});
+const op=await import('../lib/test-incomplete-042.js');
+test('audit only members without completion, protect45/admin/completed; DM before remove, status and history, repeat safe, staff topic30',async()=>{
+ const a=await op.audit();assert.deepEqual(a.eligible.map(x=>Number(x.id)),[1]);assert.equal(sent.length,0);
+ assert.equal((await op.execute(2)).skipped,'protected/completed');assert.equal((await op.execute(45)).skipped,'protected/completed');
+ assert.equal((await op.execute(1)).removed,true);assert.deepEqual(removed,[1]);assert.equal(sent[0][1],op.TEXT);
+ assert.equal((await db.query('SELECT status FROM candidates WHERE id=1')).rows[0].status,'test_1_incomplete_removed');
+ assert.equal((await op.execute(1)).alreadyRemoved,true);assert.equal(sent.length,1);
+ await op.summary(true);assert.equal(sent[1][0],'-1004397133749');assert.equal(sent[1][2].message_thread_id,30);await op.summary(true);assert.equal(sent.length,2);
+});
