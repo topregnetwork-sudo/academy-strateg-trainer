@@ -98,7 +98,7 @@ function textFile(name, content, mimeType = 'text/html', nativeType = null, repl
   return { name, mimeType, data: base64(content), nativeType, replaceNames };
 }
 
-function testAnswersCsv({ candidate, application, test }) {
+export function testAnswersCsv({ candidate, application, test }) {
   const name = application?.full_name || candidate.full_name || [candidate.first_name, candidate.last_name].filter(Boolean).join(' ') || candidate.username || `Кандидат ${candidate.id}`;
   const telegram = candidate.username ? `@${candidate.username}` : 'не указан';
   const submitted = test.submitted_at ? new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Moscow', dateStyle: 'short', timeStyle: 'short' }).format(new Date(test.submitted_at)) : '';
@@ -113,7 +113,8 @@ function testAnswersCsv({ candidate, application, test }) {
     rows.push(line);
   }
   const cell = value => { const text = String(value ?? ''); return /[;"\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; };
-  return `\uFEFF${rows.map(row => row.map(cell).join(';')).join('\r\n')}`;
+  // Google Sheets setValues requires a rectangular matrix, including metadata rows.
+  return `\uFEFF${rows.map(row => [...row, ...Array(Math.max(0, 20 - row.length)).fill('')].map(cell).join(';')).join('\r\n')}`;
 }
 
 export async function syncDriveCandidate(candidateId) {
@@ -128,8 +129,8 @@ export async function syncDriveCandidate(candidateId) {
   const messageEvents = (await sql`SELECT kind,direction,text,created_at FROM messages WHERE candidate_id=${candidate.id} ORDER BY created_at ASC`).rows;
   if (!questionnaireTwo?.submitted_at || !test?.submitted_at) return { pending: true, message: 'Папка кандидата появится после заполнения Теста 1' };
   const folderName = candidateFolderName(candidate, test.submitted_at);
-  // Explicit rollout gate: do not activate until the published Apps Script bridge is verified.
-  const useInterview = process.env.GOOGLE_DRIVE_INTERVIEW_SHEET_047 === 'true';
+  // 047 bridge verified before rollout. Explicit false remains the scoped kill switch.
+  const useInterview = process.env.GOOGLE_DRIVE_INTERVIEW_SHEET_047 !== 'false';
   if (useInterview) {
     const capabilities = await callBridge('', [], parentFolderId(), { action: 'capabilities' });
     if (!capabilities.interviewSheet047) throw new Error('Сначала обновите мост Google Drive до версии 047');
