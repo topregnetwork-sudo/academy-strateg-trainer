@@ -1,5 +1,13 @@
 # INTERVIEW-AUTOMATION-049
 
+## Актуальное состояние — выпуск после подтверждения пользователя
+
+Cloud bridge confirmed `049-checked-1`. Existing candidate94 workbook updated in place: F9/F10/F12 plus automatic notes; neighboring values/formats/validation unchanged. Timeline tab added with actual stored dates, no invented end. Historical invitation timestamp now remains visible when invite status becomes booked. New native template creation verified in technical-only folder 1_jldLAlKSvU0o7JAgIFmM6m32HcqhAF5, file18W1NlRgziatIe6TZKiCpefLGUYEjiy72GWlNMi4vhX8; eight tabs, Q2 answer in assigned field, no formula errors. No candidate messages, status or Test1 export changes.
+
+All26 regressions pass. Event sync enabled by default; `INTERVIEW_APPOINTMENT_048=false` disables it. `GOOGLE_DRIVE_INTERVIEW_SHEET_047=false` disables new interview creation and restores old card path. Older entries below are historical, not current activation instructions. Existing25 sheets are NOT migrated/recreated; current layouts apply to newly created sheets. Existing sheets receive appointment/timeline only, preserving manual interview data.
+
+Temporary check route removed before production. Ready for final preview and production; production/task result must be recorded after verification. Parallel template-copy and appointment test hit15s timeout once; never blindly repeat non-idempotent actions. Appointment update is idempotent and its durable task retries the same candidate; no all-candidate polling. Technical test workbook retained explicitly outside candidate folders.
+
 ## Проверка по скриншоту SyntaxError file already declared
 
 Весь локальный Code.gs компилировался до изменений; ошибка на скриншоте в нём не воспроизведена. Текст редактора Apps Script не прочитан, поэтому точная причина его отличия неизвестна. В updateInterviewAppointment048_ локальные переменные названы entryFile/appointmentFile вместо повторного file в разных областях. Проверено26 сценариев, включая компиляцию цельного исходника и doPost. Полная копия для вставки Code-049-checked.txt должна совпадать с Code.gs. Метка capabilities bridgeVersion=049-checked-1. Вставлять целиком через Ctrl+A в редакторе, не дописывать. Сохранить, затем новую версию прежнего deployment. Не нажимать Выполнить authorizeNativeFiles. Production ещё не активирован; новое разрешение пользователя не требуется, требуется публикация без ошибки и проверка capability.
