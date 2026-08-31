@@ -8,6 +8,10 @@ export default async function handler(req,res){
  const secret=process.env.GOOGLE_DRIVE_BRIDGE_SECRET||process.env.OPERATOR_ACCESS_KEY;
  const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({secret,action:'capabilities'}),signal:AbortSignal.timeout(15000)});
  const capabilities=await response.json();
+ if(req.method==='POST'){
+   const {syncInterviewAppointment}=await import('../lib/interview-appointment.js');
+   return res.status(200).json({capabilities,result:await syncInterviewAppointment(94)});
+ }
  return res.status(200).json({capabilities,appointmentEnabled:process.env.INTERVIEW_APPOINTMENT_048,template:'048'});
  }catch(e){return res.status(500).json({error:e.message});}
 }
