@@ -139,8 +139,9 @@ function updateInterviewAppointment048_(payload) {
     if (file.getMimeType() === MimeType.GOOGLE_SHEETS && file.getName().indexOf('Интервью на продуктивность — ') === 0) matches.push(file);
   }
   if (matches.length !== 1) throw new Error(matches.length ? 'Несколько бланков интервью; обновление остановлено' : 'Бланк ещё не создан; повторить после создания');
-  const file = matches[0], sheet = SpreadsheetApp.openById(file.getId()).getSheetByName('Начало');
-  if (!sheet || !/^Дата интервью/.test(String(sheet.getRange('B9').getValue())) || !/^Время/.test(String(sheet.getRange('B10').getValue()))) throw new Error('Неизвестная структура бланка');
+  const file = matches[0], book = SpreadsheetApp.openById(file.getId()), sheet = book.getSheetByName('Начало');
+  if (!sheet || !/^Дата (интервью|проведения)/.test(String(sheet.getRange('B9').getValue())) || !/^Время/.test(String(sheet.getRange('B10').getValue()))) throw new Error('Неизвестная структура бланка');
+  if(payload.timeline)validateTimeline049_(payload.timeline);
   const preserved = [], changed = [], prefix = 'AUTO_APPOINTMENT_048:';
   allowed.forEach(function(address) {
     const cell = sheet.getRange(address), value = String(payload.fields[address] || ''), current = String(cell.getValue());
@@ -156,8 +157,51 @@ function updateInterviewAppointment048_(payload) {
     // Existing user notes are not erased, and subsequent automatic transfers remain traceable.
     cell.setNote(prefix + JSON.stringify({candidateId:String(payload.candidateId),bookingKey:payload.bookingKey,value:value,previousNote:previous ? previous.previousNote : note}));
   });
+  const timeline = payload.timeline ? updateTimeline049_(book,payload) : null;
   SpreadsheetApp.flush();
-  return {ok:true,appointment048:true,id:file.getId(),url:file.getUrl(),changed:changed,preserved:preserved,bookingKey:payload.bookingKey};
+  return {ok:true,appointment048:true,timeline049:!!timeline,timeline:timeline,id:file.getId(),url:file.getUrl(),changed:changed,preserved:preserved,bookingKey:payload.bookingKey};
+}
+
+function validateTimeline049_(fields) {
+  Object.keys(fields).forEach(function(address){
+    const value=fields[address];
+    if(/^B(6|7|8|9|10|11|12|13|14|15|16|17)$/.test(address)) {
+      if(address==='B16' && value && value.clear===true)return;
+      if(!value || typeof value.iso!=='string' || !Number.isFinite(new Date(value.iso).getTime()))throw new Error('Некорректная дата этапа');
+    } else if((address==='E16'||address==='E17') && value && typeof value.text==='string' && value.text.length<=150) return;
+    else throw new Error('Запись вне разрешённых полей сроков');
+  });
+}
+
+function updateTimeline049_(book,payload) {
+  const fields=payload.timeline;validateTimeline049_(fields);
+  let sheet=book.getSheetByName('Сроки воронки');
+  if(!sheet){
+    const template=SpreadsheetApp.openById('1t9lAc_Pc5EtJaR641EjbJTqqLdb103riF0yslSl3rNE');
+    sheet=template.getSheetByName('Сроки воронки').copyTo(book).setName('Сроки воронки');
+    sheet.getRange('A2').setFormula('="Кандидат: "&\'Начало\'!F6');
+  }
+  const changed=[],preserved=[],prefix='AUTO_TIMELINE_049:';
+  Object.keys(fields).forEach(function(address){
+    const value=fields[address],cell=sheet.getRange(address),current=cell.getValue(),note=cell.getNote()||'';
+    const normalized=current instanceof Date?current.toISOString():String(current);
+    let previous=null;try{if(note.indexOf(prefix)===0)previous=JSON.parse(note.slice(prefix.length));}catch(_){}
+    const target=value.iso||value.text||'';
+    const ours=previous && previous.candidateId===String(payload.candidateId) && previous.value===normalized;
+    const placeholder=(address==='E16' && normalized==='Ожидается')||(address==='E17' && normalized==='Ожидается');
+    if(cell.getFormula() || (normalized!=='' && normalized!==target && !ours && !placeholder)){preserved.push(address);return;}
+    if(normalized!==target){
+      if(value.iso)cell.setValue(new Date(value.iso)).setNumberFormat('dd.MM.yyyy HH:mm:ss');
+      else cell.setRichTextValue(SpreadsheetApp.newRichTextValue().setText(target).build());
+      changed.push(address);
+    }
+    cell.setNote(prefix+JSON.stringify({candidateId:String(payload.candidateId),value:target,previousNote:previous?previous.previousNote:note}));
+    if(value.iso && /^B/.test(address) && Number(address.slice(1))<=15){
+      const state=sheet.getRange('E'+address.slice(1));
+      if(state.getValue()==='Нет зафиксированного события')state.setValue('Зафиксировано');
+    }
+  });
+  return {changed:changed,preserved:preserved};
 }
 
 function doPost(event) {
@@ -166,7 +210,7 @@ function doPost(event) {
     const payload = JSON.parse(event.postData && event.postData.contents || '{}');
     const expected = PropertiesService.getScriptProperties().getProperty('BRIDGE_SECRET');
     if (!expected || payload.secret !== expected) return json_({ ok: false, error: 'Unauthorized' });
-    if (payload.action === 'capabilities') return json_({ok:true,interviewSheet047:true,interviewSheet048:true,appointment048:true});
+    if (payload.action === 'capabilities') return json_({ok:true,interviewSheet047:true,interviewSheet048:true,appointment048:true,timeline049:true});
     if (payload.action === 'interview_appointment_048') {
       lock = LockService.getScriptLock();
       if (!lock.tryLock(12000)) throw new Error('Drive занят, повторите адресное событие');

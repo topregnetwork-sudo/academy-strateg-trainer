@@ -9,8 +9,8 @@ test('saved database slot is used; rescheduling reads the changed slot, not a ca
   const db=new PGlite();
   await db.exec(`CREATE TABLE funnel_sessions(id int,config jsonb);CREATE TABLE funnel_slots(id int,starts_at timestamptz);
     CREATE TABLE funnel_bookings(id int,version int,updated_at timestamptz,slot_id int,session_id int,candidate_id int);
-    CREATE TABLE offline_interview_bookings(candidate_id int,event_date date,slot_time text,status text);
-    INSERT INTO offline_interview_bookings VALUES(77,'2026-09-01','1115','booked');`);
+    CREATE TABLE offline_interview_bookings(candidate_id int,event_date date,slot_time text,status text,updated_at timestamptz DEFAULT NOW());
+    INSERT INTO offline_interview_bookings(candidate_id,event_date,slot_time,status) VALUES(77,'2026-09-01','1115','booked');`);
   const sql=(strings,...values)=>db.query(strings.reduce((s,p,i)=>s+(i?'$'+i:'')+p,''),values);
   const first=await readProductivityAppointment(sql,77);
   assert.equal(first.source,'offline_interview_bookings');
@@ -60,4 +60,10 @@ test('only four fields change, repeated delivery is harmless, manual edits and f
 test('date format validates input and does not invent missing interviewer',()=>{
   assert.throws(()=>appointmentFields({starts_at:'bad'}),/Некорректное/);
   assert.equal(appointmentFields({starts_at:'2026-09-01T11:00Z',format:'offline'}).F12,'');
+});
+
+test('legacy date label is supported without rewriting the workbook',()=>{
+  const f=bridgeFixture();f.cells.get('B9').value='Дата проведения • заполнить дату встречи';
+  assert.equal(f.run({existingFolderId:'folder',candidateId:'77',bookingKey:'v1',fields:{F9:'1 сентября',F10:'11:15',F11:'Онлайн',F12:'Шипунов Максим'}}).id,'existing-id');
+  assert.equal(f.cells.get('B9').value,'Дата проведения • заполнить дату встречи');
 });

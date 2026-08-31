@@ -29,6 +29,11 @@ export default async function handler(req,res){
       if(!accepted.includes(v.status))return json(res,400,{error:'Недопустимый статус'});
       if(v.status==='cancelled'){const {cancelCandidate}=await import('../lib/candidate-decline.js');return json(res,200,{ok:true,...await cancelCandidate(v.candidateId,'operator')});}
       await sql`UPDATE candidates SET status=${v.status},updated_at=NOW() WHERE id=${Number(v.candidateId)}`;
+      if(['productivity_passed','productivity_failed'].includes(v.status)){
+        const {initFunnel}=await import('../lib/funnel-store.js');await initFunnel();
+        await sql`INSERT INTO candidate_interview_result_events049(candidate_id,status) VALUES(${Number(v.candidateId)},${v.status}) ON CONFLICT DO NOTHING`;
+        const {queueInterviewAppointment}=await import('../lib/interview-appointment.js');await queueInterviewAppointment(v.candidateId);
+      }
       return json(res,200,{ok:true});
     }
     if(req.method==='POST'){

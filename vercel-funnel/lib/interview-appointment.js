@@ -24,7 +24,7 @@ export async function readProductivityAppointment(db, candidateId) {
   const native = (await db`SELECT b.id,b.version,b.updated_at,s.starts_at,f.config
     FROM funnel_bookings b JOIN funnel_slots s ON s.id=b.slot_id
     JOIN funnel_sessions f ON f.id=b.session_id WHERE b.candidate_id=${candidateId}`).rows;
-  const legacy = (await db`SELECT event_date::text AS event_date,slot_time,
+  const legacy = (await db`SELECT event_date::text AS event_date,slot_time,updated_at,
     (event_date+make_time(SUBSTRING(slot_time,1,2)::int,SUBSTRING(slot_time,3,2)::int,0)) AT TIME ZONE 'Europe/Moscow' AS starts_at
     FROM offline_interview_bookings WHERE candidate_id=${candidateId} AND status='booked' AND event_date='2026-09-01'::date`).rows;
   const bookings = native.map(b=>({...b,source:'funnel_bookings',key:'funnel:'+b.id+':'+b.version,
@@ -50,14 +50,19 @@ export async function syncInterviewAppointment(candidateId) {
     const folder=(await db`SELECT folder_id FROM candidate_drive WHERE candidate_id=${candidate.id}`).rows[0];
     if(!folder?.folder_id)throw new Error('Папка ещё не создана; повторить адресное обновление после создания бланка');
     const booking=await readProductivityAppointment(db,candidate.id);
+    const {readInterviewTimeline}=await import('./interview-timeline.js');
+    const timeline=await readInterviewTimeline(db,candidate.id,booking);
     const url=process.env.GOOGLE_DRIVE_BRIDGE_URL || 'https://script.google.com/macros/s/AKfycbyUI5L871jnAwoExsqOTFbcBL5K37UYv_Z0RzpA3ZuTaE_Ovp69jpgNbZGkK_vkosa6Xg/exec';
     const secret=process.env.GOOGLE_DRIVE_BRIDGE_SECRET || process.env.OPERATOR_ACCESS_KEY;
     if(!secret)throw new Error('Канал Google Drive ещё не подключён');
+    const check=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.timeout(15000),body:JSON.stringify({secret,action:'capabilities'})});
+    const capabilities=await check.json();
+    if(!check.ok || !capabilities.ok || !capabilities.timeline049)throw new Error('Обновите мост 049: запись сроков ещё недоступна. Документ не изменён.');
     const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.timeout(15000),
       body:JSON.stringify({secret,action:'interview_appointment_048',existingFolderId:folder.folder_id,
-        candidateId:String(candidate.id),bookingKey:booking?.key || 'no-active-booking',fields:appointmentFields(booking)})});
+        candidateId:String(candidate.id),bookingKey:booking?.key || 'no-active-booking',fields:appointmentFields(booking),timeline})});
     const result=await response.json();
-    if(!response.ok || !result?.ok || !result.appointment048)throw new Error(result.error || 'Нужно обновить Google-мост: INTERVIEW-APPOINTMENT-048');
+    if(!response.ok || !result?.ok || !result.appointment048 || !result.timeline049)throw new Error(result.error || 'Нужно обновить Google-мост: INTERVIEW-AUTOMATION-049');
     return result;
   });
 }

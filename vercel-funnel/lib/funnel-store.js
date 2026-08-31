@@ -5,6 +5,7 @@ let ready;
 export async function initFunnel() {
   if (!ready) ready = (async () => {
     await sql`CREATE TABLE IF NOT EXISTS funnel_templates(id BIGSERIAL PRIMARY KEY,name TEXT NOT NULL,version BIGINT NOT NULL,config JSONB NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(name,version))`;
+    await sql`CREATE TABLE IF NOT EXISTS candidate_interview_result_events049(candidate_id BIGINT NOT NULL,status TEXT NOT NULL,recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),PRIMARY KEY(candidate_id,status))`;
     await sql`CREATE TABLE IF NOT EXISTS funnel_sessions(id BIGSERIAL PRIMARY KEY,config JSONB NOT NULL,active BOOLEAN NOT NULL DEFAULT TRUE,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
     await sql`CREATE TABLE IF NOT EXISTS funnel_slots(id BIGSERIAL PRIMARY KEY,session_id BIGINT NOT NULL REFERENCES funnel_sessions(id),starts_at TIMESTAMPTZ NOT NULL,capacity INT NOT NULL,UNIQUE(session_id,starts_at))`;
     await sql`CREATE TABLE IF NOT EXISTS funnel_bookings(id BIGSERIAL PRIMARY KEY,session_id BIGINT NOT NULL REFERENCES funnel_sessions(id),candidate_id BIGINT NOT NULL,slot_id BIGINT NOT NULL REFERENCES funnel_slots(id),version INT NOT NULL DEFAULT 1,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(session_id,candidate_id))`;
@@ -15,6 +16,7 @@ export async function initFunnel() {
     await sql`CREATE INDEX IF NOT EXISTS funnel_recipients_job_state ON funnel_recipients(job_id,state)`;
     // Personal data cannot be queried using the public application's anonymous role.
     await sql`ALTER TABLE funnel_templates ENABLE ROW LEVEL SECURITY`;
+    await sql`ALTER TABLE candidate_interview_result_events049 ENABLE ROW LEVEL SECURITY`;
     await sql`ALTER TABLE funnel_sessions ENABLE ROW LEVEL SECURITY`;
     await sql`ALTER TABLE funnel_slots ENABLE ROW LEVEL SECURITY`;
     await sql`ALTER TABLE funnel_bookings ENABLE ROW LEVEL SECURITY`;

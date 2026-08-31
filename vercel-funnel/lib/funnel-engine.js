@@ -70,6 +70,7 @@ export async function processCampaign(jobId) {
       if (target) await sql`UPDATE candidates SET status=${target},updated_at=NOW() WHERE id=${c.id} AND status=${r.original_status}`;
       if (ACTIONS[job.config.action].remove) await remove(c,`remove:${jobId}:${c.id}`);
       await sql`UPDATE funnel_recipients SET state='sent',message_id=${String(messageId)},updated_at=NOW() WHERE job_id=${jobId} AND candidate_id=${c.id}`;
+      if(session)await queueInterviewAppointment(c.id);
     } catch(e) { await sql`UPDATE funnel_recipients SET state='attention',error=${String(e.message).slice(0,500)},updated_at=NOW() WHERE job_id=${jobId} AND candidate_id=${r.candidate_id}`; }
   }
   const count = (await sql`SELECT count(*) FILTER(WHERE state='pending')::int AS pending,count(*) FILTER(WHERE state='sent')::int AS sent,count(*) FILTER(WHERE state NOT IN ('pending','sent'))::int AS attention FROM funnel_recipients WHERE job_id=${jobId}`).rows[0];
