@@ -1,5 +1,11 @@
 # CHELYABINSK-REVIEW-046
 
+## Result31.08.2026
+Production bf5bcc4 +70da574 +882249c (preview andproduction Vercel success). Live session1; job chelyabinsk-review-046-invitations; exact task72bdeb10-ec12-3f42-c0a4-e7897be0e44d done, errornull. Nine ofnine sent: IDs6,10,41,44,54,65,116,140,152; Telegram1573..1581; statusesproductivity_invited. No other city/closed candidates touched.8slots free at verification, capacity1. Nine invited for eight places was disclosed; no overbooking.
+Logs635: sample644 (Goals/PDF+8inert time buttons), initial summary645, delivery result646. Initial sample with null markup explicitly rejected by Telegram400, no delivery; original failed effect retained, corrected sample-v2 delivered644. No repeat candidate messages.
+11 scoped tests passed including capacity race, change/cancel, stale/foreign cancellation protection, status restoration, exact minus30 jobs, obsolete reminder no-op, route635/619, historical editing unaffected. Real booking/cancellation and tomorrow's minus30 have not been tested on a candidate; no synthetic candidate booking created. Current cohort only; this change does not add automatic invitations to future Test1 completions.
+Temporary chely046 access replaced with404 in cleanup commit; verify live404 afterdeploy. Final rollback requires deactivating session1 and only its tasks/jobs, then reverting046 commits together including cleanup. Already sent invitations/history remain; do not reset all candidates or revert another city's calendar.
+
 User correction before launch: both Change time and Cancel booking enabled for this Chelyabinsk session. Cancellation is NOT withdrawal: free only selected booking, archive details in exact review_booking_cancelled task, status returns productivity_invited, confirmation+updated635 summary, old reminder becomes no-op. Other candidates see refreshed availability. Slot moves remain atomic; obsolete cancellation button cannot cancel a newer version. This supersedes the no-reschedule requirement below. Minsk remains unchanged.
 
 Baseline537e642; rollback/chelyabinsk-review-before-046 pushed before edits.
