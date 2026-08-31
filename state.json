@@ -1,5 +1,6 @@
 {
   "interview_sheet_047": {
+    "bridge_syntax_check": "Local full Code.gs compiles; editor SyntaxError not reproduced. 26 tests pass. Full replacement Code-049-checked.txt, capability bridgeVersion 049-checked-1; publish same deployment after replacing whole editor. No production activation yet.",
     "activation_049": "Cloud048 verified. Candidate94 write safely failed legacy date label before mutations. Fixed label+timeline in Code.gs; 24 tests pass. Await cloud049 publication; server OFF, production db81883 unchanged. Canonical docs/INTERVIEW-AUTOMATION-049.md. Rollback remote rollback/interview-automation-before-049. Do not recreate old files.",
     "update_048": "Clean template 1t9lAc_Pc5EtJaR641EjbJTqqLdb103riF0yslSl3rNE created/verified; mapper+bridge48 ready; 19 tests pass; cloud Code.gs publication required; production NOT enabled; timeline event importer pending; do not recreate template or candidates. See google-drive-bridge/UPDATE-048.md",
     "review_048": "docs/INTERVIEW-APPOINTMENT-048.md; sample updated from actual DB candidate94; separate Final/Q2/timeline sheets; 17 tests passed; preview only; Apps Script update and clean template migration pending; production unchanged",

@@ -1,5 +1,9 @@
 # INTERVIEW-AUTOMATION-049
 
+## Проверка по скриншоту SyntaxError file already declared
+
+Весь локальный Code.gs компилировался до изменений; ошибка на скриншоте в нём не воспроизведена. Текст редактора Apps Script не прочитан, поэтому точная причина его отличия неизвестна. В updateInterviewAppointment048_ локальные переменные названы entryFile/appointmentFile вместо повторного file в разных областях. Проверено26 сценариев, включая компиляцию цельного исходника и doPost. Полная копия для вставки Code-049-checked.txt должна совпадать с Code.gs. Метка capabilities bridgeVersion=049-checked-1. Вставлять целиком через Ctrl+A в редакторе, не дописывать. Сохранить, затем новую версию прежнего deployment. Не нажимать Выполнить authorizeNativeFiles. Production ещё не активирован; новое разрешение пользователя не требуется, требуется публикация без ошибки и проверка capability.
+
 Authorization: user confirmed bridge048 update and requested activation. Baseline production db8188316468a19fc5fb9af71153e29686467123. Remote rollback/interview-automation-before-049 preserves baseline.
 
 Scope: activate Q1/Q2-only interview sheets, separate contacts/Russian experience, new Final and extra-Q2 tabs, event-based appointment fields from DB, stage durations. Preserve candidate data/statuses/messages/group membership/booking capacity/reminders/Test1 exporter/manual interview answers. Existing files must not be replaced.
