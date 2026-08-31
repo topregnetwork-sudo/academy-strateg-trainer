@@ -70,4 +70,24 @@ test('test callback changes no booking and ambiguous send never resends',async()
 test('operator can read detailed delivery and slot ledger',async()=>{
   const r=await request(null,true,'GET',{jobId,sessionId});assert.equal(r.code,200);assert.equal(r.data.bookings.length,2);assert.equal(r.data.recipients.length,2);
 });
+test('046 Chelyabinsk launch:8 slots, safe sample, city logs, confirmation, reminders, no reschedule or duplicate',async()=>{
+ await db.exec(`ALTER TABLE candidates ADD COLUMN consent boolean DEFAULT true; CREATE TABLE offline_interview_bookings(candidate_id bigint,status text);`);
+ const {sessionConfig,eligible046,setup046,launch046,audit046,JOB,ZOOM}=await import('../lib/chelyabinsk-review-046.js');
+ const cfg=sessionConfig(0);assert.equal(cfg.slots.length,8);assert.equal(cfg.slots[0],'2026-09-01T11:00:00.000Z');assert.equal(cfg.slots[7],'2026-09-01T13:20:00.000Z');assert.equal(cfg.capacity,1);
+ const c={id:3,city:'Челябинск',consent:true,test_completed:true,chat_id:'103',status:'test_1_completed'};
+ assert.ok(eligible046(c));for(const override of [{city:'Минск'},{consent:false},{test_completed:false},{status:'productivity_passed'},{status:'productivity_failed'},{status:'cancelled'},{review_booked:true}])assert.equal(eligible046({...c,...override}),false);
+ const setup=await setup046();assert.equal((await audit046()).recipients.length,1);await setup046();assert.equal((await audit046()).recipients.length,1);
+ // Keep booking tests independent of the calendar date of the test runner.
+ await db.query("UPDATE funnel_slots SET starts_at=starts_at+interval '3650 days' WHERE session_id=$1",[setup.sessionId]);
+ await launch046();await processCampaign(JOB);let state=await audit046();assert.equal(state.recipients[0].state,'sent');
+ const dm=sent.find(x=>x.chat==='103'&&x.text?.includes('интервью на продуктивность'));assert.ok(dm.text.includes('/goals.html'));assert.equal(dm.extra.reply_markup.inline_keyboard.flat().length,10);
+ const sample=sent.find(x=>x.text?.includes('Образец приглашения'));assert.equal(sample.extra.message_thread_id,635);
+ const sampleButtons=sent.find(x=>x.method==='editMessageReplyMarkup'&&x.args.message_id===Number(state.effects.find(x=>x.key.endsWith(':sample')).message_id)).args.reply_markup.inline_keyboard.flat();assert.equal(sampleButtons.filter(x=>x.callback_data==='fc_demo').length,8);
+ const n=sent.filter(x=>x.chat==='103').length;await processCampaign(JOB);assert.equal(sent.filter(x=>x.chat==='103').length,n);
+ const slots=state.slots;const result=await book(Number(setup.sessionId),Number(slots[0].id),3);await bookingFollowup(result.booking.id,result.booking.version);
+ const confirm=sent.filter(x=>x.chat==='103').at(-1);assert.ok(confirm.text.includes('16:00 по Челябинску'));assert.deepEqual(confirm.extra.reply_markup.inline_keyboard,[[{text:'Подключиться к Zoom',url:ZOOM}]]);
+ await assert.rejects(book(Number(setup.sessionId),Number(slots[1].id),3),/подтверждено/);
+ const tasks=(await db.query("SELECT * FROM funnel_tasks WHERE kind IN ('booking_reminder','session_brief') AND (payload->>'bookingId'=$1 OR payload->>'sessionId'=$2)",[String(result.booking.id),String(setup.sessionId)])).rows;assert.equal(tasks.length,2);for(const t of tasks)assert.equal(+new Date(t.due_at),+new Date(result.slot.starts_at)-1800000);
+ const notices=sent.filter(x=>x.text?.includes('Челябинск')&&x.chat==='-1004397133749');assert.ok(notices.length>=3);for(const m of notices)assert.equal(m.extra.message_thread_id,635);
+});
 test.after(()=>db.close());

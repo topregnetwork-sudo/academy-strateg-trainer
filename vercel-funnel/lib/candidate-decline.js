@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import {sql,transaction,telegram,telegramApi} from '../api/_core.js';
 import {initFunnel,createTask,effect} from './funnel-store.js';
+import {reviewThread} from './review-presentation.js';
 const SITE='https://academy-strateg-trainer.vercel.app';
 const esc=x=>String(x??'').replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 export async function initDeclines(){
@@ -38,7 +39,7 @@ export async function notifyCancellation(eventId){
  const s=e.snapshot,c=s.candidate,review=s.legacy.length||s.native.length;
  const settings=Object.fromEntries((await sql`SELECT key,value FROM app_settings WHERE key IN ('hr_brief_chat_id','hr_brief_thread_id')`).rows.map(r=>[r.key,r.value]));
  const chat=review?'-1004397133749':settings.hr_brief_chat_id||process.env.HR_BRIEF_CHAT_ID;
- const thread=review?30:Number(settings.hr_brief_thread_id||0);if(!chat)throw Error('Тема брифов не настроена');
+ const thread=review?reviewThread(c.city):Number(settings.hr_brief_thread_id||0);if(!chat)throw Error('Тема брифов не настроена');
  const lines=s.legacy.map(b=>`${String(b.event_date).slice(0,10)} · ${b.slot_time.slice(0,2)}:${b.slot_time.slice(2)} МСК`);
  for(const b of s.native){const slot=(await sql`SELECT starts_at FROM funnel_slots WHERE id=${b.slot_id}`).rows[0];if(slot)lines.push(new Date(slot.starts_at).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})+' МСК');}
  if(!review&&c.interview_at)lines.push(new Date(c.interview_at).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})+' МСК');

@@ -60,14 +60,17 @@ export function validateSession(v, now = Date.now()) {
 export function renderText(text, candidate, session, at) {
   const values = { name: candidate.full_name || [candidate.first_name, candidate.last_name].filter(Boolean).join(' ') || candidate.username || 'Здравствуйте', city: candidate.city || '',
     date: session?.date || '', location: session ? `${session.format === 'online' ? 'Ссылка' : 'Адрес'}: ${session.location}` : '',
-    time: at ? new Date(at).toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' }) : '' };
-  return text.replace(/\{(name|city|date|location|time)\}/g, (_, k) => values[k]);
+    time: at ? new Date(at).toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' }) : '',
+    local_time: at ? new Date(at).toLocaleTimeString('ru-RU',{timeZone:'Asia/Yekaterinburg',hour:'2-digit',minute:'2-digit'}) : '' };
+  return text.replace(/\{(name|city|date|location|time|local_time)\}/g, (_, k) => values[k]);
 }
 export function eligibility(candidate, config, session) {
   if (!candidate.chat_id) return 'Нет Telegram';
   if(config.action==='primary_invite' && !['new','interview_booked'].includes(candidate.status))return 'Другой этап: первичное приглашение недоступно';
   if (['not_passed', 'close', 'contact'].includes(config.action) && (Number(candidate.id) === 45 || ['finalist', 'training', 'internship', 'hired'].includes(candidate.status))) return 'Защищённый кандидат: финалист / сотрудник';
   if (['invite', 'test_passed'].includes(config.action)) {
+    if(candidate.consent===false)return 'Кандидат отказался от сообщений';
+    if(['productivity_passed','test_1_passed','productivity_booked'].includes(candidate.status))return 'Продуктивность уже пройдена или назначена';
     if (!candidate.test_completed) return 'Тест 1 не завершён';
     if (!session || !session.active) return 'Нет активной встречи';
     if (candidate.city !== session.config.city) return 'Другой город';

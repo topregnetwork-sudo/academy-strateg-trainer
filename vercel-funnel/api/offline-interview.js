@@ -403,6 +403,17 @@ export async function sendOfflineReschedulePreviewToCoordination() {
 }
 
 export default async function handler(req, res) {
+  if(req.query?.action==='chely046'){
+    const {createHash}=await import('node:crypto');
+    if(Date.now()>1788175777940||createHash('sha256').update(String(req.headers['x-maintenance-token']||'')).digest('hex')!=='1ac819db413c52233727a480c47d34208a4000851cd01811e76515b1a44cfa32')return json(res,401,{error:'Unauthorized'});
+    try{await init();const m=await import('../lib/chelyabinsk-review-046.js');let result;
+      if(req.method==='GET')result=await m.audit046();
+      else if(req.method==='POST'&&req.query?.op==='setup')result=await m.setup046();
+      else if(req.method==='POST'&&req.query?.op==='launch')result=await m.launch046();
+      else return json(res,405,{error:'Unsupported operation'});
+      return json(res,200,result);
+    }catch(e){return json(res,500,{error:String(e.message)});}
+  }
   if(req.query?.action==='logs045')return json(res,404,{error:'Operation completed'});
   if(req.query?.action==='goals044')return json(res,404,{error:'Operation completed'});
   if(req.query?.action==='incomplete042')return json(res,404,{error:'Operation completed'});
