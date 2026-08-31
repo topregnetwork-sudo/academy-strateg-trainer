@@ -103,7 +103,7 @@ export async function bookingFollowup(bookingId, version) {
   if (!booking || Number(booking.version)!==Number(version)) return {done:true};
   const c=await candidateById(booking.candidate_id), session=await sessionById(booking.session_id);
   if(!c||c.consent===false||['cancelled','rejected','selection_closed','academy_contact','productivity_failed'].includes(c.status))return {done:true};
-  await sendLogged(`booking:${bookingId}:${version}`,c,renderText(session.config.confirmation,c,session.config,booking.starts_at),confirmationKeyboard(session));
+  await sendLogged(`booking:${bookingId}:${version}`,c,renderText(session.config.confirmation,c,session.config,booking.starts_at),confirmationKeyboard(session,booking));
   const at = new Date(booking.starts_at), label = at.toLocaleString('ru-RU',{timeZone:'Europe/Moscow'});
   await coordinate(`booking-brief:${bookingId}:${version}`,`✅ <b>${Number(version)>1?'Изменение времени':'Новая запись'} — ${esc(session.config.name)}</b>\n${esc(c.full_name || c.first_name)} · ${esc(c.city)}\nTelegram: @${esc(c.username || 'не указан')}\nТелефон: ${esc(c.phone)}\n${esc(label)} МСК\n${c.folder_url?`<a href="${esc(c.folder_url)}">Папка кандидата</a>`:'Папка пока недоступна'}\n<a href="${SITE}/operator.html?funnel_session=${session.id}">Участники встречи в панели</a>`,undefined,session.config.city);
   await sendSessionSummary(session.id,`booking-summary:${bookingId}:${version}`);
@@ -113,7 +113,31 @@ export async function bookingFollowup(bookingId, version) {
     await createTask('booking_reminder',{bookingId,version},new Date(due),id);
   }
   await createTask('session_brief',{sessionId:session.id,slotId:booking.slot_id},new Date(Math.max(Date.now()+1000,due)),stableId(`brief:${session.id}:${booking.slot_id}`));
+  if(session.config.allowCancel)await refreshSessionInvites(session.id);
   return {done:true};
+}
+export async function refreshSessionInvites(sessionId){
+ const rows=(await sql`SELECT c.id,c.chat_id,r.message_id FROM funnel_recipients r JOIN funnel_jobs j ON j.id=r.job_id JOIN candidates c ON c.id=r.candidate_id WHERE j.config->>'sessionId'=${String(sessionId)} AND r.state='sent' AND j.config->>'action' IN ('invite','test_passed') AND c.status='productivity_invited' AND c.consent=true AND NOT EXISTS(SELECT 1 FROM funnel_bookings b WHERE b.candidate_id=c.id AND b.session_id=${sessionId})`).rows;
+ for(const r of rows){try{await telegramApi('editMessageReplyMarkup',{chat_id:r.chat_id,message_id:Number(r.message_id),reply_markup:await sessionKeyboard(sessionId,r.id)});}catch(e){if(!/message is not modified/i.test(e.message))throw e;}}
+}
+export async function cancelBooking(bookingId,version,candidateId){
+ const result=await transaction(async tx=>{
+  const initial=(await tx`SELECT * FROM funnel_bookings WHERE id=${bookingId} AND candidate_id=${candidateId} AND version=${version}`).rows[0];
+  if(!initial)return null;
+  const s=(await tx`SELECT * FROM funnel_sessions WHERE id=${initial.session_id} FOR UPDATE`).rows[0];
+  if(!s?.config.allowCancel)throw Error('Отмена через эту кнопку недоступна');
+  const c=(await tx`SELECT * FROM candidates WHERE id=${candidateId} FOR UPDATE`).rows[0];
+  if(c.status!=='productivity_booked')throw Error('Этап уже изменён. Свяжитесь с организатором.');
+  const b=(await tx`SELECT b.*,s.starts_at FROM funnel_bookings b JOIN funnel_slots s ON s.id=b.slot_id WHERE b.id=${bookingId} AND b.candidate_id=${candidateId} AND b.version=${version} AND s.starts_at>NOW()`).rows[0];
+  if(!b)return null;
+  const taskId=stableId(`cancel-booking:${bookingId}:${version}`),payload={candidateId,sessionId:Number(b.session_id),bookingId,version,startsAt:b.starts_at,slotId:b.slot_id};
+  await tx`INSERT INTO funnel_tasks(id,kind,payload,due_at) VALUES(${taskId},'review_booking_cancelled',${JSON.stringify(payload)}::text::jsonb,NOW()) ON CONFLICT DO NOTHING`;
+  await tx`DELETE FROM funnel_bookings WHERE id=${bookingId} AND candidate_id=${candidateId} AND version=${version}`;
+  await tx`UPDATE candidates SET status='productivity_invited',updated_at=NOW() WHERE id=${candidateId} AND status='productivity_booked'`;
+  return {taskId,payload};
+ });
+ if(result)await createTask('review_booking_cancelled',result.payload,new Date(),result.taskId);
+ return result?.taskId||null;
 }
 export function stableId(key) { const s=crypto.createHash('sha256').update(key).digest('hex').slice(0,32);return `${s.slice(0,8)}-${s.slice(8,12)}-${s.slice(12,16)}-${s.slice(16,20)}-${s.slice(20)}`; }
 export async function sendSessionSummary(sessionId,key,slotId=null) {
@@ -133,6 +157,16 @@ export async function sendSessionSummary(sessionId,key,slotId=null) {
 export async function runFunnelTask(task) {
   if(typeof task.payload==='string')task={...task,payload:JSON.parse(task.payload)};
   if(!task.payload||typeof task.payload!=='object')throw new Error('Некорректные параметры задачи');
+  if(task.kind==='review_booking_cancelled'){
+    const {candidateId,sessionId,startsAt}=task.payload,c=await candidateById(candidateId),s=await sessionById(sessionId);
+    if(!c||!s)return {done:true};
+    const booked=(await sql`SELECT 1 FROM funnel_bookings WHERE session_id=${sessionId} AND candidate_id=${candidateId}`).rows[0];
+    if(!booked&&c.status==='productivity_invited'&&c.consent)await sendLogged(`cancel-confirm:${task.id}`,c,'Ваша запись на интервью отменена, место освобождено. Вы можете выбрать другое доступное время по кнопке ниже.',await sessionKeyboard(sessionId,candidateId));
+    await coordinate(`cancel-notice:${task.id}`,`❌ Отменена запись на интервью\n${esc(c.full_name||c.first_name)} · ${esc(c.city)}\n${esc(new Date(startsAt).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'}))} МСК\nМесто освобождено. Это не отказ от отбора.`,undefined,c.city);
+    await sendSessionSummary(sessionId,`cancel-summary:${task.id}`);
+    await refreshSessionInvites(sessionId);
+    return {done:true};
+  }
   if(task.kind==='stage_deadline043'){const {runStageDeadline}=await import('./stage-deadlines-043.js');return runStageDeadline(task.payload.candidateId,task.payload.step);}
   if(task.kind==='candidate_declined'){const {notifyCancellation}=await import('./candidate-decline.js');return notifyCancellation(task.payload.eventId);}
   if(task.kind==='primary_entry_report'){const {reportPrimaryEntry}=await import('./primary-evidence.js');await reportPrimaryEntry(task.payload.candidateId);return {done:true};}
@@ -173,6 +207,8 @@ export async function handleFunnelCallback(callback) {
   const c=(await sql`SELECT * FROM candidates WHERE chat_id=${String(callback.from.id)} LIMIT 1`).rows[0];
   try{
     if(!c)throw new Error('Ваша анкета не найдена');
+    const cancel=callback.data.match(/^fc_cancel_(\d+)_(\d+)$/);
+    if(cancel){const taskId=await cancelBooking(Number(cancel[1]),Number(cancel[2]),Number(c.id));await telegramApi('answerCallbackQuery',{callback_query_id:callback.id,text:taskId?'Запись отменена. Место освобождено.':'Эта запись уже отменена или изменена.'});return true;}
     let match=callback.data.match(/^fc_book_(\d+)_(\d+)$/);
     if(match){
       const result=await book(Number(match[1]),Number(match[2]),Number(c.id));

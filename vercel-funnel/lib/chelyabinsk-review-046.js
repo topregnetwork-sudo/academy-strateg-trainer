@@ -8,7 +8,7 @@ export const TEXT='{name}, здравствуйте!\n\nСпасибо, что �
 export function sessionConfig(now=Date.now()){
  const config=validateSession({name:'Интервью на продуктивность — Челябинск, 1 сентября',city:'Челябинск',format:'online',date:'2026-09-01',start:'14:00',end:'16:20',interval:20,capacity:1,cutoff:60,location:ZOOM,
  confirmation:'✅ Вы записаны на интервью на продуктивность в Академии Стратег.\n\nДата: 1 сентября 2026 года.\nВремя: {time} МСК — {local_time} по Челябинску.\n\nВстреча пройдёт онлайн. Приезжать в офис не нужно. Подключитесь в назначенное время по кнопке ниже.\n{location}\n\nДо встречи ознакомьтесь и изучите Цели Академии Стратег:\nhttps://academy-strateg-trainer.vercel.app/goals.html\n\nЗа 30 минут до начала придёт напоминание.'},now);
- return {...config,campaignKey:KEY,allowReschedule:false,reminderText:'Напоминаем: через 30 минут ваше интервью на продуктивность в Академии Стратег.\nДата: 1 сентября 2026 года.\nВремя: {time} МСК — {local_time} по Челябинску.\nПодключитесь в назначенное время по кнопке ниже.\n{location}'};
+ return {...config,campaignKey:KEY,allowReschedule:true,allowCancel:true,reminderText:'Напоминаем: через 30 минут ваше интервью на продуктивность в Академии Стратег.\nДата: 1 сентября 2026 года.\nВремя: {time} МСК — {local_time} по Челябинску.\nПодключитесь в назначенное время по кнопке ниже.\n{location}'};
 }
 export function eligible046(c){return c.city==='Челябинск'&&c.consent===true&&c.test_completed&&Boolean(c.chat_id)&&![30,45].includes(Number(c.id))&&['test_1_completed','productivity_invited'].includes(c.status)&&!c.review_booked;}
 async function audience(){return (await sql`SELECT c.id,c.chat_id,c.first_name,c.last_name,c.username,c.city,c.status,c.consent,a.full_name,true AS test_completed,

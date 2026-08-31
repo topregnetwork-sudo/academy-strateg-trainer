@@ -70,7 +70,7 @@ test('test callback changes no booking and ambiguous send never resends',async()
 test('operator can read detailed delivery and slot ledger',async()=>{
   const r=await request(null,true,'GET',{jobId,sessionId});assert.equal(r.code,200);assert.equal(r.data.bookings.length,2);assert.equal(r.data.recipients.length,2);
 });
-test('046 Chelyabinsk launch:8 slots, safe sample, city logs, confirmation, reminders, no reschedule or duplicate',async()=>{
+test('046 Chelyabinsk launch:8 slots, safe sample, city logs, confirmation, reminders, change/cancel safely',async()=>{
  await db.exec(`ALTER TABLE candidates ADD COLUMN consent boolean DEFAULT true; CREATE TABLE offline_interview_bookings(candidate_id bigint,status text);`);
  const {sessionConfig,eligible046,setup046,launch046,audit046,JOB,ZOOM}=await import('../lib/chelyabinsk-review-046.js');
  const cfg=sessionConfig(0);assert.equal(cfg.slots.length,8);assert.equal(cfg.slots[0],'2026-09-01T11:00:00.000Z');assert.equal(cfg.slots[7],'2026-09-01T13:20:00.000Z');assert.equal(cfg.capacity,1);
@@ -85,9 +85,18 @@ test('046 Chelyabinsk launch:8 slots, safe sample, city logs, confirmation, remi
  const sampleButtons=sent.find(x=>x.method==='editMessageReplyMarkup'&&x.args.message_id===Number(state.effects.find(x=>x.key.endsWith(':sample')).message_id)).args.reply_markup.inline_keyboard.flat();assert.equal(sampleButtons.filter(x=>x.callback_data==='fc_demo').length,8);
  const n=sent.filter(x=>x.chat==='103').length;await processCampaign(JOB);assert.equal(sent.filter(x=>x.chat==='103').length,n);
  const slots=state.slots;const result=await book(Number(setup.sessionId),Number(slots[0].id),3);await bookingFollowup(result.booking.id,result.booking.version);
- const confirm=sent.filter(x=>x.chat==='103').at(-1);assert.ok(confirm.text.includes('16:00 по Челябинску'));assert.deepEqual(confirm.extra.reply_markup.inline_keyboard,[[{text:'Подключиться к Zoom',url:ZOOM}]]);
- await assert.rejects(book(Number(setup.sessionId),Number(slots[1].id),3),/подтверждено/);
+ const confirm=sent.filter(x=>x.chat==='103').at(-1);assert.ok(confirm.text.includes('16:00 по Челябинску'));assert.equal(confirm.extra.reply_markup.inline_keyboard[0][0].url,ZOOM);assert.deepEqual(confirm.extra.reply_markup.inline_keyboard.flat().map(x=>x.text),['Подключиться к Zoom','Изменить время','Отменить запись']);
  const tasks=(await db.query("SELECT * FROM funnel_tasks WHERE kind IN ('booking_reminder','session_brief') AND (payload->>'bookingId'=$1 OR payload->>'sessionId'=$2)",[String(result.booking.id),String(setup.sessionId)])).rows;assert.equal(tasks.length,2);for(const t of tasks)assert.equal(+new Date(t.due_at),+new Date(result.slot.starts_at)-1800000);
  const notices=sent.filter(x=>x.text?.includes('Челябинск')&&x.chat==='-1004397133749');assert.ok(notices.length>=3);for(const m of notices)assert.equal(m.extra.message_thread_id,635);
+ const {cancelBooking,runFunnelTask,available}=await import('../lib/funnel-engine.js');
+ const moved=await book(Number(setup.sessionId),Number(slots[1].id),3);assert.equal(Number(moved.booking.version),2);
+ assert.equal(await cancelBooking(Number(result.booking.id),1,3),null);
+ assert.equal(await cancelBooking(Number(result.booking.id),2,2),null);
+ const taskId=await cancelBooking(Number(result.booking.id),2,3);assert.ok(taskId);
+ assert.equal(await cancelBooking(Number(result.booking.id),2,3),null);assert.equal((await available(setup.sessionId)).length,8);
+ assert.equal((await db.query('SELECT status FROM candidates WHERE id=3')).rows[0].status,'productivity_invited');
+ const t=(await db.query('SELECT * FROM funnel_tasks WHERE id=$1',[taskId])).rows[0];await runFunnelTask(t);const countAfter=sent.filter(x=>x.chat==='103').length;await runFunnelTask(t);assert.equal(sent.filter(x=>x.chat==='103').length,countAfter);
+ const oldReminder=tasks.find(t=>t.kind==='booking_reminder');await runFunnelTask(oldReminder);assert.equal(sent.filter(x=>x.chat==='103').length,countAfter);
+ const freed=sent.find(x=>x.text?.includes('Отменена запись на интервью'));assert.equal(freed.extra.message_thread_id,635);
 });
 test.after(()=>db.close());

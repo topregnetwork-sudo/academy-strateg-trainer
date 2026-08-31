@@ -1,5 +1,7 @@
 # CHELYABINSK-REVIEW-046
 
+User correction before launch: both Change time and Cancel booking enabled for this Chelyabinsk session. Cancellation is NOT withdrawal: free only selected booking, archive details in exact review_booking_cancelled task, status returns productivity_invited, confirmation+updated635 summary, old reminder becomes no-op. Other candidates see refreshed availability. Slot moves remain atomic; obsolete cancellation button cannot cancel a newer version. This supersedes the no-reschedule requirement below. Minsk remains unchanged.
+
 Baseline537e642; rollback/chelyabinsk-review-before-046 pushed before edits.
 
 Authorized: invite current consenting Chelyabinsk Test1-completed candidates waiting for productivity to Sep1 2026 online meeting. Eight slots14:00..16:20 MSK every20min, capacity1; last ends16:40. Cutoff60min preserved. Zoom supplied by user. Goals/PDF preserved. Candidate-equivalent safe sample, campaign results, booking briefs, summaries, minus30 notices in staff topic635. Minsk remains619. No candidate test bookings.
