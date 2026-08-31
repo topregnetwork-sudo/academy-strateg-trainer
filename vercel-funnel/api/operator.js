@@ -82,7 +82,9 @@ export default async function handler(req,res){
         const testUrl=`https://topregnetwork-sudo.github.io/academy-strateg-trainer/test.html?token=${test.token}`;
         const text='📝 <b>Тест кандидата Академии Стратег</b>\n\nОткройте персональную ссылку и ответьте на 200 вопросов. На одной странице нужно выбрать «Да», «Может быть» или «Нет» напротив каждого вопроса.\n\nПосле отправки ответы автоматически прикрепятся к вашей анкете.';
         const messageId=await telegram(candidate.chat_id,text,{reply_markup:{inline_keyboard:[[{text:'Пройти тест',url:testUrl}]]}});
-        await sql`UPDATE candidate_tests SET status='sent',sent_at=NOW(),updated_at=NOW() WHERE id=${test.id}`;
+        await sql`UPDATE candidate_tests SET status='sent',sent_at=COALESCE(sent_at,NOW()),updated_at=NOW() WHERE id=${test.id}`;
+        const {scheduleStageDeadline}=await import('../lib/stage-deadlines-043.js');
+        await scheduleStageDeadline(candidate.id,'test1').catch(e=>console.error('[deadline043]',candidate.id,e.message));
         await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','candidate_test_invite',${text},'delivered',${String(messageId||'')})`;
         return json(res,200,{ok:true,status:'sent'});
       }

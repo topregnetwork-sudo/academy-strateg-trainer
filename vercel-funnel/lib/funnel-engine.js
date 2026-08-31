@@ -129,6 +129,7 @@ export async function sendSessionSummary(sessionId,key,slotId=null) {
 export async function runFunnelTask(task) {
   if(typeof task.payload==='string')task={...task,payload:JSON.parse(task.payload)};
   if(!task.payload||typeof task.payload!=='object')throw new Error('Некорректные параметры задачи');
+  if(task.kind==='stage_deadline043'){const {runStageDeadline}=await import('./stage-deadlines-043.js');return runStageDeadline(task.payload.candidateId,task.payload.step);}
   if(task.kind==='candidate_declined'){const {notifyCancellation}=await import('./candidate-decline.js');return notifyCancellation(task.payload.eventId);}
   if(task.kind==='primary_entry_report'){const {reportPrimaryEntry}=await import('./primary-evidence.js');await reportPrimaryEntry(task.payload.candidateId);return {done:true};}
   if(task.kind==='minsk_review_30m'){const {runMinskReminder}=await import('./review-reminders.js');await runMinskReminder(task.payload);return {done:true};}

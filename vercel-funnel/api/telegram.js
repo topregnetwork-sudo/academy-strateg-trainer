@@ -1,6 +1,7 @@
 import { body, init, json, nextInterview, slots, telegram, telegramApi, sql } from './_core.js';
 import { handleOfflineInterviewChoice } from './offline-interview.js';
 import { cleanupRemovalService } from './_removal-service.js';
+import {scheduleStageDeadline} from '../lib/stage-deadlines-043.js';
 import { handleFunnelCallback } from '../lib/funnel-engine.js';
 import { schedulePrimary } from '../lib/funnel-primary.js';
 import {entryKeyboard,handlePrimaryEntry,requirePrimaryAccess} from '../lib/primary-evidence.js';
@@ -179,6 +180,7 @@ async function handleCandidateGroupKeyword(message) {
   try {
     const messageId = await telegram(chatId, text, { reply_markup: { inline_keyboard: [[{ text: 'Перейти в группу кандидатов', url: inviteUrl }],[{ text: 'Заполнить Анкету 2', url: questionnaireUrl }]] } });
     await sql`UPDATE candidate_questionnaire_two SET status=CASE WHEN submitted_at IS NULL THEN 'sent' ELSE status END,sent_at=COALESCE(sent_at,NOW()),updated_at=NOW() WHERE id=${questionnaire.id}`;
+    await scheduleStageDeadline(candidate.id,'q2').catch(e=>console.error('[deadline043]',candidate.id,e.message));
     if (!questionnaire.submitted_at) await sql`UPDATE candidates SET status='questionnaire',updated_at=NOW() WHERE id=${candidate.id} AND status IN ('interview_booked','interviewed','questionnaire')`;
     try {
       await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','candidate_group_invite',${text},'delivered',${String(messageId || '')})`;
@@ -211,6 +213,7 @@ async function handleCandidateTestKeyword(message) {
     const questionnaireText='Сначала заполните обязательную Анкету 2. После отправки продолжите изучение материалов группы и следуйте инструкциям.';
     const questionnaireMessageId=await telegram(chatId,questionnaireText,{reply_markup:{inline_keyboard:[[{text:'Заполнить Анкету 2',url:questionnaireUrl}]]}});
     await sql`UPDATE candidate_questionnaire_two SET status='sent',sent_at=COALESCE(sent_at,NOW()),updated_at=NOW() WHERE id=${questionnaire.id}`;
+    await scheduleStageDeadline(candidate.id,'q2').catch(e=>console.error('[deadline043]',candidate.id,e.message));
     await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','questionnaire_2_required',${questionnaireText},'delivered',${String(questionnaireMessageId||'')})`;
     return true;
   }
@@ -230,7 +233,8 @@ async function handleCandidateTestKeyword(message) {
   const testUrl = `https://topregnetwork-sudo.github.io/academy-strateg-trainer/test.html?token=${test.token}`;
   const text = '📝 <b>Тест 1 — эффективность руководителя</b>\n\nОткройте персональную ссылку и ответьте на 200 вопросов. Все вопросы находятся на одной странице; напротив каждого выберите «Да», «Может быть» или «Нет».\n\nПосле отправки ответы автоматически прикрепятся к вашей анкете.';
   const messageId = await telegram(chatId, text, { reply_markup: { inline_keyboard: [[{ text: 'Пройти тест 1', url: testUrl }]] } });
-  await sql`UPDATE candidate_tests SET status='sent',sent_at=NOW(),updated_at=NOW() WHERE id=${test.id}`;
+  await sql`UPDATE candidate_tests SET status='sent',sent_at=COALESCE(sent_at,NOW()),updated_at=NOW() WHERE id=${test.id}`;
+  await scheduleStageDeadline(candidate.id,'test1').catch(e=>console.error('[deadline043]',candidate.id,e.message));
   await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','candidate_test_invite',${text},'delivered',${String(messageId || '')})`;
   return true;
 }
@@ -537,6 +541,7 @@ export default async function handler(req, res) {
         const cleaned = await cleanupRemovalService(message, { groupId, api: telegramApi });
         if (cleaned) console.info('[removal-service] deleted', { chatId: message.chat.id, messageId: message.message_id });
         if(cleaned&&(await sql`SELECT to_regclass('public.incomplete042') AS t`).rows[0]?.t){await sql`UPDATE incomplete042 SET service_deleted_id=${String(message.message_id)} WHERE snapshot->>'chat_id'=${String(message.left_chat_member.id)}`;}
+        if(cleaned&&(await sql`SELECT to_regclass('public.stage_deadlines043') AS t`).rows[0]?.t){await sql`UPDATE stage_deadlines043 SET service_deleted_id=${String(message.message_id)} WHERE snapshot->>'chat_id'=${String(message.left_chat_member.id)}`;}
         return json(res, 200, { ok: true });
       }
       if (await handleNewCandidateGroupMembers(message)) return json(res, 200, { ok: true });
