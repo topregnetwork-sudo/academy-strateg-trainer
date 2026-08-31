@@ -403,12 +403,7 @@ export async function sendOfflineReschedulePreviewToCoordination() {
 }
 
 export default async function handler(req, res) {
-  if(req.query?.action==='goals044'){
-    const {createHash}=await import('node:crypto');
-    if(Date.now()>1788156892068||createHash('sha256').update(String(req.headers['x-maintenance-token']||'')).digest('hex')!=='f6b40b29877cc69c2281dc92ff6e23510c37d04c8c664e251c3d315f34b27611')return json(res,404,{error:'Not found'});
-    if(!['GET','POST'].includes(req.method))return json(res,405,{error:'Method'});
-    try{await init();const {editGoals}=await import('../lib/goals-edit-044.js');return json(res,200,await editGoals(req.method==='POST'));}catch(e){return json(res,500,{error:String(e.message)});}
-  }
+  if(req.query?.action==='goals044')return json(res,404,{error:'Operation completed'});
   if(req.query?.action==='incomplete042')return json(res,404,{error:'Operation completed'});
   if(req.query?.action==='decline041')return json(res,404,{error:'Operation completed'});
   if(req.query?.action==='review040')return json(res,404,{error:'Operation completed'});
