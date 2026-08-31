@@ -1,6 +1,7 @@
 import {sql,telegram,telegramApi} from '../api/_core.js';
 import {initFunnel,effect} from './funnel-store.js';
 import {bookingKeyboard,confirmationText,invitationText,inviteKeyboard} from '../api/offline-interview.js';
+import {withGoalsHtml,withGoalsKeyboard} from './goals-links.js';
 const date='2026-09-01',group='-1004397133749';
 const esc=v=>String(v??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 export function notification(name,slot){return `${esc(name)}, здравствуйте!\n\nВаша встреча с Академией Стратег 1 сентября пройдёт онлайн в Zoom вместо встречи в офисе. Приезжать по адресу Площадь Свободы, 8 не нужно.\n\nМы изменили формат, чтобы вам было удобнее принять участие и не пришлось тратить время на дорогу.\n\nВаше выбранное время сохраняется:\n📅 1 сентября\n🕒 ${esc(slot.slice(0,2)+':'+slot.slice(2))} — по Минску\n\nПовторно записываться не нужно. Подключитесь к Zoom в назначенное вам время по кнопке ниже.\n\nДо встречи ознакомьтесь и изучите Цели Академии Стратег, если ещё не успели этого сделать.\n\nДо встречи!`;}
@@ -11,14 +12,14 @@ export async function migrateMinskZoom(v){
  await initFunnel();
  if(v.mode==='notify'){
    const c=people.find(c=>Number(c.candidate_id)===Number(v.candidateId));if(!c)throw Error('Not an eligible Minsk September1 booking');
-   const text=notification(c.name,c.slot_time);
-   const messageId=await effect(`minsk-zoom-036:${c.candidate_id}`,()=>telegram(c.chat_id,text,{reply_markup:bookingKeyboard()}));
+   const text=withGoalsHtml(notification(c.name,c.slot_time));
+   const messageId=await effect(`minsk-zoom-036:${c.candidate_id}`,()=>telegram(c.chat_id,text,{reply_markup:withGoalsKeyboard(bookingKeyboard())}));
    await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) SELECT ${c.candidate_id},'out','minsk_zoom_format_change',${text},'delivered',${String(messageId)} WHERE NOT EXISTS(SELECT 1 FROM messages WHERE candidate_id=${c.candidate_id} AND telegram_message_id=${String(messageId)} AND direction='out')`;
    return {candidateId:c.candidate_id,messageId,slot:c.slot_time};
  }
  if(v.mode==='coordination'){
-   const sample='🧪 <b>Образец уведомления кандидатам — Минск, 1 сентября</b>\nВ личном сообщении подставлены имя и выбранное время каждого участника.\n\n'+notification('Имя кандидата','1100');
-   const messageId=await effect('minsk-zoom-036:coordination',()=>telegram(group,sample,{message_thread_id:30,reply_markup:bookingKeyboard()}));
+   const sample='🧪 <b>Образец уведомления кандидатам — Минск, 1 сентября</b>\nВ личном сообщении подставлены имя и выбранное время каждого участника.\n\n'+withGoalsHtml(notification('Имя кандидата','1100'));
+   const messageId=await effect('minsk-zoom-036:coordination',()=>telegram(group,sample,{message_thread_id:30,reply_markup:withGoalsKeyboard(bookingKeyboard())}));
    return {messageId};
  }
  if(v.mode==='edit'){

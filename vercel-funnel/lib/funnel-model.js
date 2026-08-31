@@ -1,3 +1,4 @@
+import {withGoals} from './goals-links.js';
 export const ACTIONS = {
   primary_invite: { label: 'Пригласить на первичное Zoom-собеседование', status: null },
   invite: { label: 'После Теста 1 → интервью на продуктивность', status: 'productivity_invited' },
@@ -28,7 +29,7 @@ export function validateMessage(v) {
     assert((safeUrl(b.url) && !b.choice) || (['yes', 'no', 'thanks'].includes(b.choice) && !b.url), 'Кнопка: HTTPS-ссылка или ответ Да/Нет/Спасибо');
   }
   if (v.action === 'not_passed') assert(buttons.some(b => b.choice === 'yes') && buttons.some(b => b.choice === 'no'), 'Для решения нужны кнопки Да и Нет');
-  return { action: v.action, text: v.text.trim(), buttons, sessionId: v.sessionId ? Number(v.sessionId) : null };
+  return { action: v.action, text: ['invite','test_passed'].includes(v.action)?withGoals(v.text.trim()):v.text.trim(), buttons, sessionId: v.sessionId ? Number(v.sessionId) : null };
 }
 export function validateSession(v, now = Date.now()) {
   assert(typeof v.name === 'string' && v.name.trim() && v.name.length < 100, 'Укажите название встречи');

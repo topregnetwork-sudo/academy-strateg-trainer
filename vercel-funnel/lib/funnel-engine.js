@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { telegram, telegramApi, slots as zoomSlots } from '../api/_core.js';
 import { sql, transaction, initFunnel, sessionById, candidateById, effect, createTask } from './funnel-store.js';
 import { ACTIONS, eligibility, renderText } from './funnel-model.js';
+import {withGoals} from './goals-links.js';
 const COORD = '-1004397133749', THREAD = 30;
 const SITE = 'https://academy-strateg-trainer.vercel.app';
 const goals = [[{ text: 'Изучить Цели Академии', url: SITE + '/goals.html' }, { text: 'Скачать PDF', url: SITE + '/academy-strateg-goals.pdf' }]];
@@ -61,7 +62,7 @@ export async function processCampaign(jobId) {
       const reason = !c ? 'Кандидат не найден' : c.status !== r.original_status ? 'Этап изменён после предпросмотра' : eligibility(c,job.config,session);
       if (reason) throw new Error(reason);
       if (session && !(await available(session.id)).length) throw new Error('Свободных открытых слотов больше нет');
-      const text = renderText(job.config.text,c,session?.config);
+      const text = renderText(['invite','test_passed'].includes(job.config.action)?withGoals(job.config.text):job.config.text,c,session?.config);
       const messageId = await sendLogged(`job:${jobId}:${c.id}`,c,text,await messageKeyboard(job.config,jobId,c.id));
       const target = ACTIONS[job.config.action].status;
       if (target) await sql`UPDATE candidates SET status=${target},updated_at=NOW() WHERE id=${c.id} AND status=${r.original_status}`;
