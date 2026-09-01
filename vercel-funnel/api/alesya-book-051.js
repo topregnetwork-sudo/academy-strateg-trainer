@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import {init,json,sql,telegram,transaction} from './_core.js';
 import {effect,initFunnel} from '../lib/funnel-store.js';
 import {bookingFollowup} from '../lib/funnel-engine.js';
-import {bookingKeyboard,confirmationText,slotSummary} from './offline-interview.js';
+import {bookingKeyboard,confirmationText,inviteKeyboard,slotSummary} from './offline-interview.js';
 import {scheduleMinskReminder} from '../lib/review-reminders.js';
 import {queueInterviewAppointment} from '../lib/interview-appointment.js';
 
@@ -35,7 +35,22 @@ export default async function handler(req,res){
     const before=await target(),candidate=before.candidate,slot=before.slots[0];
     if(!candidate)throw Error('Алеся @slkpwr не найдена');
     if(before.slots.length===0){
-      if(before.legacy1315.some(row=>Number(row.candidate_id)!==Number(candidate.id)))throw Error('Слот 13:15 уже занят другим кандидатом');
+      if(before.legacy1315.some(row=>Number(row.candidate_id)!==Number(candidate.id))){
+        const keyboard=await inviteKeyboard();
+        if((keyboard.inline_keyboard||[]).length<2)throw Error('Свободных слотов на сегодня больше нет');
+        const text='Спасибо, что заполнили анкету.\n\nПриглашаем вас на первичный разбор в Академии Стратег. Встреча пройдёт сегодня онлайн в Zoom. Приезжать в офис не нужно.\n\nВыберите свободное время по кнопке ниже. Время — по Минску. После выбора место закрепится за вами.\n\nДо встречи ознакомьтесь и изучите Цели Академии Стратег.';
+        const messageId=await effect(`alesya-book-051:free-slots:${candidate.id}`,()=>telegram(String(candidate.chat_id),text,{disable_web_page_preview:true,reply_markup:keyboard}));
+        await transaction(async tx=>{
+          await tx`UPDATE candidates SET status='productivity_invited',consent=true,updated_at=NOW() WHERE id=${candidate.id}`;
+          await tx`INSERT INTO offline_interview_invites(candidate_id,event_date,status,telegram_message_id,sent_at) VALUES(${candidate.id},'2026-09-01','sent',${String(messageId)},NOW())
+            ON CONFLICT(candidate_id,event_date) DO UPDATE SET status='sent',telegram_message_id=EXCLUDED.telegram_message_id,sent_at=COALESCE(offline_interview_invites.sent_at,NOW()),updated_at=NOW()`;
+          await tx`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id)
+            SELECT ${candidate.id},'out','offline_interview_invite',${text},'delivered',${String(messageId)}
+            WHERE NOT EXISTS(SELECT 1 FROM messages WHERE candidate_id=${candidate.id} AND telegram_message_id=${String(messageId)} AND direction='out')`;
+        });
+        await effect(`alesya-book-051:free-slots-staff:${candidate.id}`,()=>telegram('-1004397133749','✅ Алеся @slkpwr возвращена в активный отбор. Ей отправлены только свободные слоты на сегодня; занятый слот 13:15 не предлагался.',{message_thread_id:30}));
+        return json(res,200,{ok:true,mode:'free_slots_sent',messageId,after:await target()});
+      }
       const booking=await transaction(async tx=>{
         const occupied=(await tx`SELECT candidate_id FROM offline_interview_bookings WHERE event_date='2026-09-01'::date AND slot_time='1315' AND slot_position=1 AND status='booked' FOR UPDATE`).rows[0];
         if(occupied&&Number(occupied.candidate_id)!==Number(candidate.id))throw Error('Слот 13:15 уже занят другим кандидатом');

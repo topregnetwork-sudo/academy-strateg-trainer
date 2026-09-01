@@ -232,9 +232,11 @@ async function candidateForChat(chatId) {
     SELECT c.id,c.chat_id,c.username,c.first_name,c.last_name,c.phone,c.city,
            COALESCE(NULLIF(TRIM(a.full_name),''),NULLIF(TRIM(CONCAT_WS(' ',c.first_name,c.last_name)),''),c.username,'Кандидат ' || c.id::text) AS full_name
     FROM candidates c
-    JOIN candidate_tests t ON t.candidate_id=c.id AND t.submitted_at IS NOT NULL
     LEFT JOIN LATERAL (SELECT full_name,city FROM applications WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) a ON TRUE
-    WHERE c.chat_id=${chatId} AND c.consent=true AND c.status IN ('test_1_completed','productivity_invited','productivity_booked') AND LOWER(TRIM(COALESCE(NULLIF(a.city,''),c.city,'')))='минск' LIMIT 1
+    WHERE c.chat_id=${chatId} AND c.consent=true AND c.status IN ('test_1_completed','productivity_invited','productivity_booked')
+      AND (EXISTS(SELECT 1 FROM candidate_tests t WHERE t.candidate_id=c.id AND t.submitted_at IS NOT NULL)
+        OR EXISTS(SELECT 1 FROM offline_interview_invites i WHERE i.candidate_id=c.id AND i.event_date=${EVENT_DATE}::date AND i.status IN ('sent','booked')))
+      AND LOWER(TRIM(COALESCE(NULLIF(a.city,''),c.city,'')))='минск' LIMIT 1
   `).rows[0];
 }
 
