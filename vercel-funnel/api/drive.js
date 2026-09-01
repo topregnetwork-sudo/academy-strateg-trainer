@@ -44,6 +44,10 @@ async function callBridge(folderName, files, targetParentFolderId = parentFolder
   return result;
 }
 
+export async function bridgeCapabilities() {
+  return callBridge('', [], parentFolderId(), {action:'capabilities'});
+}
+
 function candidateCity(candidate) {
   return (clean(candidate.city) || 'Город не указан').replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
 }
