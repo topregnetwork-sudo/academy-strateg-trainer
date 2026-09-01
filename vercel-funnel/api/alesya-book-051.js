@@ -14,7 +14,12 @@ async function target(){
       AND to_char(s.starts_at AT TIME ZONE 'Europe/Moscow','HH24:MI')='13:15'
     GROUP BY s.id,f.id ORDER BY s.starts_at`).rows;
   const existing=candidate?(await sql`SELECT b.*,s.starts_at FROM funnel_bookings b JOIN funnel_slots s ON s.id=b.slot_id WHERE b.candidate_id=${candidate.id} ORDER BY s.starts_at DESC`).rows:[];
-  return {candidate,slots,existing};
+  const today=(await sql`SELECT s.id,s.session_id,s.starts_at,s.capacity,f.active,f.config,count(b.id)::int AS used
+    FROM funnel_slots s JOIN funnel_sessions f ON f.id=s.session_id LEFT JOIN funnel_bookings b ON b.slot_id=s.id
+    WHERE (s.starts_at AT TIME ZONE 'Europe/Moscow')::date='2026-09-01'::date
+    GROUP BY s.id,f.id ORDER BY s.starts_at`).rows;
+  const legacy=candidate?(await sql`SELECT * FROM offline_interview_bookings WHERE candidate_id=${candidate.id} ORDER BY event_date DESC`).rows:[];
+  return {candidate,slots,today,existing,legacy};
 }
 
 export default async function handler(req,res){
