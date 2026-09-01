@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "updated_at": "2026-09-01T00:00:00+03:00",
+  "workstreams": {
+    "_allowed_modes": ["design", "tuning", "pilot", "active", "frozen", "retired"],
+    "_default_rule": "Published does not mean frozen. Every funnel stage remains independently editable and versioned. Only an explicit user command freezes a stage.",
+    "productivity_interview_sheet": {
+      "mode": "tuning",
+      "version": "052",
+      "locked": false,
+      "mass_update_allowed": true,
+      "approved_for_use": false,
+      "definition_of_done": [
+        "all active candidate workbooks use the current structure",
+        "questionnaire 1 and questionnaire 2 fields are imported",
+        "appointment and funnel timeline are event-synchronized",
+        "manual interviewer values and checkboxes are preserved",
+        "one candidate is visually verified",
+        "the user explicitly says the stage is approved and fixed"
+      ],
+      "rule": "Until the user explicitly approves and freezes this workstream, every new correction increments the same tuning version and must be applied to the template, automation, and all active candidate artifacts. Do not call it final or immutable."
+    }
+  }
+}

@@ -141,7 +141,7 @@ export async function syncDriveCandidate(candidateId) {
   const cityFolder = await ensureCityFolder(candidate);
   const existing = useInterview ? (await sql`SELECT folder_id FROM candidate_drive WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0] : null;
   const result = await callBridge(folderName, files, cityFolder.id, useInterview ? {
-    interview: interviewPayload({candidate, application, questionnaireTwo}),
+    interview: {...interviewPayload({candidate, application, questionnaireTwo}), migration: 52},
     existingFolderId: existing?.folder_id || null
   } : {});
   if (useInterview && !result.interview?.id) throw new Error('Мост не подтвердил сохранение бланка интервью');

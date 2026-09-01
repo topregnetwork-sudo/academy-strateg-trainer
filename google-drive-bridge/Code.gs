@@ -77,6 +77,49 @@ function authorizeNativeFiles() {
   DriveApp.getFileById(spreadsheet.getId()).setTrashed(true);
 }
 
+// 052: while the interview form is in tuning mode, upgrade legacy 047 files in place.
+// The original first sheet is retained as an archive and the whole workbook is backed up.
+function migrateInterviewLayout052_(folder, file, book, candidateId) {
+  const start = book.getSheetByName('Начало');
+  if (!start) throw new Error('В бланке отсутствует лист Начало');
+  if (start.getRange('B14').getValue() === 'Телефон' && book.getSheetByName('Анкета 2 — сведения') && book.getSheetByName('Финал')) {
+    return {migrated:false,alreadyCurrent:true};
+  }
+  const backupName = 'Резерв 052 — ' + file.getName();
+  const backups = folder.getFilesByName(backupName);
+  if (!backups.hasNext()) file.makeCopy(backupName, folder);
+  const template = SpreadsheetApp.openById('1t9lAc_Pc5EtJaR641EjbJTqqLdb103riF0yslSl3rNE');
+  const archiveName = 'Архив — Начало 047';
+  let archive = book.getSheetByName(archiveName);
+  if (!archive) {
+    start.setName(archiveName);
+    archive = start;
+  }
+  let current = book.getSheetByName('Начало');
+  if (!current) current = template.getSheetByName('Начало').copyTo(book).setName('Начало');
+  book.setActiveSheet(current);
+  book.moveActiveSheet(1);
+  const copyIfEmpty = function(sourceAddress,targetAddress) {
+    const source = archive.getRange(sourceAddress), target = current.getRange(targetAddress);
+    if (target.getFormula() || target.getValue() !== '' || source.getValue() === '') return;
+    source.copyTo(target, SpreadsheetApp.CopyPasteType.PASTE_VALUES, false);
+    target.setNote('MIGRATION_052: из прежнего листа Начало; кандидат ID ' + candidateId);
+  };
+  [['F6','F6'],['F7','F7'],['F13','F13'],['B35','B38'],['B38','B41']].forEach(function(pair){copyIfEmpty(pair[0],pair[1]);});
+  const ensureTab = function(name) {
+    let sheet = book.getSheetByName(name);
+    if (!sheet) sheet = template.getSheetByName(name).copyTo(book).setName(name);
+    return sheet;
+  };
+  ensureTab('Анкета 2 — сведения');
+  ensureTab('Финал');
+  ensureTab('Сроки воронки');
+  // Legacy Q2/final blocks stay in Итог as a non-destructive archive. The normal
+  // importer below fills the current dedicated tabs from the authoritative DB.
+  SpreadsheetApp.flush();
+  return {migrated:true,backupName:backupName,archiveSheet:archiveName};
+}
+
 // 047: approved template; never replace or clear an existing interview file.
 function saveInterview047_(folder, item) {
   if (!item || [47,48].indexOf(item.version)<0 || !item.candidateId) throw new Error('Invalid interview payload');
@@ -92,7 +135,10 @@ function saveInterview047_(folder, item) {
   const file = matches[0] || DriveApp.getFileById(templateId).makeCopy(item.name, folder);
   const book = SpreadsheetApp.openById(file.getId());
   const hasCurrentLayout = book.getSheetByName('Начало').getRange('B14').getValue() === 'Телефон' && !!book.getSheetByName('Анкета 2 — сведения');
-  if (matches.length && (current ? !hasCurrentLayout : hasCurrentLayout || book.getSheetByName('Итог').getRange('B48').getValue() !== 'Дополнительные сведения кандидата • Анкета 2')) {
+  let migration052 = null;
+  if (matches.length && current && !hasCurrentLayout && item.migration === 52) migration052 = migrateInterviewLayout052_(folder, file, book, item.candidateId);
+  const currentLayoutAfterMigration = book.getSheetByName('Начало').getRange('B14').getValue() === 'Телефон' && !!book.getSheetByName('Анкета 2 — сведения');
+  if (matches.length && (current ? !currentLayoutAfterMigration : currentLayoutAfterMigration || book.getSheetByName('Итог').getRange('B48').getValue() !== 'Дополнительные сведения кандидата • Анкета 2')) {
     return {id:file.getId(),name:file.getName(),url:file.getUrl(),mimeType:file.getMimeType(),legacyTemplatePreserved:true};
   }
   const allowed = {
@@ -125,7 +171,7 @@ function saveInterview047_(folder, item) {
     }
   });
   SpreadsheetApp.flush();
-  return {id:file.getId(),name:file.getName(),url:file.getUrl(),mimeType:file.getMimeType(),preservedCells:preserved};
+  return {id:file.getId(),name:file.getName(),url:file.getUrl(),mimeType:file.getMimeType(),preservedCells:preserved,migration052:migration052};
 }
 
 // Four appointment cells plus the optional timeline tab. Never exports test answers.
@@ -212,7 +258,7 @@ function doPost(event) {
     const payload = JSON.parse(event.postData && event.postData.contents || '{}');
     const expected = PropertiesService.getScriptProperties().getProperty('BRIDGE_SECRET');
     if (!expected || payload.secret !== expected) return json_({ ok: false, error: 'Unauthorized' });
-    if (payload.action === 'capabilities') return json_({ok:true,bridgeVersion:'049-checked-1',interviewSheet047:true,interviewSheet048:true,appointment048:true,timeline049:true});
+    if (payload.action === 'capabilities') return json_({ok:true,bridgeVersion:'052-tuning-1',interviewSheet047:true,interviewSheet048:true,appointment048:true,timeline049:true,migration052:true});
     if (payload.action === 'interview_appointment_048') {
       lock = LockService.getScriptLock();
       if (!lock.tryLock(12000)) throw new Error('Drive занят, повторите адресное событие');

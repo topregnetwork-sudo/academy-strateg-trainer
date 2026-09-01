@@ -14,7 +14,7 @@ test('real entrypoint validates authorization and identifies the exact release w
  const request=p=>c.doPost({postData:{contents:JSON.stringify(p)}});
  assert.equal(request({action:'capabilities',secret:'wrong'}).ok,false);
  const result=request({action:'capabilities',secret:'test-only-secret'});
- assert.equal(result.bridgeVersion,'049-checked-1');assert.equal(result.timeline049,true);
+ assert.equal(result.bridgeVersion,'052-tuning-1');assert.equal(result.timeline049,true);assert.equal(result.migration052,true);
  assert.equal(request({secret:'test-only-secret'}).error,'Folder is not specified');
  assert.equal(c.doPost({postData:{contents:'not JSON'}}).ok,false);
 });
