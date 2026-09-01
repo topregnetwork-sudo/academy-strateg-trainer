@@ -1,7 +1,10 @@
 import crypto from 'node:crypto';
-import {init,json,sql,transaction} from './_core.js';
-import {initFunnel} from '../lib/funnel-store.js';
+import {init,json,sql,telegram,transaction} from './_core.js';
+import {effect,initFunnel} from '../lib/funnel-store.js';
 import {bookingFollowup} from '../lib/funnel-engine.js';
+import {bookingKeyboard,confirmationText,slotSummary} from './offline-interview.js';
+import {scheduleMinskReminder} from '../lib/review-reminders.js';
+import {queueInterviewAppointment} from '../lib/interview-appointment.js';
 
 const KEY_HASH='8c6e1f84a09e07c3e421320ca017ff6f43bae6076e7cd765b3c2219046255f5c';
 const allowed=req=>crypto.createHash('sha256').update(String(req.headers['x-maintenance-key']||'')).digest('hex')===KEY_HASH;
@@ -19,7 +22,8 @@ async function target(){
     WHERE (s.starts_at AT TIME ZONE 'Europe/Moscow')::date='2026-09-01'::date
     GROUP BY s.id,f.id ORDER BY s.starts_at`).rows;
   const legacy=candidate?(await sql`SELECT * FROM offline_interview_bookings WHERE candidate_id=${candidate.id} ORDER BY event_date DESC`).rows:[];
-  return {candidate,slots,today,existing,legacy};
+  const legacy1315=(await sql`SELECT b.*,c.username,c.first_name,c.last_name FROM offline_interview_bookings b JOIN candidates c ON c.id=b.candidate_id WHERE b.event_date='2026-09-01'::date AND b.slot_time='1315' AND b.status='booked'`).rows;
+  return {candidate,slots,today,existing,legacy,legacy1315};
 }
 
 export default async function handler(req,res){
@@ -30,6 +34,27 @@ export default async function handler(req,res){
     if(req.method!=='POST')return json(res,405,{error:'Method not allowed'});
     const before=await target(),candidate=before.candidate,slot=before.slots[0];
     if(!candidate)throw Error('Алеся @slkpwr не найдена');
+    if(before.slots.length===0){
+      if(before.legacy1315.some(row=>Number(row.candidate_id)!==Number(candidate.id)))throw Error('Слот 13:15 уже занят другим кандидатом');
+      const booking=await transaction(async tx=>{
+        const occupied=(await tx`SELECT candidate_id FROM offline_interview_bookings WHERE event_date='2026-09-01'::date AND slot_time='1315' AND slot_position=1 AND status='booked' FOR UPDATE`).rows[0];
+        if(occupied&&Number(occupied.candidate_id)!==Number(candidate.id))throw Error('Слот 13:15 уже занят другим кандидатом');
+        const row=(await tx`INSERT INTO offline_interview_bookings(candidate_id,event_date,slot_time,slot_position,status) VALUES(${candidate.id},'2026-09-01','1315',1,'booked')
+          ON CONFLICT(candidate_id,event_date) DO UPDATE SET slot_time='1315',slot_position=1,status='booked',updated_at=NOW() RETURNING *`).rows[0];
+        await tx`UPDATE candidates SET status='productivity_booked',consent=true,updated_at=NOW() WHERE id=${candidate.id}`;
+        return row;
+      });
+      const text=confirmationText('1315');
+      const messageId=await effect(`alesya-book-051:confirmation:${candidate.id}`,()=>telegram(String((await sql`SELECT chat_id FROM candidates WHERE id=${candidate.id}`).rows[0].chat_id),text,{disable_web_page_preview:true,reply_markup:bookingKeyboard()}));
+      await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id)
+        SELECT ${candidate.id},'out','offline_interview_confirmation',${text},'delivered',${String(messageId)}
+        WHERE NOT EXISTS(SELECT 1 FROM messages WHERE candidate_id=${candidate.id} AND telegram_message_id=${String(messageId)} AND direction='out')`;
+      await scheduleMinskReminder('1315');
+      await queueInterviewAppointment(candidate.id);
+      const summary=await slotSummary({ensureDrive:true});
+      await effect(`alesya-book-051:staff:${candidate.id}`,()=>telegram('-1004397133749',`✅ Алеся @slkpwr вручную записана на первичный разбор\n1 сентября 2026 года, 13:15 МСК\nСтатус восстановлен: «Записан на продуктивность».\n\n${summary.text}`,{message_thread_id:30,disable_web_page_preview:true}));
+      return json(res,200,{ok:true,mode:'legacy_minsk',booking,after:await target()});
+    }
     if(before.slots.length!==1)throw Error(`Ожидался один слот 13:15, найдено: ${before.slots.length}`);
     if(!slot.active)throw Error('Сессия закрыта');
     const result=await transaction(async tx=>{
