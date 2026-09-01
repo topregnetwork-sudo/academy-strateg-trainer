@@ -10,7 +10,7 @@ const KEY_HASH='8c6e1f84a09e07c3e421320ca017ff6f43bae6076e7cd765b3c2219046255f5c
 const allowed=req=>crypto.createHash('sha256').update(String(req.headers['x-maintenance-key']||'')).digest('hex')===KEY_HASH;
 
 async function target(){
-  const candidate=(await sql`SELECT id,username,city,status,consent FROM candidates WHERE lower(username)='slkpwr' LIMIT 1`).rows[0];
+  const candidate=(await sql`SELECT id,chat_id,username,city,status,consent FROM candidates WHERE lower(username)='slkpwr' LIMIT 1`).rows[0];
   const slots=(await sql`SELECT s.id,s.session_id,s.starts_at,s.capacity,f.active,f.config,count(b.id)::int AS used
     FROM funnel_slots s JOIN funnel_sessions f ON f.id=s.session_id LEFT JOIN funnel_bookings b ON b.slot_id=s.id
     WHERE f.config->>'city'='Минск' AND (s.starts_at AT TIME ZONE 'Europe/Moscow')::date='2026-09-01'::date
@@ -45,7 +45,7 @@ export default async function handler(req,res){
         return row;
       });
       const text=confirmationText('1315');
-      const messageId=await effect(`alesya-book-051:confirmation:${candidate.id}`,()=>telegram(String((await sql`SELECT chat_id FROM candidates WHERE id=${candidate.id}`).rows[0].chat_id),text,{disable_web_page_preview:true,reply_markup:bookingKeyboard()}));
+      const messageId=await effect(`alesya-book-051:confirmation:${candidate.id}`,()=>telegram(String(candidate.chat_id),text,{disable_web_page_preview:true,reply_markup:bookingKeyboard()}));
       await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id)
         SELECT ${candidate.id},'out','offline_interview_confirmation',${text},'delivered',${String(messageId)}
         WHERE NOT EXISTS(SELECT 1 FROM messages WHERE candidate_id=${candidate.id} AND telegram_message_id=${String(messageId)} AND direction='out')`;
