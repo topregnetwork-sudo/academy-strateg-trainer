@@ -30,7 +30,9 @@ export class FunnelTimer extends DurableObject {
       const attempts=task.attempts+1;
       await this.ctx.storage.put('task',{...task,attempts});
       console.error('funnel-timer-failure',{attempts,message:e.message});
-      if(attempts<6)await this.ctx.storage.setAlarm(Date.now()+Math.min(600000,30000*2**attempts));
+      // Never abandon one concrete funnel event because of a temporary outage.
+      // Fast retries first, then one controlled retry every30minutes until fixed.
+      await this.ctx.storage.setAlarm(Date.now()+Math.min(1800000,30000*2**Math.min(attempts,6)));
     }
   }
 }

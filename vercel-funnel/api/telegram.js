@@ -5,11 +5,12 @@ import {scheduleStageDeadline} from '../lib/stage-deadlines-043.js';
 import { handleFunnelCallback } from '../lib/funnel-engine.js';
 import { schedulePrimary } from '../lib/funnel-primary.js';
 import {entryKeyboard,handlePrimaryEntry,requirePrimaryAccess} from '../lib/primary-evidence.js';
+import {effect} from '../lib/funnel-store.js';
+import {isCandidateTestKeyword} from '../lib/telegram-event-policy.js';
 
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
 const CANDIDATE_GROUP_COMMAND = /^\/candidate_group(?:@stazherskaya_bot)?(?:\s|$)/i;
 const CANDIDATE_GROUP_KEYWORD = /^\s*(?:кандидат|кондидат)(?:ы)?[.!]?\s*$/iu;
-const CANDIDATE_TEST_KEYWORD = /^\s*тест[.!]?\s*$/iu;
 const NOT_RELEVANT_KEYWORD = /^\s*не\s*актуально[.!]?\s*$/iu;
 const TEST_VERSION = 'executive-effectiveness-2020-ru-v1';
 const COORDINATION_CHAT_ID = '-1004397133749';
@@ -27,7 +28,37 @@ async function savePrivateIncoming(message) {
   const candidate = (await sql`SELECT id FROM candidates WHERE chat_id=${chatId} LIMIT 1`).rows[0];
   if (!candidate) return;
   const text = String(message.text || message.caption || '').trim() || ({ photo: 'Отправил фотографию', document: 'Отправил файл', video: 'Отправил видео', voice: 'Отправил голосовое сообщение', contact: 'Отправил контакт' }[Object.keys(message).find(key => ['photo','document','video','voice','contact'].includes(key))] || 'Отправил сообщение');
-  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'in','telegram_message',${text},'received',${String(message.message_id || '')})`;
+  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id)
+    SELECT ${candidate.id},'in','telegram_message',${text},'received',${String(message.message_id || '')}
+    WHERE NOT EXISTS(SELECT 1 FROM messages WHERE candidate_id=${candidate.id} AND direction='in' AND telegram_message_id=${String(message.message_id || '')})`;
+}
+
+let eventReady;
+async function initTelegramEvents(){if(!eventReady)eventReady=(async()=>{
+  await sql`CREATE TABLE IF NOT EXISTS telegram_update_events050(update_id BIGINT PRIMARY KEY,state TEXT NOT NULL DEFAULT 'processing',kind TEXT,chat_id TEXT,error TEXT,attempts INT NOT NULL DEFAULT 1,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
+  await sql`ALTER TABLE telegram_update_events050 ENABLE ROW LEVEL SECURITY`;
+})().catch(e=>{eventReady=null;throw e});return eventReady;}
+async function claimTelegramEvent(update){
+  const id=Number(update.update_id);if(!Number.isSafeInteger(id))return {id:null,claimed:true};
+  const kind=update.callback_query?'callback':update.chat_member?'membership':update.message?.chat?.type==='private'?'private_message':'group_message';
+  const chat=String(update.callback_query?.from?.id||update.chat_member?.chat?.id||update.message?.chat?.id||'');
+  const row=(await sql`INSERT INTO telegram_update_events050(update_id,state,kind,chat_id) VALUES(${id},'processing',${kind},${chat})
+    ON CONFLICT(update_id) DO UPDATE SET state='processing',error=NULL,attempts=telegram_update_events050.attempts+1,updated_at=NOW()
+    WHERE telegram_update_events050.state='attention' OR (telegram_update_events050.state='processing' AND telegram_update_events050.updated_at<NOW()-INTERVAL '2 minutes') RETURNING update_id`).rows[0];
+  if(row)return {id,claimed:true};
+  const old=(await sql`SELECT state FROM telegram_update_events050 WHERE update_id=${id}`).rows[0];
+  return {id,claimed:false,done:old?.state==='done'};
+}
+async function finishTelegramEvent(id,state,error=null){if(id!==null)await sql`UPDATE telegram_update_events050 SET state=${state},error=${error?String(error).slice(0,500):null},updated_at=NOW() WHERE update_id=${id}`;}
+
+async function closedCandidateReply(message,candidate){
+  const recognized=isCandidateTestKeyword(message.text)||CANDIDATE_GROUP_KEYWORD.test(message.text||'')||/^\/start(?:\s|$)/i.test(message.text||'');
+  if(!recognized)return;
+  const text='Ваше участие в текущем отборе уже завершено со статусом «Не заполнил. Исключён». Поэтому новый тест или следующий этап автоматически не выдаётся. Если статус установлен ошибочно, напишите координатору — он сможет вернуть вас в отбор из операторской панели.';
+  const mid=await effect(`closed-candidate050:${candidate.id}:${message.message_id}`,()=>telegram(String(message.chat.id),text));
+  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id)
+    SELECT ${candidate.id},'out','closed_stage_explanation050',${text},'delivered',${String(mid)}
+    WHERE NOT EXISTS(SELECT 1 FROM messages WHERE candidate_id=${candidate.id} AND direction='out' AND telegram_message_id=${String(mid)})`;
 }
 
 function candidateName(candidate) {
@@ -197,7 +228,7 @@ async function handleCandidateGroupKeyword(message) {
 }
 
 async function handleCandidateTestKeyword(message) {
-  if (!CANDIDATE_TEST_KEYWORD.test(message.text || '')) return false;
+  if (!isCandidateTestKeyword(message.text)) return false;
   const chatId = String(message.chat.id);
   const candidate = (await sql`SELECT id,chat_id,status FROM candidates WHERE chat_id=${chatId} LIMIT 1`).rows[0];
   if (!candidate) {
@@ -211,7 +242,7 @@ async function handleCandidateTestKeyword(message) {
     if(!questionnaire){const questionnaireToken=crypto.randomUUID().replaceAll('-','')+crypto.randomUUID().replaceAll('-','');questionnaire=(await sql`INSERT INTO candidate_questionnaire_two(candidate_id,token,status) VALUES(${candidate.id},${questionnaireToken},'pending') RETURNING *`).rows[0]}
     const questionnaireUrl=`https://topregnetwork-sudo.github.io/academy-strateg-trainer/questionnaire-2.html?token=${questionnaire.token}`;
     const questionnaireText='Сначала заполните обязательную Анкету 2. После отправки продолжите изучение материалов группы и следуйте инструкциям.';
-    const questionnaireMessageId=await telegram(chatId,questionnaireText,{reply_markup:{inline_keyboard:[[{text:'Заполнить Анкету 2',url:questionnaireUrl}]]}});
+    const questionnaireMessageId=await effect(`questionnaire-required:${candidate.id}:${questionnaire.id}`,()=>telegram(chatId,questionnaireText,{reply_markup:{inline_keyboard:[[{text:'Заполнить Анкету 2',url:questionnaireUrl}]]}}));
     await sql`UPDATE candidate_questionnaire_two SET status='sent',sent_at=COALESCE(sent_at,NOW()),updated_at=NOW() WHERE id=${questionnaire.id}`;
     await scheduleStageDeadline(candidate.id,'q2').catch(e=>console.error('[deadline043]',candidate.id,e.message));
     await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','questionnaire_2_required',${questionnaireText},'delivered',${String(questionnaireMessageId||'')})`;
@@ -232,7 +263,7 @@ async function handleCandidateTestKeyword(message) {
   }
   const testUrl = `https://topregnetwork-sudo.github.io/academy-strateg-trainer/test.html?token=${test.token}`;
   const text = '📝 <b>Тест 1 — эффективность руководителя</b>\n\nОткройте персональную ссылку и ответьте на 200 вопросов. Все вопросы находятся на одной странице; напротив каждого выберите «Да», «Может быть» или «Нет».\n\nПосле отправки ответы автоматически прикрепятся к вашей анкете.';
-  const messageId = await telegram(chatId, text, { reply_markup: { inline_keyboard: [[{ text: 'Пройти тест 1', url: testUrl }]] } });
+  const messageId = await effect(`candidate-test-invite:${candidate.id}:${test.id}`,()=>telegram(chatId, text, { reply_markup: { inline_keyboard: [[{ text: 'Пройти тест 1', url: testUrl }]] } }));
   await sql`UPDATE candidate_tests SET status='sent',sent_at=COALESCE(sent_at,NOW()),updated_at=NOW() WHERE id=${test.id}`;
   await scheduleStageDeadline(candidate.id,'test1').catch(e=>console.error('[deadline043]',candidate.id,e.message));
   await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','candidate_test_invite',${text},'delivered',${String(messageId || '')})`;
@@ -516,23 +547,26 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { ok: false });
   if (process.env.TELEGRAM_WEBHOOK_SECRET && req.headers['x-telegram-bot-api-secret-token'] !== process.env.TELEGRAM_WEBHOOK_SECRET) return json(res, 401, { ok: false });
 
-  let update;
+  let update,event={id:null};
   try {
     update = await body(req);
+    await init();await initTelegramEvents();event=await claimTelegramEvent(update);
+    if(!event.claimed)return json(res,event.done?200:503,{ok:event.done});
+    const complete=async(code=200,body={ok:true})=>{await finishTelegramEvent(event.id,'done');return json(res,code,body);};
     if (update.chat_member) {
       await init();
       await handleCandidateGroupMembership(update);
-      return json(res, 200, { ok: true });
+      return complete();
     }
     const callback = update.callback_query;
     if (callback) {
       await init();
-      if((await sql`SELECT id FROM candidates WHERE chat_id=${String(callback.from.id)} AND status='test_1_incomplete_removed'`).rows[0]){await telegramApi('answerCallbackQuery',{callback_query_id:callback.id,text:'Ваше участие в текущем отборе завершено.',show_alert:true});return json(res,200,{ok:true});}
+      if((await sql`SELECT id FROM candidates WHERE chat_id=${String(callback.from.id)} AND status='test_1_incomplete_removed'`).rows[0]){await telegramApi('answerCallbackQuery',{callback_query_id:callback.id,text:'Ваше участие в текущем отборе завершено.',show_alert:true});return complete();}
       if (!await handlePrimaryEntry(callback) && !await handleFunnelCallback(callback) && !await handleOfflineInterviewChoice(callback) && !await handleNadezhdaFinalistChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
-      return json(res, 200, { ok: true });
+      return complete();
     }
     const message = update.message;
-    if (!message) return json(res, 200, { ok: true });
+    if (!message) return complete();
 
     if (message.chat?.type && message.chat.type !== 'private') {
       await init();
@@ -542,10 +576,10 @@ export default async function handler(req, res) {
         if (cleaned) console.info('[removal-service] deleted', { chatId: message.chat.id, messageId: message.message_id });
         if(cleaned&&(await sql`SELECT to_regclass('public.incomplete042') AS t`).rows[0]?.t){await sql`UPDATE incomplete042 SET service_deleted_id=${String(message.message_id)} WHERE snapshot->>'chat_id'=${String(message.left_chat_member.id)}`;}
         if(cleaned&&(await sql`SELECT to_regclass('public.stage_deadlines043') AS t`).rows[0]?.t){await sql`UPDATE stage_deadlines043 SET service_deleted_id=${String(message.message_id)} WHERE snapshot->>'chat_id'=${String(message.left_chat_member.id)}`;}
-        return json(res, 200, { ok: true });
+        return complete();
       }
-      if (await handleNewCandidateGroupMembers(message)) return json(res, 200, { ok: true });
-      if (!TOPIC_COMMAND.test(message.text || '') && !CANDIDATE_GROUP_COMMAND.test(message.text || '')) return json(res, 200, { ok: true });
+      if (await handleNewCandidateGroupMembers(message)) return complete();
+      if (!TOPIC_COMMAND.test(message.text || '') && !CANDIDATE_GROUP_COMMAND.test(message.text || '')) return complete();
       try {
         if (!await configureCandidateGroup(message)) await configureTrainerTopic(message);
       } catch (error) {
@@ -557,21 +591,22 @@ export default async function handler(req, res) {
           console.error('[telegram] trainer topic error response failed', { message: String(notifyError) });
         }
       }
-      return json(res, 200, { ok: true });
+      return complete();
     }
 
     await init();
     await savePrivateIncoming(message);
-    if((await sql`SELECT id FROM candidates WHERE chat_id=${String(message.chat.id)} AND status='test_1_incomplete_removed'`).rows[0])return json(res,200,{ok:true});
-    if (await handleNotRelevant(message)) return json(res, 200, { ok: true });
-    if (await handleCandidateGroupKeyword(message)) return json(res, 200, { ok: true });
-    if (await handleCandidateTestKeyword(message)) return json(res, 200, { ok: true });
+    const closed=(await sql`SELECT id,status FROM candidates WHERE chat_id=${String(message.chat.id)} AND status='test_1_incomplete_removed'`).rows[0];
+    if(closed){await closedCandidateReply(message,closed);return complete();}
+    if (await handleNotRelevant(message)) return complete();
+    if (await handleCandidateGroupKeyword(message)) return complete();
+    if (await handleCandidateTestKeyword(message)) return complete();
     await handlePrivateStart(message);
-    return json(res, 200, { ok: true });
+    return complete();
   } catch (error) {
     console.error('[telegram] webhook failed', { message: String(error), stack: error?.stack });
-    // Only retry this isolated service event; do not replay unrelated funnel actions.
-    if (update?.message?.left_chat_member) return json(res, 503, { ok: false });
-    return json(res, 200, { ok: true });
+    await finishTelegramEvent(event.id,'attention',error?.message).catch(()=>{});
+    // Telegram must retry a technically unfinished event. Successful effects are idempotent.
+    return json(res, 503, { ok: false });
   }
 }

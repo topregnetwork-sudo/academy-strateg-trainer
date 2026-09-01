@@ -2,7 +2,7 @@ import {sql} from '../api/_core.js';
 
 // Read only, scoped to one candidate. Missing optional tables never erase chat data.
 export async function candidateProgress(id) {
-  const result={offlineInvites:[],offlineBookings:[],campaigns:[],bookings:[],errors:[]};
+  const result={offlineInvites:[],offlineBookings:[],campaigns:[],bookings:[],botEvents:[],errors:[]};
   const read=async(key,query)=>{try{result[key]=(await query()).rows;}catch{result.errors.push(key);}};
   await read('offlineInvites',()=>sql`SELECT event_date,status,sent_at,telegram_message_id FROM offline_interview_invites WHERE candidate_id=${id} ORDER BY event_date DESC`);
   await read('offlineBookings',()=>sql`SELECT event_date,slot_time,status FROM offline_interview_bookings WHERE candidate_id=${id} ORDER BY event_date DESC`);
@@ -10,6 +10,8 @@ export async function candidateProgress(id) {
   const evidenceTables=(await sql`SELECT to_regclass('public.candidate_zoom_entries') AS entries,to_regclass('public.funnel_tasks') AS tasks`).rows[0];
   const sessions=(await sql`SELECT to_regclass('public.candidate_zoom_session_entries') AS entries`).rows[0];
   const declines=(await sql`SELECT to_regclass('public.candidate_decline_events') AS events`).rows[0];
+  const botEvents=(await sql`SELECT to_regclass('public.telegram_update_events050') AS events`).rows[0];
+  if(botEvents?.events)await read('botEvents',()=>sql`SELECT e.update_id,e.state,e.kind,e.error,e.attempts,e.updated_at FROM telegram_update_events050 e JOIN candidates c ON c.chat_id=e.chat_id WHERE c.id=${id} ORDER BY e.updated_at DESC LIMIT 5`);
   if(declines?.events)await read('declines',()=>sql`SELECT created_at,notified_at,error FROM candidate_decline_events WHERE candidate_id=${id} ORDER BY created_at DESC LIMIT 3`);
   if(sessions?.entries)await read('primaryEntry',()=>sql`SELECT clicked_at,interview_at,slot_id FROM (SELECT * FROM candidate_zoom_entries UNION ALL SELECT candidate_id,clicked_at,interview_at,slot_id FROM candidate_zoom_session_entries) e WHERE candidate_id=${id} AND clicked_at BETWEEN interview_at-INTERVAL '15 minutes' AND interview_at+INTERVAL '60 minutes' ORDER BY clicked_at LIMIT 1`);
   else if(evidenceTables?.entries)await read('primaryEntry',()=>sql`SELECT clicked_at,interview_at,slot_id FROM candidate_zoom_entries WHERE candidate_id=${id} AND clicked_at BETWEEN interview_at-INTERVAL '15 minutes' AND interview_at+INTERVAL '60 minutes'`);

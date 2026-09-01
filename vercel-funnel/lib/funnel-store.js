@@ -44,14 +44,16 @@ export function verifyTaskToken(token) {
   return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected)) ? id : null;
 }
 export async function armTask(id) {
-  const response = await fetch('https://academy-strateg-trainer-fallback.academy-strateg-network.workers.dev/_funnel/schedule', {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: taskToken(id) }), signal: AbortSignal.timeout(12000)
-  });
-  if (!response.ok) {
-    await sql`UPDATE funnel_tasks SET error='Не удалось назначить точный запуск',updated_at=NOW() WHERE id=${id}`;
-    throw new Error('Не удалось назначить запуск. Задача сохранена: повторите запуск из журнала.');
-  }
-  await sql`UPDATE funnel_tasks SET error=NULL,updated_at=NOW() WHERE id=${id}`;
+  let error;
+  for(let attempt=1;attempt<=3;attempt++)try{
+    const response = await fetch('https://academy-strateg-trainer-fallback.academy-strateg-network.workers.dev/_funnel/schedule', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: taskToken(id) }), signal: AbortSignal.timeout(12000)
+    });
+    if(!response.ok)throw Error('Scheduler '+response.status);
+    await sql`UPDATE funnel_tasks SET error=NULL,updated_at=NOW() WHERE id=${id}`;return;
+  }catch(e){error=e;if(attempt<3)await new Promise(r=>setTimeout(r,300*attempt));}
+  await sql`UPDATE funnel_tasks SET state='attention',error=${'Не удалось назначить точный запуск: '+String(error?.message||error).slice(0,300)},updated_at=NOW() WHERE id=${id}`;
+  throw new Error('Не удалось назначить запуск после трёх попыток. Задача сохранена со статусом «Требует внимания».');
 }
 export async function createTask(kind, payload, dueAt = new Date(), id = crypto.randomUUID()) {
   await initFunnel();
@@ -72,6 +74,7 @@ export async function effect(key, send) {
   let messageId;
   try { messageId = await send(); }
   catch (e) {
+    if(e?.definite){await sql`DELETE FROM funnel_effects WHERE key=${key} AND state='sending'`;throw e;}
     await sql`UPDATE funnel_effects SET state='uncertain',error=${String(e.message).slice(0,500)},updated_at=NOW() WHERE key=${key}`;
     throw e;
   }
