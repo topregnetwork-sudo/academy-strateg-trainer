@@ -1,0 +1,44 @@
+import crypto from 'node:crypto';
+import {init,json,sql,transaction} from './_core.js';
+import {initFunnel} from '../lib/funnel-store.js';
+import {bookingFollowup} from '../lib/funnel-engine.js';
+
+const KEY_HASH='8c6e1f84a09e07c3e421320ca017ff6f43bae6076e7cd765b3c2219046255f5c';
+const allowed=req=>crypto.createHash('sha256').update(String(req.headers['x-maintenance-key']||'')).digest('hex')===KEY_HASH;
+
+async function target(){
+  const candidate=(await sql`SELECT id,username,city,status,consent FROM candidates WHERE lower(username)='slkpwr' LIMIT 1`).rows[0];
+  const slots=(await sql`SELECT s.id,s.session_id,s.starts_at,s.capacity,f.active,f.config,count(b.id)::int AS used
+    FROM funnel_slots s JOIN funnel_sessions f ON f.id=s.session_id LEFT JOIN funnel_bookings b ON b.slot_id=s.id
+    WHERE f.config->>'city'='Минск' AND (s.starts_at AT TIME ZONE 'Europe/Moscow')::date='2026-09-01'::date
+      AND to_char(s.starts_at AT TIME ZONE 'Europe/Moscow','HH24:MI')='13:15'
+    GROUP BY s.id,f.id ORDER BY s.starts_at`).rows;
+  const existing=candidate?(await sql`SELECT b.*,s.starts_at FROM funnel_bookings b JOIN funnel_slots s ON s.id=b.slot_id WHERE b.candidate_id=${candidate.id} ORDER BY s.starts_at DESC`).rows:[];
+  return {candidate,slots,existing};
+}
+
+export default async function handler(req,res){
+  if(!allowed(req))return json(res,404,{error:'Not found'});
+  try{
+    await init();await initFunnel();
+    if(req.method==='GET')return json(res,200,await target());
+    if(req.method!=='POST')return json(res,405,{error:'Method not allowed'});
+    const before=await target(),candidate=before.candidate,slot=before.slots[0];
+    if(!candidate)throw Error('Алеся @slkpwr не найдена');
+    if(before.slots.length!==1)throw Error(`Ожидался один слот 13:15, найдено: ${before.slots.length}`);
+    if(!slot.active)throw Error('Сессия закрыта');
+    const result=await transaction(async tx=>{
+      await tx`SELECT id FROM funnel_sessions WHERE id=${slot.session_id} FOR UPDATE`;
+      const locked=(await tx`SELECT * FROM funnel_slots WHERE id=${slot.id} FOR UPDATE`).rows[0];
+      const old=(await tx`SELECT * FROM funnel_bookings WHERE session_id=${slot.session_id} AND candidate_id=${candidate.id}`).rows[0];
+      const used=(await tx`SELECT count(*)::int AS n FROM funnel_bookings WHERE slot_id=${slot.id} AND candidate_id<>${candidate.id}`).rows[0].n;
+      if(used>=locked.capacity)throw Error('Слот 13:15 уже занят');
+      const booking=(await tx`INSERT INTO funnel_bookings(session_id,candidate_id,slot_id) VALUES(${slot.session_id},${candidate.id},${slot.id})
+        ON CONFLICT(session_id,candidate_id) DO UPDATE SET slot_id=EXCLUDED.slot_id,version=CASE WHEN funnel_bookings.slot_id=EXCLUDED.slot_id THEN funnel_bookings.version ELSE funnel_bookings.version+1 END,updated_at=NOW() RETURNING *`).rows[0];
+      await tx`UPDATE candidates SET status='productivity_booked',consent=true,updated_at=NOW() WHERE id=${candidate.id}`;
+      return {booking,unchanged:Number(old?.slot_id)===Number(slot.id)};
+    });
+    await bookingFollowup(result.booking.id,result.booking.version);
+    return json(res,200,{ok:true,before,result,after:await target()});
+  }catch(error){console.error('[alesya-book-051]',error);return json(res,409,{error:String(error?.message||error)});}
+}
