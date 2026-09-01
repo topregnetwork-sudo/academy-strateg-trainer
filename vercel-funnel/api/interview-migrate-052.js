@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import {init,json,sql} from './_core.js';
 import {bridgeCapabilities,syncDriveCandidate} from './drive.js';
+import {syncInterviewAppointment} from '../lib/interview-appointment.js';
 
 const KEY_HASH='2614482425964e0590ae249c9827149542f67a69a5e17e4e9e1558767b1feacd';
 const allowed=req=>crypto.createHash('sha256').update(String(req.headers['x-maintenance-key']||'')).digest('hex')===KEY_HASH;
@@ -26,6 +27,7 @@ export default async function handler(req,res){
     const id=Number(req.body?.candidateId||0),list=await candidates();
     if(!list.some(row=>Number(row.id)===id))throw new Error('Кандидат не входит в проверенный список миграции');
     const result=await syncDriveCandidate(id);
-    return json(res,200,{ok:true,candidateId:id,interview:result.files?.find(file=>String(file.name||'').startsWith('Интервью на продуктивность —'))||null,folder:result.folder});
+    const appointment=await syncInterviewAppointment(id);
+    return json(res,200,{ok:true,candidateId:id,interview:result.files?.find(file=>String(file.name||'').startsWith('Интервью на продуктивность —'))||null,folder:result.folder,appointment});
   }catch(error){return json(res,409,{ok:false,error:String(error?.message||error)});}
 }
