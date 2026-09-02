@@ -20,7 +20,7 @@ export default async function handler(req,res){
         const progress=await candidateProgress(id).catch(()=>({errors:['progress']}));
         return json(res,200,{candidate,messages,test,testFiles,questionnaireTwo,drive,driveFiles,progress});
       }
-      const candidates=(await sql`SELECT c.*,m.text AS last_message FROM candidates c LEFT JOIN LATERAL (SELECT text FROM messages WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) m ON true ORDER BY c.created_at DESC`).rows;
+      const candidates=(await sql`SELECT c.*,m.text AS last_message,d.folder_url,d.folder_name FROM candidates c LEFT JOIN LATERAL (SELECT text FROM messages WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) m ON true LEFT JOIN candidate_drive d ON d.candidate_id=c.id ORDER BY c.created_at DESC`).rows;
       const analytics=(await sql`SELECT count(*) FILTER (WHERE true)::int AS total,count(*) FILTER (WHERE status='interview_booked')::int AS booked,count(*) FILTER (WHERE status='hired')::int AS hired FROM candidates`).rows[0];
       const project=(await sql`SELECT id,project_key,name,description FROM funnel_projects WHERE project_key='academy-trainer' LIMIT 1`).rows[0]||null;
       const stageDefinitions=project?(await sql`SELECT stage_key,stage_name,position,config,version,mode FROM funnel_stage_definitions WHERE project_id=${project.id} AND version=(SELECT MAX(d2.version) FROM funnel_stage_definitions d2 WHERE d2.project_id=funnel_stage_definitions.project_id AND d2.stage_key=funnel_stage_definitions.stage_key) ORDER BY position`).rows:[];

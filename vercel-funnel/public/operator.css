@@ -82,3 +82,12 @@ main{max-width:1780px;padding:14px}
   .history{min-height:220px}
   .bubble{max-width:96%}
 }
+/* Board refinement: compact columns, reliable card buttons, and visible Drive links. */
+.board-grid{grid-template-columns:repeat(8,minmax(170px,1fr));scrollbar-gutter:stable}
+.board-card{padding:0}
+.board-card-main{display:flex;flex-direction:column;gap:5px;text-align:left;background:transparent;border:0;padding:11px;color:inherit;cursor:pointer;width:100%}
+.board-drive-link{font-size:11px;color:#1769aa;overflow-wrap:anywhere}
+.board-card.overdue{border-color:#d88e4b;background:#fff9f0}
+.board-decision{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:0 8px 8px}
+.board-decision small{grid-column:1/-1;color:#9a5b18;font-size:11px}
+.board-decision button{border:1px solid #d6a64d;background:#fff;padding:6px;border-radius:7px;cursor:pointer}
