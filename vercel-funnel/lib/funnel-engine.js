@@ -36,7 +36,8 @@ export async function available(sessionId) {
 export async function sessionKeyboard(sessionId, candidateId, preview = false) {
   const rows = [...goals];
   const slots = await available(sessionId);
-  for (let i=0; i<slots.length; i+=2) rows.push(slots.slice(i,i+2).map(s => ({ text: new Date(s.starts_at).toLocaleTimeString('ru-RU',{timeZone:'Europe/Moscow',hour:'2-digit',minute:'2-digit'}), callback_data: preview ? 'fc_demo' : `fc_book_${sessionId}_${s.id}` })));
+  const multiDay=Boolean((await sessionById(sessionId))?.config?.multiDay);
+  for (let i=0; i<slots.length; i+=2) rows.push(slots.slice(i,i+2).map(s => ({ text: multiDay?new Date(s.starts_at).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):new Date(s.starts_at).toLocaleTimeString('ru-RU',{timeZone:'Europe/Moscow',hour:'2-digit',minute:'2-digit'}), callback_data: preview ? 'fc_demo' : `fc_book_${sessionId}_${s.id}` })));
   return { inline_keyboard: rows };
 }
 export async function messageKeyboard(config, jobId, candidateId, preview = false) {
@@ -85,7 +86,7 @@ export async function book(sessionId, slotId, candidateId) {
     const session = (await tx`SELECT * FROM funnel_sessions WHERE id=${sessionId} FOR UPDATE`).rows[0];
     if (!session?.active) throw new Error('Запись закрыта');
     const c = (await tx`SELECT * FROM candidates WHERE id=${candidateId} FOR UPDATE`).rows[0];
-    if (!c || ['rejected','cancelled','academy_contact','selection_closed','productivity_passed','productivity_failed','test_1_passed','finalist','hired','training','internship'].includes(c.status) || c.city !== session.config.city) throw new Error('Запись для вашего этапа недоступна');
+    if (!c || ['rejected','cancelled','academy_contact','selection_closed','productivity_passed','productivity_failed','test_1_passed','finalist','hired','training','internship'].includes(c.status) || (session.config.city!=='Все города'&&c.city !== session.config.city)) throw new Error('Запись для вашего этапа недоступна');
     const authorized = (await tx`SELECT 1 FROM funnel_recipients r JOIN funnel_jobs j ON j.id=r.job_id WHERE r.candidate_id=${candidateId} AND r.state='sent' AND (j.config->>'sessionId')::bigint=${sessionId} LIMIT 1`).rows[0];
     if (!authorized) throw new Error('Сначала дождитесь персонального приглашения');
     const slot = (await tx`SELECT * FROM funnel_slots WHERE id=${slotId} AND session_id=${sessionId} AND starts_at>NOW()+${session.config.cutoff}*INTERVAL '1 minute'`).rows[0];

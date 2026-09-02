@@ -58,8 +58,9 @@ export function validateSession(v, now = Date.now()) {
     confirmation: String(v.confirmation || 'Вы записаны на встречу Академии Стратег.\nДата: {date}\nВремя: {time} МСК\n{location}').slice(0, 2000) };
 }
 export function renderText(text, candidate, session, at) {
+  const actualDate=at?new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'numeric',month:'long',year:'numeric'}).format(new Date(at)):session?.date||'';
   const values = { name: candidate.full_name || [candidate.first_name, candidate.last_name].filter(Boolean).join(' ') || candidate.username || 'Здравствуйте', city: candidate.city || '',
-    date: session?.date || '', location: session ? `${session.format === 'online' ? 'Ссылка' : 'Адрес'}: ${session.location}` : '',
+    date: actualDate, location: session ? `${session.format === 'online' ? 'Ссылка' : 'Адрес'}: ${session.location}` : '',
     time: at ? new Date(at).toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' }) : '',
     local_time: at ? new Date(at).toLocaleTimeString('ru-RU',{timeZone:'Asia/Yekaterinburg',hour:'2-digit',minute:'2-digit'}) : '' };
   return text.replace(/\{(name|city|date|location|time|local_time)\}/g, (_, k) => values[k]);
@@ -73,7 +74,7 @@ export function eligibility(candidate, config, session) {
     if(['productivity_passed','test_1_passed','productivity_booked'].includes(candidate.status))return 'Продуктивность уже пройдена или назначена';
     if (!candidate.test_completed) return 'Тест 1 не завершён';
     if (!session || !session.active) return 'Нет активной встречи';
-    if (candidate.city !== session.config.city) return 'Другой город';
+    if (session.config.city !== 'Все города' && candidate.city !== session.config.city) return 'Другой город';
     if (['test_1_incomplete_removed', 'finalist', 'training', 'internship', 'hired', 'rejected', 'cancelled', 'academy_contact', 'selection_closed', 'productivity_failed'].includes(candidate.status)) return 'Этап уже завершён';
     if (candidate.booked_session) return 'Уже есть запись на эту встречу';
     if (candidate.invited_session) return 'Приглашение на эту встречу уже отправлено';
