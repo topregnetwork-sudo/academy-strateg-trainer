@@ -56,6 +56,13 @@
       "rollback": "rollback/board-refresh-before-061",
       "rule": "Opening the board reloads the current candidate snapshot before rendering; no background polling is introduced.",
       "preserved": "Event-driven progression, statuses, slots, filters, messages, briefs, cards, and timed jobs."
+    },
+    "board_slot_order_062": {
+      "status": "implemented_pending_deployment",
+      "baseline": "db0c89f",
+      "rollback": "rollback/board-slot-order-before-062",
+      "rule": "Future appointments first by nearest time; past appointments below with oldest last; no-time records at the end.",
+      "preserved": "Statuses, filters, events, messages, briefs, cards, and candidate data."
     }
   }
 }
