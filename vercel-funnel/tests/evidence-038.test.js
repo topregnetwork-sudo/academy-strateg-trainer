@@ -2,7 +2,7 @@ import {test,mock} from 'node:test';
 import assert from 'node:assert/strict';
 import {PGlite} from '@electric-sql/pglite';
 const db=new PGlite(),sent=[],tasks=new Map(),effects=new Map(),answers=[];
-await db.exec(`CREATE TABLE candidates(id bigint PRIMARY KEY,chat_id text,first_name text,last_name text,city text,status text,consent boolean,interview_at timestamptz,slot_id text,username text);
+await db.exec(`CREATE TABLE candidates(id bigint PRIMARY KEY,chat_id text,first_name text,last_name text,city text,status text,consent boolean,interview_at timestamptz,slot_id text,username text,no_show_followup_sent boolean default false,updated_at timestamptz default now());
 CREATE TABLE app_settings(key text PRIMARY KEY,value text);
 CREATE TABLE candidate_questionnaire_two(candidate_id bigint,sent_at timestamptz);
 CREATE TABLE messages(candidate_id bigint,direction text,kind text,text text,delivery_status text,telegram_message_id text);
@@ -12,9 +12,10 @@ CREATE TABLE candidate_drive(candidate_id bigint,folder_url text);
 INSERT INTO candidates VALUES(1,'101','Имя','','Минск','interview_booked',true,'2026-09-01T08:00:00Z','tue-0800','one'),(2,'102','Старый','','Минск','questionnaire',true,'2026-08-25T05:00:00Z','tue-0800','old'),(3,'103','Другой','','Челябинск','test_1_completed',true,'2026-08-25T05:00:00Z','tue-0800','three');
 INSERT INTO candidate_questionnaire_two VALUES(2,'2026-01-01');
 INSERT INTO app_settings VALUES('zoom_meeting_url','https://zoom.us/primary'),('hr_brief_chat_id','staff'),('hr_brief_thread_id','7');`);
-await mock.module('../api/_core.js',{namedExports:{sql:(s,...v)=>db.query(s.reduce((a,b,i)=>a+(i?'$'+i:'')+b,''),v),telegram:async(chat,text,extra)=>{sent.push({chat,text,extra});return sent.length;},telegramApi:async(method,p)=>answers.push({method,p})}});
+const tag=conn=>(s,...v)=>conn.query(s.reduce((a,b,i)=>a+(i?'$'+i:'')+b,''),v);
+await mock.module('../api/_core.js',{namedExports:{sql:tag(db),transaction:fn=>db.transaction(tx=>fn(tag(tx))),slots:{'mon-0800':'Понедельник, 08:00 МСК'},telegram:async(chat,text,extra)=>{sent.push({chat,text,extra});return sent.length;},telegramApi:async(method,p)=>answers.push({method,p})}});
 await mock.module('../lib/funnel-store.js',{namedExports:{initFunnel:async()=>{},createTask:async(kind,payload,due,id)=>{tasks.set(id,{kind,payload,due});},effect:async(key,fn)=>{if(effects.has(key))return effects.get(key);const value=await fn();effects.set(key,value);return value;}}});
-const {initPrimaryEvidence,primaryAccess,handlePrimaryEntry,requirePrimaryAccess,reportPrimaryEntry}=await import('../lib/primary-evidence.js');
+const {initPrimaryEvidence,primaryAccess,handlePrimaryEntry,handlePrimaryRebookMenu,offerPrimaryRebook,requirePrimaryAccess,reportPrimaryEntry}=await import('../lib/primary-evidence.js');
 const {scheduleMinskReminder,runMinskReminder}=await import('../lib/review-reminders.js');
 test('entry: gate before click, retain legacy, authenticate private owner, record first click once, report once',async()=>{
  await initPrimaryEvidence();assert.equal((await primaryAccess(1)).allowed,false);assert.equal((await primaryAccess(2)).legacy,true);
@@ -33,6 +34,15 @@ test('entry: gate before click, retain legacy, authenticate private owner, recor
  assert.equal(tasks.size,1);assert.equal(sent.filter(s=>s.text.startsWith('Подключитесь')).length,3);
  assert.equal((await db.query('SELECT status FROM candidates WHERE id=1')).rows[0].status,'interview_booked');
  await reportPrimaryEntry(1);await reportPrimaryEntry(1);assert.equal(sent.filter(s=>s.chat==='staff').length,1);assert.match(sent.at(-1).text,/не подтверждение присутствия/);
+});
+test('self-service rebooking opens only after missed appointment and keeps standard rebook buttons',async()=>{
+ await db.exec(`UPDATE candidates SET status='interview_booked',interview_at=NOW()+INTERVAL '1 day',no_show_followup_sent=false WHERE id=1`);
+ assert.equal((await offerPrimaryRebook('101','future')).ok,false);
+ await db.exec(`UPDATE candidates SET interview_at=NOW()-INTERVAL '61 minutes' WHERE id=1`);
+ const result=await offerPrimaryRebook('101','missed');assert.equal(result.ok,true);
+ const message=sent.at(-1);assert.equal(message.extra.reply_markup.inline_keyboard[0][0].callback_data,'trainer_rebook_mon-0800');
+ assert.equal((await db.query('SELECT no_show_followup_sent FROM candidates WHERE id=1')).rows[0].no_show_followup_sent,true);
+ assert.equal(await handlePrimaryRebookMenu({data:'other'}),false);
 });
 test('review reminds every booked city including Chelyabinsk; sends once with correct URL',async()=>{
  mock.timers.enable({apis:['Date'],now:new Date('2026-09-01T07:30:00Z')});

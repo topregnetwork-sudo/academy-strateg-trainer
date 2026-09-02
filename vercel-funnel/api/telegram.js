@@ -4,7 +4,7 @@ import { cleanupRemovalService } from './_removal-service.js';
 import {scheduleStageDeadline} from '../lib/stage-deadlines-043.js';
 import { handleFunnelCallback } from '../lib/funnel-engine.js';
 import { schedulePrimary } from '../lib/funnel-primary.js';
-import {entryKeyboard,handlePrimaryEntry,requirePrimaryAccess} from '../lib/primary-evidence.js';
+import {entryKeyboard,handlePrimaryEntry,handlePrimaryRebookMenu,offerPrimaryRebook,requirePrimaryAccess} from '../lib/primary-evidence.js';
 import {effect} from '../lib/funnel-store.js';
 import {isCandidateTestKeyword} from '../lib/telegram-event-policy.js';
 
@@ -370,6 +370,8 @@ async function handlePrivateStart(message) {
   if (app.candidate_id) {
     const linked = (await sql`SELECT id,chat_id,status,interview_at FROM candidates WHERE id=${app.candidate_id} LIMIT 1`).rows[0];
     if (linked?.chat_id === chatId && linked.status === 'interview_booked' && linked.interview_at) {
+      const rebook=await offerPrimaryRebook(chatId,`start:${message.message_id||Date.now()}`);
+      if(rebook.ok)return;
       await telegram(chatId, 'Вы уже записаны на собеседование. Подтверждение и ссылка Zoom находятся выше в этом чате.');
       return;
     }
@@ -562,7 +564,7 @@ export default async function handler(req, res) {
     if (callback) {
       await init();
       if((await sql`SELECT id FROM candidates WHERE chat_id=${String(callback.from.id)} AND status='test_1_incomplete_removed'`).rows[0]){await telegramApi('answerCallbackQuery',{callback_query_id:callback.id,text:'Ваше участие в текущем отборе завершено.',show_alert:true});return complete();}
-      if (!await handlePrimaryEntry(callback) && !await handleFunnelCallback(callback) && !await handleOfflineInterviewChoice(callback) && !await handleNadezhdaFinalistChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
+      if (!await handlePrimaryEntry(callback) && !await handlePrimaryRebookMenu(callback) && !await handleFunnelCallback(callback) && !await handleOfflineInterviewChoice(callback) && !await handleNadezhdaFinalistChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
       return complete();
     }
     const message = update.message;

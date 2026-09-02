@@ -1,4 +1,4 @@
-import {sql,telegram,telegramApi} from '../api/_core.js';
+import {sql,transaction,telegram,telegramApi,slots} from '../api/_core.js';
 import {initFunnel,createTask,effect} from './funnel-store.js';
 import crypto from 'node:crypto';
 export function evidenceId(key){const s=crypto.createHash('sha256').update(key).digest('hex').slice(0,32);return `${s.slice(0,8)}-${s.slice(8,12)}-${s.slice(12,16)}-${s.slice(16,20)}-${s.slice(20)}`;}
@@ -14,7 +14,27 @@ export async function initPrimaryEvidence(){
   })().catch(e=>{ready=null;throw e;});
   return ready;
 }
-export function entryKeyboard(){return {inline_keyboard:[[{text:'Открыть Zoom',callback_data:'primary_zoom_enter'}]]};}
+export function rebookKeyboard(){return {inline_keyboard:Object.entries(slots).map(([id,title])=>[{text:title,callback_data:`trainer_rebook_${id}`}])};}
+export function entryKeyboard(){return {inline_keyboard:[[{text:'Открыть Zoom',callback_data:'primary_zoom_enter'}],[{text:'Выбрать новое время',callback_data:'primary_rebook_menu'}]]};}
+const rebookText='Если вы не смогли попасть на первое собеседование, выберите новое удобное время ниже. Прежняя запись заменится только после выбора нового слота.';
+export async function offerPrimaryRebook(chatId,eventKey){
+  await initPrimaryEvidence();await initFunnel();
+  const c=(await sql`SELECT * FROM candidates WHERE chat_id=${String(chatId)} AND status='interview_booked' AND consent=true AND interview_at<=NOW()-INTERVAL '60 minutes' LIMIT 1`).rows[0];
+  if(!c)return {ok:false,reason:'Новое время станет доступно через 60 минут после начала пропущенного собеседования.'};
+  const messageId=await effect(`primary-self-rebook-059:${c.id}:${new Date(c.interview_at).toISOString()}:${eventKey}`,()=>telegram(c.chat_id,rebookText,{reply_markup:rebookKeyboard()}));
+  await transaction(async tx=>{
+    await tx`UPDATE candidates SET no_show_followup_sent=true,updated_at=NOW() WHERE id=${c.id} AND status='interview_booked' AND interview_at=${c.interview_at}`;
+    await tx`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) SELECT ${c.id},'out','self_rebook_offer',${rebookText},'delivered',${String(messageId)} WHERE NOT EXISTS(SELECT 1 FROM messages WHERE candidate_id=${c.id} AND direction='out' AND telegram_message_id=${String(messageId)})`;
+  });
+  return {ok:true,candidateId:Number(c.id),messageId};
+}
+export async function handlePrimaryRebookMenu(callback){
+  if(callback.data!=='primary_rebook_menu')return false;
+  const chat=callback.message?.chat,valid=chat?.type==='private'&&String(chat.id)===String(callback.from?.id);
+  const result=valid?await offerPrimaryRebook(callback.from.id,`callback:${callback.id}`):{ok:false,reason:'Кнопка доступна только адресату.'};
+  await telegramApi('answerCallbackQuery',{callback_query_id:callback.id,text:result.ok?'Выберите новое время в сообщении ниже.':result.reason,show_alert:!result.ok});
+  return true;
+}
 export async function primaryAccess(id){
   await initPrimaryEvidence();
   const row=(await sql`SELECT (SELECT MIN(e.clicked_at) FROM (SELECT * FROM candidate_zoom_entries UNION ALL SELECT candidate_id,clicked_at,interview_at,slot_id FROM candidate_zoom_session_entries) e WHERE e.candidate_id=c.id AND e.clicked_at BETWEEN e.interview_at-INTERVAL '15 minutes' AND e.interview_at+INTERVAL '60 minutes') AS clicked_at,
