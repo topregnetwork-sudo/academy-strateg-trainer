@@ -13,6 +13,21 @@ export async function initFunnel() {
     await sql`CREATE TABLE IF NOT EXISTS funnel_recipients(job_id TEXT NOT NULL REFERENCES funnel_jobs(id),candidate_id BIGINT NOT NULL,original_status TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'pending',error TEXT,message_id TEXT,choice TEXT,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),PRIMARY KEY(job_id,candidate_id))`;
     await sql`CREATE TABLE IF NOT EXISTS funnel_effects(key TEXT PRIMARY KEY,state TEXT NOT NULL,message_id TEXT,error TEXT,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
     await sql`CREATE TABLE IF NOT EXISTS funnel_tasks(id TEXT PRIMARY KEY,kind TEXT NOT NULL,payload JSONB NOT NULL,due_at TIMESTAMPTZ NOT NULL,state TEXT NOT NULL DEFAULT 'pending',error TEXT,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
+    await sql`CREATE TABLE IF NOT EXISTS funnel_projects(id BIGSERIAL PRIMARY KEY,project_key TEXT NOT NULL UNIQUE,name TEXT NOT NULL,description TEXT,active BOOLEAN NOT NULL DEFAULT TRUE,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
+    await sql`INSERT INTO funnel_projects(project_key,name,description) VALUES('academy-trainer','Найм тренеров Академии Стратег','Основная воронка найма тренеров') ON CONFLICT(project_key) DO NOTHING`;
+    await sql`CREATE TABLE IF NOT EXISTS funnel_stage_definitions(id BIGSERIAL PRIMARY KEY,project_id BIGINT NOT NULL REFERENCES funnel_projects(id),stage_key TEXT NOT NULL,stage_name TEXT NOT NULL,position INT NOT NULL,config JSONB NOT NULL DEFAULT '{}'::jsonb,version INT NOT NULL DEFAULT 1,mode TEXT NOT NULL DEFAULT 'draft',created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(project_id,stage_key,version))`;
+    await sql`INSERT INTO funnel_stage_definitions(project_id,stage_key,stage_name,position,config,mode) SELECT p.id,v.stage_key,v.stage_name,v.position,v.config::jsonb,'draft' FROM funnel_projects p CROSS JOIN (VALUES
+      ('new','Новая заявка',1,'{"statuses":["new","experienced_not_target"]}'),
+      ('primary','Первичное собеседование',2,'{"statuses":["interview_booked","interviewed"]}'),
+      ('data','Анкета 2 и Тест 1',3,'{"statuses":["questionnaire","test_1_completed"]}'),
+      ('productivity_wait','Ждёт продуктивность',4,'{"statuses":["test_1_passed","productivity_invited"]}'),
+      ('productivity_booked','Записан на продуктивность',5,'{"statuses":["productivity_booked"]}'),
+      ('decision','Решение по продуктивности',6,'{"statuses":["productivity_passed","productivity_failed"]}'),
+      ('final','Финальный отбор',7,'{"statuses":["finalist","selection_closed"]}'),
+      ('closed','Завершено / после отбора',8,'{"statuses":["academy_contact","training","internship","hired","rejected","cancelled","test_1_incomplete_removed"]}')
+    ) AS v(stage_key,stage_name,position,config) WHERE p.project_key='academy-trainer' AND NOT EXISTS(SELECT 1 FROM funnel_stage_definitions d WHERE d.project_id=p.id AND d.stage_key=v.stage_key)`;
+    await sql`CREATE TABLE IF NOT EXISTS funnel_stage_events(id BIGSERIAL PRIMARY KEY,candidate_id BIGINT NOT NULL,project_id BIGINT NOT NULL REFERENCES funnel_projects(id),from_status TEXT,to_status TEXT NOT NULL,trigger TEXT NOT NULL DEFAULT 'system',actor TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(candidate_id,to_status,created_at))`;
+    await sql`CREATE INDEX IF NOT EXISTS funnel_stage_events_candidate ON funnel_stage_events(candidate_id,created_at)`;
     await sql`CREATE INDEX IF NOT EXISTS funnel_recipients_job_state ON funnel_recipients(job_id,state)`;
     // Personal data cannot be queried using the public application's anonymous role.
     await sql`ALTER TABLE funnel_templates ENABLE ROW LEVEL SECURITY`;

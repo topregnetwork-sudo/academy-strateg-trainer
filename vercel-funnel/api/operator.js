@@ -1,11 +1,12 @@
 import { body, ensureTelegramWebhook, init, json, operator, sql, telegram } from './_core.js';
 import { syncDriveCandidate, uploadDriveFile } from './drive.js';
 import {candidateProgress} from '../lib/candidate-progress.js';
+import {initFunnel} from '../lib/funnel-store.js';
 
 export default async function handler(req,res){
   if(!operator(req))return json(res,401,{error:'Неверный код доступа'});
   try{
-    await init();
+    await init(); await initFunnel();
     const id=Number(req.query.candidate_id);
     if(req.method==='GET'){
       if(id){
@@ -21,14 +22,19 @@ export default async function handler(req,res){
       }
       const candidates=(await sql`SELECT c.*,m.text AS last_message FROM candidates c LEFT JOIN LATERAL (SELECT text FROM messages WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) m ON true ORDER BY c.created_at DESC`).rows;
       const analytics=(await sql`SELECT count(*) FILTER (WHERE true)::int AS total,count(*) FILTER (WHERE status='interview_booked')::int AS booked,count(*) FILTER (WHERE status='hired')::int AS hired FROM candidates`).rows[0];
-      return json(res,200,{candidates,analytics});
+      const project=(await sql`SELECT id,project_key,name,description FROM funnel_projects WHERE project_key='academy-trainer' LIMIT 1`).rows[0]||null;
+      const stageDefinitions=project?(await sql`SELECT stage_key,stage_name,position,config,version,mode FROM funnel_stage_definitions WHERE project_id=${project.id} AND version=(SELECT MAX(d2.version) FROM funnel_stage_definitions d2 WHERE d2.project_id=funnel_stage_definitions.project_id AND d2.stage_key=funnel_stage_definitions.stage_key) ORDER BY position`).rows:[];
+      const stageEvents=(await sql`SELECT candidate_id,from_status,to_status,trigger,actor,created_at FROM funnel_stage_events WHERE project_id=COALESCE(${project?.id||0},0) ORDER BY created_at ASC`).rows;
+      return json(res,200,{candidates,analytics,stageEvents,project,stageDefinitions});
     }
     const v=await body(req);
     if(req.method==='PATCH'){
       const accepted=['test_1_incomplete_removed','new','experienced_not_target','interview_booked','interviewed','questionnaire','test_1_completed','test_1_passed','productivity_invited','productivity_booked','productivity_passed','productivity_failed','finalist','selection_closed','academy_contact','training','internship','hired','rejected','cancelled'];
       if(!accepted.includes(v.status))return json(res,400,{error:'Недопустимый статус'});
       if(v.status==='cancelled'){const {cancelCandidate}=await import('../lib/candidate-decline.js');return json(res,200,{ok:true,...await cancelCandidate(v.candidateId,'operator')});}
+      const previous=(await sql`SELECT status FROM candidates WHERE id=${Number(v.candidateId)} LIMIT 1`).rows[0];
       await sql`UPDATE candidates SET status=${v.status},updated_at=NOW() WHERE id=${Number(v.candidateId)}`;
+      if(previous?.status!==v.status)await sql`INSERT INTO funnel_stage_events(candidate_id,project_id,from_status,to_status,trigger,actor) SELECT ${Number(v.candidateId)},id,${previous?.status||null},${v.status},'operator_status','operator' FROM funnel_projects WHERE project_key='academy-trainer'`;
       if(['productivity_passed','productivity_failed'].includes(v.status)){
         const {initFunnel}=await import('../lib/funnel-store.js');await initFunnel();
         await sql`INSERT INTO candidate_interview_result_events049(candidate_id,status) VALUES(${Number(v.candidateId)},${v.status}) ON CONFLICT DO NOTHING`;
@@ -37,6 +43,16 @@ export default async function handler(req,res){
       return json(res,200,{ok:true});
     }
     if(req.method==='POST'){
+      if(v.action==='save_stage_definition'){
+        const project=(await sql`SELECT id FROM funnel_projects WHERE project_key='academy-trainer' LIMIT 1`).rows[0];
+        if(!project)return json(res,404,{error:'Проект воронки не найден'});
+        if(!/^[a-z][a-z0-9_]{1,50}$/.test(String(v.stageKey||'')))return json(res,400,{error:'Неверный код этапа'});
+        if(!String(v.stageName||'').trim()||String(v.stageName).length>120)return json(res,400,{error:'Укажите название этапа'});
+        const position=Number(v.position);if(!Number.isInteger(position)||position<1||position>99)return json(res,400,{error:'Неверный порядок этапа'});
+        const current=(await sql`SELECT COALESCE(MAX(version),0)::int AS version FROM funnel_stage_definitions WHERE project_id=${project.id} AND stage_key=${String(v.stageKey)}`).rows[0];
+        await sql`INSERT INTO funnel_stage_definitions(project_id,stage_key,stage_name,position,config,version,mode) VALUES(${project.id},${String(v.stageKey)},${String(v.stageName).trim()},${position},${JSON.stringify(v.config||{})}::text::jsonb,${Number(current.version)+1},'draft')`;
+        return json(res,200,{ok:true,version:Number(current.version)+1,mode:'draft'});
+      }
       if(v.action==='refresh_telegram_webhook'){
         await ensureTelegramWebhook(req);
         return json(res,200,{ok:true});
