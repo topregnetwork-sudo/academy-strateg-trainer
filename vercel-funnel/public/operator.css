@@ -91,3 +91,4 @@ main{max-width:1780px;padding:14px}
 .board-decision{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:0 8px 8px}
 .board-decision small{grid-column:1/-1;color:#9a5b18;font-size:11px}
 .board-decision button{border:1px solid #d6a64d;background:#fff;padding:6px;border-radius:7px;cursor:pointer}
+.board-card strong{font-size:12px;line-height:1.15}.board-card-main span,.board-card-main em{font-size:10px;line-height:1.1}.board-card-main em{color:#68738a}
