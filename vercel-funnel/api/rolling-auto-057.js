@@ -9,7 +9,7 @@ export default async function handler(req,res){
  try{
   await init();const result=await ensureRollingWindow057();
   const tasks=result.sessionId?(await sql`SELECT id,due_at,state,error FROM funnel_tasks WHERE kind='rolling_window_refresh_057' AND payload->>'sessionId'=${String(result.sessionId)} ORDER BY due_at`).rows:[];
-  const slots=result.sessionId?(await sql`SELECT (starts_at AT TIME ZONE 'Europe/Moscow')::date::text day,count(*)::int slots FROM funnel_slots WHERE session_id=${result.sessionId} GROUP BY day ORDER BY day`).rows:[];
+  const slots=result.sessionId?(await sql`SELECT (starts_at AT TIME ZONE 'Europe/Moscow')::date::text AS slot_day,count(*)::int AS slot_count FROM funnel_slots WHERE session_id=${result.sessionId} GROUP BY slot_day ORDER BY slot_day`).rows:[];
   return json(res,200,{ok:result.active,key:ROLLING_KEY,...result,slots,tasks});
  }catch(error){return json(res,500,{error:String(error?.message||error)});}
 }

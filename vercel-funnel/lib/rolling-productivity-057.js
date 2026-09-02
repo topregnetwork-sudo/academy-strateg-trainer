@@ -12,12 +12,12 @@ const isSunday=day=>new Intl.DateTimeFormat('en-US',{timeZone:'Europe/Moscow',we
 export function nextEligibleDay057(day){do{day=nextDay(day);}while(isSunday(day));return day;}
 
 async function openDays(query,sessionId){
- return (await query`SELECT DISTINCT (s.starts_at AT TIME ZONE 'Europe/Moscow')::date::text AS day
+ return (await query`SELECT DISTINCT (s.starts_at AT TIME ZONE 'Europe/Moscow')::date::text AS slot_day
    FROM funnel_slots s JOIN funnel_sessions fs ON fs.id=s.session_id
    WHERE s.session_id=${sessionId}
      AND s.starts_at>NOW()+COALESCE((fs.config->>'cutoff')::int,60)*INTERVAL '1 minute'
      AND (SELECT count(*) FROM funnel_bookings b WHERE b.slot_id=s.id)<s.capacity
-   ORDER BY day`).rows.map(r=>r.day);
+   ORDER BY slot_day`).rows.map(r=>r.slot_day);
 }
 
 export async function ensureRollingWindow057(){
@@ -26,7 +26,7 @@ export async function ensureRollingWindow057(){
    const session=(await tx`SELECT * FROM funnel_sessions WHERE active=true AND config->>'campaignKey'=${ROLLING_KEY} ORDER BY id DESC LIMIT 1 FOR UPDATE`).rows[0];
    if(!session)return {active:false,addedDays:[],openDays:[],sessionId:null};
    const before=await openDays(tx,session.id),addedDays=[];
-   let cursor=(await tx`SELECT COALESCE(MAX((starts_at AT TIME ZONE 'Europe/Moscow')::date)::text,${isoDay(new Date())}) AS day FROM funnel_slots WHERE session_id=${session.id}`).rows[0].day;
+   let cursor=(await tx`SELECT COALESCE(MAX((starts_at AT TIME ZONE 'Europe/Moscow')::date)::text,${isoDay(new Date())}) AS slot_day FROM funnel_slots WHERE session_id=${session.id}`).rows[0].slot_day;
    let count=before.length;
    while(count<DAY_LIMIT){
      cursor=nextEligibleDay057(cursor);
