@@ -44,10 +44,6 @@ async function callBridge(folderName, files, targetParentFolderId = parentFolder
   return result;
 }
 
-export async function bridgeCapabilities() {
-  return callBridge('', [], parentFolderId(), {action:'capabilities'});
-}
-
 function candidateCity(candidate) {
   return (clean(candidate.city) || 'Город не указан').replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -64,6 +60,16 @@ function candidateFolderName(candidate, createdAt = candidate.created_at) {
   const created = new Date(createdAt || Date.now());
   const date = Number.isNaN(created.getTime()) ? 'дата не указана' : new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', year: 'numeric' }).format(created);
   return `${name} — ${city} — ${date}`.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+export function existingDriveResult(existing) {
+  if (!existing?.folder_id) return null;
+  return {
+    existing: true,
+    unchanged: true,
+    folder: { id: existing.folder_id, url: existing.folder_url, name: existing.folder_name },
+    files: []
+  };
 }
 
 export function printableCard({ candidate, application, questionnaireTwo, test, messageEvents = [] }) {
@@ -124,13 +130,18 @@ export async function syncDriveCandidate(candidateId) {
   await init();
   const candidate = (await sql`SELECT c.*,a.full_name,a.age,a.motivation,a.phone AS application_phone,a.source_id AS application_source_id,a.trainer_experience_level FROM candidates c LEFT JOIN applications a ON a.candidate_id=c.id WHERE c.id=${Number(candidateId)} LIMIT 1`).rows[0];
   if (!candidate) throw new Error('Кандидат не найден');
-  const {primaryAccess}=await import('../lib/primary-evidence.js');
-  candidate.primary_zoom_clicked_at=(await primaryAccess(candidate.id)).clickedAt;
   const application = (await sql`SELECT * FROM applications WHERE candidate_id=${candidate.id} ORDER BY created_at DESC LIMIT 1`).rows[0] || null;
   const questionnaireTwo = (await sql`SELECT * FROM candidate_questionnaire_two WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0] || null;
   const test = (await sql`SELECT * FROM candidate_tests WHERE candidate_id=${candidate.id} ORDER BY created_at DESC LIMIT 1`).rows[0] || null;
-  const messageEvents = (await sql`SELECT kind,direction,text,created_at FROM messages WHERE candidate_id=${candidate.id} ORDER BY created_at ASC`).rows;
   if (!questionnaireTwo?.submitted_at || !test?.submitted_at) return { pending: true, message: 'Папка кандидата появится после заполнения Теста 1' };
+  // INTERVIEW-NEW-ONLY-053: an existing candidate folder is an immutable historical artifact.
+  // Replayed events return its saved link and never reopen, migrate or autofill its interview form.
+  const existing = (await sql`SELECT folder_id,folder_url,folder_name FROM candidate_drive WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0];
+  const existingResult = existingDriveResult(existing);
+  if (existingResult) return existingResult;
+  const {primaryAccess}=await import('../lib/primary-evidence.js');
+  candidate.primary_zoom_clicked_at=(await primaryAccess(candidate.id)).clickedAt;
+  const messageEvents = (await sql`SELECT kind,direction,text,created_at FROM messages WHERE candidate_id=${candidate.id} ORDER BY created_at ASC`).rows;
   const folderName = candidateFolderName(candidate, test.submitted_at);
   // 047 bridge verified before rollout. Explicit false remains the scoped kill switch.
   const useInterview = process.env.GOOGLE_DRIVE_INTERVIEW_SHEET_047 !== 'false';
@@ -143,10 +154,8 @@ export async function syncDriveCandidate(candidateId) {
     textFile('03 — Тест 1 — ответы', testAnswersCsv({ candidate, application, test }), 'text/csv;charset=utf-8', 'spreadsheet', ['03 — Тест 1 — ответы.csv'])
   ];
   const cityFolder = await ensureCityFolder(candidate);
-  const existing = useInterview ? (await sql`SELECT folder_id FROM candidate_drive WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0] : null;
   const result = await callBridge(folderName, files, cityFolder.id, useInterview ? {
-    interview: {...interviewPayload({candidate, application, questionnaireTwo}), migration: 52},
-    existingFolderId: existing?.folder_id || null
+    interview: interviewPayload({candidate, application, questionnaireTwo})
   } : {});
   if (useInterview && !result.interview?.id) throw new Error('Мост не подтвердил сохранение бланка интервью');
   if (useInterview) {
