@@ -63,6 +63,13 @@
       "rollback": "rollback/board-slot-order-before-062",
       "rule": "Future appointments first by nearest time; past appointments below with oldest last; no-time records at the end.",
       "preserved": "Statuses, filters, events, messages, briefs, cards, and candidate data."
+    },
+    "board_live_refresh_063": {
+      "status": "implemented_pending_deployment",
+      "baseline": "524fe3d",
+      "rollback": "rollback/board-live-refresh-before-063",
+      "rule": "While the board tab is visible, refresh only the candidate snapshot every 15 seconds; skip hidden tabs and overlapping requests.",
+      "preserved": "Statuses, events, messages, briefs, filters, Drive, Telegram handlers, and future-slot ordering."
     }
   }
 }
