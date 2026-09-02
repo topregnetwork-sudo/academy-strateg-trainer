@@ -70,6 +70,13 @@
       "rollback": "rollback/board-live-refresh-before-063",
       "rule": "While the board tab is visible, refresh only the candidate snapshot every 15 seconds; skip hidden tabs and overlapping requests.",
       "preserved": "Statuses, events, messages, briefs, filters, Drive, Telegram handlers, and future-slot ordering."
+    },
+    "board_booking_source_064": {
+      "status": "implemented_pending_deployment",
+      "baseline": "eac13f1",
+      "rollback": "rollback/board-booking-source-before-064",
+      "rule": "Board appointment time comes from the booking source for the current stage: primary Zoom from candidates.interview_at, productivity from funnel/offline bookings.",
+      "preserved": "Candidate statuses and data, slot allocation, Telegram messages and briefs, filters, Drive, and 15-second board refresh."
     }
   }
 }

@@ -55,7 +55,38 @@ export default async function handler(req,res){
         const progress=await candidateProgress(id).catch(()=>({errors:['progress']}));
         return json(res,200,{candidate,messages,test,testFiles,questionnaireTwo,drive,driveFiles,progress});
       }
-      const candidates=(await sql`SELECT c.*,m.text AS last_message,d.folder_url,d.folder_name,s.file_url AS interview_sheet_url,po.message_pending AS productivity_message_pending FROM candidates c LEFT JOIN LATERAL (SELECT text FROM messages WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) m ON true LEFT JOIN candidate_drive d ON d.candidate_id=c.id LEFT JOIN LATERAL (SELECT file_url FROM candidate_drive_files WHERE candidate_id=c.id AND (file_name ILIKE 'Интервью на продуктивность%' OR file_kind ILIKE 'Интервью на продуктивность%') ORDER BY updated_at DESC LIMIT 1) s ON true LEFT JOIN candidate_productivity_outreach po ON po.candidate_id=c.id ORDER BY c.created_at DESC`).rows;
+      const candidates=(await sql`
+        SELECT c.*,m.text AS last_message,d.folder_url,d.folder_name,
+          s.file_url AS interview_sheet_url,po.message_pending AS productivity_message_pending,
+          pb.starts_at AS productivity_at,pb.slot_key AS productivity_slot_id,pb.session_key AS productivity_session_id
+        FROM candidates c
+        LEFT JOIN LATERAL (SELECT text FROM messages WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) m ON true
+        LEFT JOIN candidate_drive d ON d.candidate_id=c.id
+        LEFT JOIN LATERAL (
+          SELECT file_url FROM candidate_drive_files
+          WHERE candidate_id=c.id AND (file_name ILIKE 'Интервью на продуктивность%' OR file_kind ILIKE 'Интервью на продуктивность%')
+          ORDER BY updated_at DESC LIMIT 1
+        ) s ON true
+        LEFT JOIN candidate_productivity_outreach po ON po.candidate_id=c.id
+        LEFT JOIN LATERAL (
+          SELECT appointment.starts_at,appointment.slot_key,appointment.session_key
+          FROM (
+            SELECT fs.starts_at,fs.id::text AS slot_key,fb.session_id::text AS session_key
+            FROM funnel_bookings fb JOIN funnel_slots fs ON fs.id=fb.slot_id
+            WHERE fb.candidate_id=c.id
+            UNION ALL
+            SELECT (ob.event_date+make_time(SUBSTRING(ob.slot_time,1,2)::int,SUBSTRING(ob.slot_time,3,2)::int,0)) AT TIME ZONE 'Europe/Moscow',
+              ob.slot_time::text,'offline:'||ob.event_date::text
+            FROM offline_interview_bookings ob
+            WHERE ob.candidate_id=c.id AND ob.status='booked'
+          ) appointment
+          ORDER BY (appointment.starts_at>=NOW()) DESC,
+            CASE WHEN appointment.starts_at>=NOW() THEN appointment.starts_at END ASC,
+            CASE WHEN appointment.starts_at<NOW() THEN appointment.starts_at END DESC
+          LIMIT 1
+        ) pb ON true
+        ORDER BY c.created_at DESC
+      `).rows;
       const analytics=(await sql`SELECT count(*) FILTER (WHERE true)::int AS total,count(*) FILTER (WHERE status='interview_booked')::int AS booked,count(*) FILTER (WHERE status='hired')::int AS hired FROM candidates`).rows[0];
       const project=(await sql`SELECT id,project_key,name,description FROM funnel_projects WHERE project_key='academy-trainer' LIMIT 1`).rows[0]||null;
       const stageDefinitions=project?(await sql`SELECT stage_key,stage_name,position,config,version,mode FROM funnel_stage_definitions WHERE project_id=${project.id} AND version=(SELECT MAX(d2.version) FROM funnel_stage_definitions d2 WHERE d2.project_id=funnel_stage_definitions.project_id AND d2.stage_key=funnel_stage_definitions.stage_key) ORDER BY position`).rows:[];
