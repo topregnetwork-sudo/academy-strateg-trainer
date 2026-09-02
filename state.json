@@ -15,7 +15,7 @@
     "preserved": "old files, manual interview answers, candidate statuses, messages, slots, reminders; no production deployment"
   },
   "project": "academy-strateg-trainer",
-  "last_change": "MINSK-OFFLINE-SEPT1-024",
+  "last_change": "BOARD-REFRESH-061",
   "commit": "61b77d9, c9ab046, e2d8a62",
   "baseline_commit": "8ca3624",
   "rollback_branch": "rollback/minsk-sept1-offline-before-024",
@@ -49,6 +49,13 @@
       "rule": "Compact two-line candidate cards, responsive board/conversion layout, operator productivity result marks an approved-message task without sending candidate text; later sending is a separate explicit batch action.",
       "preserved": "Existing stages, filters, slots, candidate data, group routing, reminders, briefs, Telegram history, and event-driven progression.",
       "docs": "docs/FUNNEL-BOARD-CONSTRUCTOR-060.md"
+    },
+    "board_refresh_061": {
+      "status": "implemented_pending_deployment",
+      "baseline": "007c129",
+      "rollback": "rollback/board-refresh-before-061",
+      "rule": "Opening the board reloads the current candidate snapshot before rendering; no background polling is introduced.",
+      "preserved": "Event-driven progression, statuses, slots, filters, messages, briefs, cards, and timed jobs."
     }
   }
 }
