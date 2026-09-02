@@ -41,6 +41,14 @@
     "background_policy": "funnel transitions are event-driven per candidate; there is no polling of forms, tests, Drive folders, or progression; Cloudflare wakes the protected timed handler only at the exact pre-slot and post-slot times for reminders, briefs, and no-show follow-up",
     "event_progression": "Test 1 and Questionnaire 2 submission immediately process only that candidate; Test 1 also creates or updates the candidate Drive folder with bounded retries and idempotent duplicate protection",
     "telegram_bridge": "Application submission uses independent same-origin/Vercel/Cloudflare API fallbacks, then opens the preserved Telegram deep link in a user-initiated tab with Telegram Web and /start fallback; direct Supabase is not required",
-    "telegram_bridge_change": "TELEGRAM-BRIDGE-060"
+    "telegram_bridge_change": "TELEGRAM-BRIDGE-060",
+    "board_constructor_060": {
+      "status": "implemented_pending_deployment",
+      "baseline": "a508bf2",
+      "rollback": "rollback/board-constructor-before-060",
+      "rule": "Compact two-line candidate cards, responsive board/conversion layout, operator productivity result marks an approved-message task without sending candidate text; later sending is a separate explicit batch action.",
+      "preserved": "Existing stages, filters, slots, candidate data, group routing, reminders, briefs, Telegram history, and event-driven progression.",
+      "docs": "docs/FUNNEL-BOARD-CONSTRUCTOR-060.md"
+    }
   }
 }

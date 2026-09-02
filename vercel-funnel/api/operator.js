@@ -3,10 +3,45 @@ import { syncDriveCandidate, uploadDriveFile } from './drive.js';
 import {candidateProgress} from '../lib/candidate-progress.js';
 import {initFunnel} from '../lib/funnel-store.js';
 
+async function recordProductivityResult(candidateId, result) {
+  const id = Number(candidateId);
+  const candidate = (await sql`SELECT id,chat_id,status FROM candidates WHERE id=${id} LIMIT 1`).rows[0];
+  if (!candidate) return { ok: false, error: 'Кандидат не найден' };
+  if (!['productivity_passed','productivity_failed'].includes(result)) return { ok: false, error: 'Неверный результат интервью' };
+  if (candidate.status === result) return { ok: true, already: true, status: result };
+  if (candidate.status !== 'productivity_booked') return { ok: false, error: 'Результат можно указать только для записанного интервью на продуктивность' };
+
+  await sql`CREATE TABLE IF NOT EXISTS candidate_productivity_outreach(
+    candidate_id BIGINT PRIMARY KEY,
+    result TEXT NOT NULL,
+    message_pending BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`;
+  await sql`UPDATE candidates SET status=${result},updated_at=NOW() WHERE id=${id} AND status='productivity_booked'`;
+  await sql`INSERT INTO funnel_stage_events(candidate_id,project_id,from_status,to_status,trigger,actor)
+    SELECT ${id},id,'productivity_booked',${result},'productivity_result','operator'
+    FROM funnel_projects WHERE project_key='academy-trainer'`;
+  await sql`INSERT INTO candidate_interview_result_events049(candidate_id,status) VALUES(${id},${result}) ON CONFLICT DO NOTHING`;
+  await sql`INSERT INTO candidate_productivity_outreach(candidate_id,result,message_pending,updated_at)
+    VALUES(${id},${result},TRUE,NOW())
+    ON CONFLICT(candidate_id) DO UPDATE SET result=EXCLUDED.result,message_pending=TRUE,updated_at=NOW()`;
+  const {queueInterviewAppointment}=await import('../lib/interview-appointment.js');
+  await queueInterviewAppointment(id);
+  return { ok: true, status: result, messagePending: true };
+}
+
 export default async function handler(req,res){
   if(!operator(req))return json(res,401,{error:'Неверный код доступа'});
   try{
     await init(); await initFunnel();
+    await sql`CREATE TABLE IF NOT EXISTS candidate_productivity_outreach(
+      candidate_id BIGINT PRIMARY KEY,
+      result TEXT NOT NULL,
+      message_pending BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`;
     const id=Number(req.query.candidate_id);
     if(req.method==='GET'){
       if(id){
@@ -20,7 +55,7 @@ export default async function handler(req,res){
         const progress=await candidateProgress(id).catch(()=>({errors:['progress']}));
         return json(res,200,{candidate,messages,test,testFiles,questionnaireTwo,drive,driveFiles,progress});
       }
-      const candidates=(await sql`SELECT c.*,m.text AS last_message,d.folder_url,d.folder_name,s.file_url AS interview_sheet_url FROM candidates c LEFT JOIN LATERAL (SELECT text FROM messages WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) m ON true LEFT JOIN candidate_drive d ON d.candidate_id=c.id LEFT JOIN LATERAL (SELECT file_url FROM candidate_drive_files WHERE candidate_id=c.id AND (file_name ILIKE 'Интервью на продуктивность%' OR file_kind ILIKE 'Интервью на продуктивность%') ORDER BY updated_at DESC LIMIT 1) s ON true ORDER BY c.created_at DESC`).rows;
+      const candidates=(await sql`SELECT c.*,m.text AS last_message,d.folder_url,d.folder_name,s.file_url AS interview_sheet_url,po.message_pending AS productivity_message_pending FROM candidates c LEFT JOIN LATERAL (SELECT text FROM messages WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) m ON true LEFT JOIN candidate_drive d ON d.candidate_id=c.id LEFT JOIN LATERAL (SELECT file_url FROM candidate_drive_files WHERE candidate_id=c.id AND (file_name ILIKE 'Интервью на продуктивность%' OR file_kind ILIKE 'Интервью на продуктивность%') ORDER BY updated_at DESC LIMIT 1) s ON true LEFT JOIN candidate_productivity_outreach po ON po.candidate_id=c.id ORDER BY c.created_at DESC`).rows;
       const analytics=(await sql`SELECT count(*) FILTER (WHERE true)::int AS total,count(*) FILTER (WHERE status='interview_booked')::int AS booked,count(*) FILTER (WHERE status='hired')::int AS hired FROM candidates`).rows[0];
       const project=(await sql`SELECT id,project_key,name,description FROM funnel_projects WHERE project_key='academy-trainer' LIMIT 1`).rows[0]||null;
       const stageDefinitions=project?(await sql`SELECT stage_key,stage_name,position,config,version,mode FROM funnel_stage_definitions WHERE project_id=${project.id} AND version=(SELECT MAX(d2.version) FROM funnel_stage_definitions d2 WHERE d2.project_id=funnel_stage_definitions.project_id AND d2.stage_key=funnel_stage_definitions.stage_key) ORDER BY position`).rows:[];
@@ -32,14 +67,10 @@ export default async function handler(req,res){
       const accepted=['test_1_incomplete_removed','new','experienced_not_target','interview_booked','interviewed','questionnaire','test_1_completed','test_1_passed','productivity_invited','productivity_booked','productivity_passed','productivity_failed','finalist','selection_closed','academy_contact','training','internship','hired','rejected','cancelled','collaboration','inactive'];
       if(!accepted.includes(v.status))return json(res,400,{error:'Недопустимый статус'});
       if(v.status==='cancelled'){const {cancelCandidate}=await import('../lib/candidate-decline.js');return json(res,200,{ok:true,...await cancelCandidate(v.candidateId,'operator')});}
+      if(['productivity_passed','productivity_failed'].includes(v.status)) return json(res,200,await recordProductivityResult(v.candidateId,v.status));
       const previous=(await sql`SELECT status FROM candidates WHERE id=${Number(v.candidateId)} LIMIT 1`).rows[0];
       await sql`UPDATE candidates SET status=${v.status},updated_at=NOW() WHERE id=${Number(v.candidateId)}`;
       if(previous?.status!==v.status)await sql`INSERT INTO funnel_stage_events(candidate_id,project_id,from_status,to_status,trigger,actor) SELECT ${Number(v.candidateId)},id,${previous?.status||null},${v.status},'operator_status','operator' FROM funnel_projects WHERE project_key='academy-trainer'`;
-      if(['productivity_passed','productivity_failed'].includes(v.status)){
-        const {initFunnel}=await import('../lib/funnel-store.js');await initFunnel();
-        await sql`INSERT INTO candidate_interview_result_events049(candidate_id,status) VALUES(${Number(v.candidateId)},${v.status}) ON CONFLICT DO NOTHING`;
-        const {queueInterviewAppointment}=await import('../lib/interview-appointment.js');await queueInterviewAppointment(v.candidateId);
-      }
       return json(res,200,{ok:true});
     }
     if(req.method==='POST'){
