@@ -1,6 +1,6 @@
 import { init, json, sql, telegram } from './_core.js';
 import { syncDriveCandidate } from './drive.js';
-import {sendOfflineInvites} from './offline-interview.js';
+import {inviteRollingCandidate057} from '../lib/rolling-productivity-057.js';
 import {effect,initFunnel} from '../lib/funnel-store.js';
 
 const TEST_COMPLETED = '✅ <b>Тест 1 заполнен</b>\n\nВсе 200 ответов сохранены в вашей карточке кандидата. Следующий этап — интервью на продуктивность. Информацию о времени встречи мы отправим отдельным сообщением.';
@@ -50,7 +50,7 @@ export default async function handler(req, res) {
       let drive = null, invitation = null;
       if (type === 'test_1_completed') {
         const existing=(await sql`SELECT candidate_id FROM candidate_tests WHERE token=${token} AND submitted_at IS NOT NULL LIMIT 1`).rows[0];
-        if(existing) invitation=await sendOfflineInvites(Number(existing.candidate_id));
+        if(existing) invitation=await inviteRollingCandidate057(Number(existing.candidate_id));
         if (existing) try { drive=await syncDriveCandidate(existing.candidate_id); } catch (error) { drive={ok:false,error:String(error?.message||error)}; }
       }
       return json(res, 200, { ok: true, status: 'already_processed', drive, invitation });
@@ -67,7 +67,7 @@ export default async function handler(req, res) {
     }
     let drive = null, invitation = null;
     if (type === 'test_1_completed') {
-      invitation=await sendOfflineInvites(Number(item.candidate_id));
+      invitation=await inviteRollingCandidate057(Number(item.candidate_id));
       for(let attempt=1;attempt<=3;attempt++){
         try { drive = await syncDriveCandidate(item.candidate_id); break; }
         catch (error) { drive = { ok: false, error: String(error?.message || error) }; if(attempt<3) await new Promise(resolve=>setTimeout(resolve,1000*attempt)); }

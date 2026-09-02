@@ -116,6 +116,10 @@ export async function bookingFollowup(bookingId, version) {
     await createTask('booking_reminder',{bookingId,version},new Date(due),id);
   }
   await createTask('session_brief',{sessionId:session.id,slotId:booking.slot_id},new Date(Math.max(Date.now()+1000,due)),stableId(`brief:${session.id}:${booking.slot_id}`));
+  if(session.config.campaignKey==='shared-productivity-20260903-04'){
+    const {ensureRollingWindow057}=await import('./rolling-productivity-057.js');
+    await ensureRollingWindow057();
+  }
   if(session.config.allowCancel)await refreshSessionInvites(session.id);
   await queueInterviewAppointment(c.id);
   return {done:true};
@@ -161,6 +165,12 @@ export async function sendSessionSummary(sessionId,key,slotId=null) {
 export async function runFunnelTask(task) {
   if(typeof task.payload==='string')task={...task,payload:JSON.parse(task.payload)};
   if(!task.payload||typeof task.payload!=='object')throw new Error('Некорректные параметры задачи');
+  if(task.kind==='rolling_window_refresh_057'){
+    const {ensureRollingWindow057}=await import('./rolling-productivity-057.js');
+    const result=await ensureRollingWindow057();
+    if(result.sessionId&&result.addedDays.length)await refreshSessionInvites(result.sessionId);
+    return {done:true};
+  }
   if(task.kind==='interview_appointment_048'){
     if(process.env.INTERVIEW_APPOINTMENT_048==='false')return {done:true};
     const {syncInterviewAppointment}=await import('./interview-appointment.js');
