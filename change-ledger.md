@@ -304,3 +304,10 @@ git push origin main
 - Исправление: API добавляет фактическую актуальную запись на продуктивность; доска использует соответствующую этапу дату во всех колонках, группирует записи на продуктивность по реальной дате и показывает ближайшие будущие записи сверху.
 - Автообновление каждые 15 секунд сохранено. Статусы, слоты, сообщения, брифы и данные кандидатов не переписываются.
 - Откат: `git revert <коммит BOARD-BOOKING-SOURCE-064> && git push origin main`.
+# CONNECTION-REGISTRY-061 — 2026-09-03
+
+- Consolidated the Academy Strateg project connection map in `docs/CONNECTION-REGISTRY.md`.
+- Recorded separate states for source configuration, live HTTP response, browser-only sessions, and CLI authorization.
+- Confirmed public HTTP 200 responses for GitHub Pages, Vercel, and the Cloudflare Worker domains.
+- Recorded that local Vercel/Wrangler auth directories are absent; no tokens or credential contents were exposed or committed.
+- Preserved all existing funnel behavior and user files. Rollback: `rollback/connection-registry-before-061`.

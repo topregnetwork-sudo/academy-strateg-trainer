@@ -71,6 +71,14 @@
       "rule": "While the board tab is visible, refresh only the candidate snapshot every 15 seconds; skip hidden tabs and overlapping requests.",
       "preserved": "Statuses, events, messages, briefs, filters, Drive, Telegram handlers, and future-slot ordering."
     },
+    "connection_registry_061": {
+      "status": "documented",
+      "baseline": "3af0ad3",
+      "rollback": "rollback/connection-registry-before-061",
+      "rule": "Keep one redacted registry of Academy Strateg integrations and distinguish browser sessions, source configuration, live HTTP availability, and CLI authorization.",
+      "preserved": "Funnel data, statuses, events, slots, messages, Drive, Telegram handlers, Vercel/Worker source, and existing user files.",
+      "docs": "docs/CONNECTION-REGISTRY.md"
+    },
     "board_booking_source_064": {
       "status": "implemented_pending_deployment",
       "baseline": "eac13f1",
