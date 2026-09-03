@@ -72,12 +72,20 @@
       "preserved": "Statuses, events, messages, briefs, filters, Drive, Telegram handlers, and future-slot ordering."
     },
     "connection_registry_061": {
-      "status": "documented",
+      "status": "documented_and_deployed",
       "baseline": "3af0ad3",
       "rollback": "rollback/connection-registry-before-061",
       "rule": "Keep one redacted registry of Academy Strateg integrations and distinguish browser sessions, source configuration, live HTTP availability, and CLI authorization.",
       "preserved": "Funnel data, statuses, events, slots, messages, Drive, Telegram handlers, Vercel/Worker source, and existing user files.",
       "docs": "docs/CONNECTION-REGISTRY.md"
+    },
+    "deployment_065": {
+      "status": "verified",
+      "baseline": "69c0b8d",
+      "rule": "Vercel is linked to the existing academy-strateg-trainer project and Cloudflare Worker is published from cloudflare-worker; both public endpoints serve TELEGRAM-BRIDGE-060.",
+      "preserved": "Existing project settings, environment variables, funnel data, statuses, events, messages, Drive bridge, and user files.",
+      "vercel_deployment": "dpl_A6EFUR2tgbYHwbNhDsPouH88fp7L",
+      "cloudflare_version": "5f743b48-45cf-45f3-be23-cdd47480a2bb"
     },
     "board_booking_source_064": {
       "status": "implemented_pending_deployment",

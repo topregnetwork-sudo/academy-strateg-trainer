@@ -12,8 +12,8 @@ private keys, cookies или содержимое credential-файлов. Ст�
 |---|---|---|---|---|
 | GitHub | исходники, история изменений, GitHub Pages | репозиторий `topregnetwork-sudo/academy-strateg-trainer`, `.github/workflows/` | репозиторий доступен; ветка Pages публикуется | публикация Pages не означает автоматическую публикацию Vercel или Worker |
 | GitHub Pages | основной публичный сайт и резервная точка входа | корень репозитория, `index.html`, `app.js` | HTTP 200; версия Telegram bridge 060 присутствует | этот адрес доступен отдельно от Vercel |
-| Vercel | основной API, панель оператора, webhook Telegram | `vercel-funnel/`, `vercel-funnel/vercel.json` | домен отвечает HTTP 200; локальный CLI-сеанс не найден | для деплоя нужен отдельный Vercel CLI login или токен; браузерный вход не передаётся CLI автоматически |
-| Cloudflare Worker | резервный сайт/API-маршрут | `cloudflare-worker/`, `wrangler.toml` | домен отвечает HTTP 200; локальный Wrangler-сеанс не найден | для деплоя нужен отдельный Wrangler login или токен; текущая конфигурация хранит origin-маршруты |
+| Vercel | основной API, панель оператора, webhook Telegram | `vercel-funnel/`, `vercel-funnel/vercel.json` | CLI авторизован; production `academy-strateg-trainer.vercel.app` опубликован и отвечает HTTP 200 с bridge-060 | каталог привязан к существующему проекту `academy-strateg-trainer`; локальная `.vercel` не коммитится |
+| Cloudflare Worker | резервный сайт/API-маршрут | `cloudflare-worker/`, `wrangler.toml` | Worker опубликован; домен отвечает HTTP 200 с bridge-060 | Wrangler deploy выполнен; текущая конфигурация хранит origin-маршруты |
 | PostgreSQL / storage | кандидаты, события, слоты, сообщения и настройки | `vercel-funnel/api/_core.js`, переменные окружения Vercel | предусмотрен серверный доступ через `STORAGE_URL` / `DATABASE_URL` / `POSTGRES_URL`; значение не проверялось локально | секреты должны находиться только в окружении Vercel |
 | Supabase | публичные страницы анкет и RPC-операции | `vercel-funnel/public/questionnaire-2.js`, `public/test.js` | публичный endpoint зафиксирован в исходниках; прямой браузерный переход анкеты 1 отключён в bridge-изменении 060 | anon-ключ не является административным credential; серверные секреты в проект не копируются |
 | Telegram Bot API | анкеты, кнопки, статусы, сообщения кандидатам и брифы | `vercel-funnel/api/telegram.js`, `api/reminders.js` | код и webhook-контракт сохранены; рабочий bot token в репозитории отсутствует | token хранится в окружении деплоя или в n8n credentials, не в исходниках |
@@ -40,15 +40,15 @@ CLI-подключение для деплоя» — разные состоян
 
 В исходниках сохранены все основные точки интеграции: GitHub/Pages, Vercel API,
 Cloudflare Worker, Telegram webhook, Google Drive bridge, storage и номенклатура
-служебных подключений. Проверены ответы HTTP основных публичных доменов.
+служебных подключений. После восстановления Vercel CLI и публикации Worker оба
+основных production-адреса проверены: HTTP 200, маркер bridge-060 присутствует,
+прямой браузерный вызов Supabase отсутствует.
 
 Не подтверждено свежим CLI-сеансом:
 
-1. авторизация Vercel CLI;
-2. авторизация Wrangler CLI;
-3. успешный live-запрос к Apps Script bridge из текущей среды — TLS-соединение
+1. успешный live-запрос к Apps Script bridge из текущей среды — TLS-соединение
    среды завершилось ошибкой до получения ответа приложения;
-4. свежая проверка n8n API и Telegram Bot API без использования секретов.
+2. свежая проверка n8n API и Telegram Bot API без использования секретов.
 
 Это не означает, что пользователь вышел из браузера или что рабочие credentials
 удалены. Это означает только, что их нельзя безопасно считать доступными текущим

@@ -311,3 +311,11 @@ git push origin main
 - Confirmed public HTTP 200 responses for GitHub Pages, Vercel, and the Cloudflare Worker domains.
 - Recorded that local Vercel/Wrangler auth directories are absent; no tokens or credential contents were exposed or committed.
 - Preserved all existing funnel behavior and user files. Rollback: `rollback/connection-registry-before-061`.
+
+# DEPLOYMENT-065 — 2026-09-03
+
+- Restored Vercel CLI authorization and linked `vercel-funnel` deployment to the existing `academy-strateg-trainer` project.
+- Published production deployment `dpl_A6EFUR2tgbYHwbNhDsPouH88fp7L` and aliased it to `https://academy-strateg-trainer.vercel.app`.
+- Published Cloudflare Worker version `5f743b48-45cf-45f3-be23-cdd47480a2bb`.
+- Verified both public endpoints return HTTP 200 and serve the Telegram bridge 060 markers.
+- An empty helper project named `vercel-funnel` was created during the initial unlinked attempt; it was not deleted automatically because project deletion is destructive and requires explicit confirmation.
