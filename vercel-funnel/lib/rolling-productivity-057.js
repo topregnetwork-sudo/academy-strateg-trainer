@@ -8,8 +8,9 @@ const stableId=key=>{const s=crypto.createHash('sha256').update(key).digest('hex
 const dayAt=(day,time)=>new Date(`${day}T${time}:00+03:00`);
 const isoDay=date=>new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).format(date);
 const nextDay=day=>isoDay(new Date(dayAt(day,'12:00').getTime()+86400000));
-const isSunday=day=>new Intl.DateTimeFormat('en-US',{timeZone:'Europe/Moscow',weekday:'short'}).format(dayAt(day,'12:00'))==='Sun';
-export function nextEligibleDay057(day){do{day=nextDay(day);}while(isSunday(day));return day;}
+const weekday=day=>new Intl.DateTimeFormat('en-US',{timeZone:'Europe/Moscow',weekday:'short'}).format(dayAt(day,'12:00'));
+const isProductivityDay=day=>['Tue','Fri'].includes(weekday(day));
+export function nextEligibleDay057(day){do{day=nextDay(day);}while(!isProductivityDay(day));return day;}
 
 async function openDays(query,sessionId){
  return (await query`SELECT DISTINCT (s.starts_at AT TIME ZONE 'Europe/Moscow')::date::text AS slot_day

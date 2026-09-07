@@ -9,7 +9,10 @@ global.fetch=async()=>({ok:true});process.env.OPERATOR_ACCESS_KEY='test';
 const {initFunnel}=await import('../lib/funnel-store.js');
 const {ensureRollingWindow057,nextEligibleDay057,ROLLING_KEY}=await import('../lib/rolling-productivity-057.js');
 
-test('Sunday is skipped',()=>assert.equal(nextEligibleDay057('2026-09-05'),'2026-09-07'));
+test('new productivity days are Tuesday and Friday',()=>{
+ assert.equal(nextEligibleDay057('2026-09-05'),'2026-09-08');
+ assert.equal(nextEligibleDay057('2026-09-08'),'2026-09-11');
+});
 test('keeps two open days and replay creates no duplicate slots or tasks',async()=>{
  await initFunnel();
  const config={campaignKey:ROLLING_KEY,cutoff:60,multiDay:true};
