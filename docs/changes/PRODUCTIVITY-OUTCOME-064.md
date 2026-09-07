@@ -40,3 +40,5 @@
 Rollback-ветка до runtime-изменения: `rollback/productivity-outcome-before-064`.
 
 Базовый production-коммит: `e78d664`.
+
+Runtime-коммиты: `aa2ac84` и `d88022e`.
