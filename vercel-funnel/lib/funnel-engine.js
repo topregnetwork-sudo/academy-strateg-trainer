@@ -151,22 +151,17 @@ export function stableId(key) { const s=crypto.createHash('sha256').update(key).
 export async function sendSessionSummary(sessionId,key,slotId=null) {
   const session=await sessionById(sessionId);
   const rows=(await sql`SELECT s.id,s.starts_at,s.capacity,c.first_name,c.last_name,c.city,c.username,d.folder_url FROM funnel_slots s LEFT JOIN funnel_bookings b ON b.slot_id=s.id LEFT JOIN candidates c ON c.id=b.candidate_id LEFT JOIN candidate_drive d ON d.candidate_id=c.id WHERE s.session_id=${sessionId} AND s.starts_at>NOW() AND (${slotId}::bigint IS NULL OR s.id=${slotId}) ORDER BY s.starts_at,c.id`).rows;
-  const cities=[...new Set(rows.map(r=>r.city).filter(Boolean))];
-  if(!cities.length)cities.push(session.config.city);
-  for(const city of cities){
-    const cityRows=rows.filter(r=>!r.city||r.city===city),groups=new Map();
-    for(const r of cityRows){if(!groups.has(r.id))groups.set(r.id,[]);groups.get(r.id).push(r);}
-    const days=[...new Set(cityRows.map(r=>new Date(r.starts_at).toLocaleDateString('ru-RU',{timeZone:'Europe/Moscow'})))];
-    const lines=[`📋 <b>${slotId?'Встреча скоро начнётся':'Ближайшие записи'} — интервью на продуктивность</b>`,`Город: ${esc(city)}`,`Дни: ${esc(days.join(', '))}`];
-    for(const entries of groups.values()){
-      const people=entries.filter(r=>r.first_name||r.username||r.last_name),s=entries[0];
-      lines.push(`\n<b>${new Date(s.starts_at).toLocaleTimeString('ru-RU',{timeZone:'Europe/Moscow',hour:'2-digit',minute:'2-digit'})}: ${people.length} / ${s.capacity}</b>`);
-      for(const r of people){const name=esc([r.first_name,r.last_name].filter(Boolean).join(' ')||r.username);lines.push(`${r.folder_url?`<a href="${esc(r.folder_url)}">${name}</a>`:name} · ${esc(r.city)}`);}
-    }
-    // Split on whole lines rather than truncate a name or HTML link.
-    const chunks=[];let chunk='';for(const line of lines){if(chunk.length+line.length>3400){chunks.push(chunk);chunk='';}chunk+=line+'\n';}if(chunk)chunks.push(chunk);
-    for(let i=0;i<chunks.length;i++)await coordinate(`${key}:${city}:${i}`,chunks[i],{inline_keyboard:[[{text:'Участники в панели',url:`${SITE}/operator.html?funnel_session=${sessionId}`}]]},city);
+  const groups=new Map();for(const r of rows){if(!groups.has(r.id))groups.set(r.id,[]);groups.get(r.id).push(r);}
+  const days=[...new Set(rows.map(r=>new Date(r.starts_at).toLocaleDateString('ru-RU',{timeZone:'Europe/Moscow'})))];
+  const lines=[`📋 <b>${slotId?'Встреча скоро начнётся':'Ближайшие записи'} — интервью на продуктивность</b>`,`Дни: ${esc(days.join(', ')||'нет будущих записей')}`];
+  for(const entries of groups.values()){
+    const people=entries.filter(r=>r.first_name||r.username||r.last_name),s=entries[0];
+    lines.push(`\n<b>${new Date(s.starts_at).toLocaleDateString('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit'})} ${new Date(s.starts_at).toLocaleTimeString('ru-RU',{timeZone:'Europe/Moscow',hour:'2-digit',minute:'2-digit'})}: ${people.length} / ${s.capacity}</b>`);
+    for(const r of people){const name=esc([r.first_name,r.last_name].filter(Boolean).join(' ')||r.username);lines.push(`${r.folder_url?`<a href="${esc(r.folder_url)}">${name}</a>`:name} · ${esc(r.city)}`);}
   }
+  // Split on whole lines rather than truncate a name or HTML link.
+  const chunks=[];let chunk='';for(const line of lines){if(chunk.length+line.length>3400){chunks.push(chunk);chunk='';}chunk+=line+'\n';}if(chunk)chunks.push(chunk);
+  for(const destination of ['Минск','Челябинск'])for(let i=0;i<chunks.length;i++)await coordinate(`${key}:all:${i}:${destination}`,chunks[i],{inline_keyboard:[[{text:'Участники в панели',url:`${SITE}/operator.html?funnel_session=${sessionId}`}]]},destination);
 }
 export async function runFunnelTask(task) {
   if(typeof task.payload==='string')task={...task,payload:JSON.parse(task.payload)};
