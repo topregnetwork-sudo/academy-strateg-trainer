@@ -2,7 +2,7 @@
 
 ## Scope
 
-Trainer funnel only. Baseline: `c80d2e7`. Rollback branch: `rollback/trainer-drive-chain-and-reserve-column-before-067`.
+Trainer funnel only. Baseline: `c80d2e7`. Production commits: `f1cf338`, `9d8e229`, `03416ac`, `598948b`. Rollback branch: `rollback/trainer-drive-chain-and-reserve-column-before-067`.
 
 ## Requested result
 
@@ -29,4 +29,4 @@ Candidate messages, Test 1, Questionnaire 2, existing folders, productivity appo
 
 ## Rollback
 
-`git revert <067-fix-commit> && git push origin main` restores the prior direct Drive attempt and separate collaboration column. Already-created Drive folders, tables, tasks and internal sample messages must remain as audit evidence; do not delete them automatically.
+`git revert 598948b 03416ac 9d8e229 f1cf338 && git push origin main` restores the prior direct Drive attempt and separate collaboration column. Already-created Drive folders, tables, tasks and internal sample messages must remain as audit evidence; do not delete them automatically.
