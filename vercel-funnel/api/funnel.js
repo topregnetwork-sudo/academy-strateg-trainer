@@ -44,7 +44,7 @@ export default async function handler(req,res) {
       await sql`UPDATE funnel_sessions SET active=${v.active} WHERE id=${Number(v.sessionId)}`;
       return json(res,200,{ok:true});
     }
-    if(v.action==='preview'||v.action==='test'){
+    if(v.action==='preview'||v.action==='test'||v.action==='test_topics'){
       const config=validateMessage(v.config);
       if(!['invite','test_passed'].includes(config.action))config.sessionId=null;
       const session=config.sessionId?await sessionById(config.sessionId):null;
