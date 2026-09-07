@@ -2,7 +2,8 @@ import crypto from 'node:crypto';
 import { init, body, json, operator, telegram } from './_core.js';
 import { initFunnel, sql, transaction, sessionById, candidateById, createTask, armTask } from '../lib/funnel-store.js';
 import { ACTIONS, DEFAULT_TEMPLATES, assert, validateMessage, validateSession, eligibility, renderText } from '../lib/funnel-model.js';
-import { available, messageKeyboard, stableId } from '../lib/funnel-engine.js';
+import { available, messageKeyboard, stableId, sendSessionSummary } from '../lib/funnel-engine.js';
+import { ensureRollingWindow057 } from '../lib/rolling-productivity-057.js';
 import { migratePrimaryTimers } from '../lib/funnel-primary.js';
 
 export default async function handler(req,res) {
@@ -42,6 +43,12 @@ export default async function handler(req,res) {
       assert(typeof v.active==='boolean','Укажите состояние');
       await sql`UPDATE funnel_sessions SET active=${v.active} WHERE id=${Number(v.sessionId)}`;
       return json(res,200,{ok:true});
+    }
+    if(v.action==='test_brief'){
+      const window=await ensureRollingWindow057();
+      assert(window.sessionId,'Активная встреча на продуктивность не найдена');
+      await sendSessionSummary(window.sessionId,'productivity-brief-062');
+      return json(res,200,{ok:true,window});
     }
     if(v.action==='preview'||v.action==='test'){
       const config=validateMessage(v.config);

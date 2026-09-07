@@ -66,7 +66,7 @@ export async function inviteRollingCandidate057(candidateId){
  if((await sql`SELECT 1 FROM funnel_bookings WHERE candidate_id=${c.id} AND session_id=${window.sessionId} LIMIT 1`).rows[0])return {sent:0,reason:'Уже записан'};
  if((await sql`SELECT 1 FROM funnel_recipients r JOIN funnel_jobs j ON j.id=r.job_id WHERE r.candidate_id=${c.id} AND j.config->>'sessionId'=${String(window.sessionId)} AND r.state IN ('pending','processing','sent') LIMIT 1`).rows[0])return {sent:0,reason:'Приглашение уже создано'};
  const jobId=`rolling-057-${window.sessionId}-${c.id}`;
- const config={action:'invite',sessionId:window.sessionId,text:'Спасибо, что заполнили анкету и завершили Тест 1.\n\nПриглашаем вас на интервью на продуктивность в Академии Стратег.\n\nВыберите один из ближайших доступных дней и время по кнопке ниже.\n\nДо интервью ознакомьтесь и изучите Цели Академии Стратег.',buttons:[]};
+const config={action:'invite',sessionId:window.sessionId,text:'Спасибо, что заполнили анкету и завершили Тест 1.\n\nПриглашаем вас на интервью на продуктивность в Академии Стратег.\n\nИнтервью проходит онлайн в Zoom, а время в кнопках указано по Москве.\n\nВыберите один из ближайших доступных дней и время по кнопке ниже.\n\nДо интервью ознакомьтесь и изучите Цели Академии Стратег.',buttons:[]};
  await transaction(async tx=>{
    await tx`INSERT INTO funnel_jobs(id,config,state) VALUES(${jobId},${JSON.stringify(config)}::text::jsonb,'queued') ON CONFLICT(id) DO NOTHING`;
    await tx`INSERT INTO funnel_recipients(job_id,candidate_id,original_status,state) VALUES(${jobId},${c.id},${c.status},'pending') ON CONFLICT(job_id,candidate_id) DO NOTHING`;
