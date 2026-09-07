@@ -166,11 +166,15 @@ export default async function handler(req,res){
       if(v.action==='send_productivity_topic_test'){
         const passText=`🧪 ТЕСТОВОЕ СООБЩЕНИЕ — тема «Прошёл продуктивность»\n\nКандидат: Тестовый кандидат\nГород: пример\nTelegram: @test_candidate\n\n✅ ПРОШЁЛ ИНТЕРВЬЮ НА ПРОДУКТИВНОСТЬ\nПереходит на следующий этап тестирования. Персональное сообщение кандидату отправлено.\n\nПример сообщения кандидату:\n${PRODUCTIVITY_PASS_MESSAGE}`;
         const reserveText=`🧪 ТЕСТОВОЕ СООБЩЕНИЕ — тема «Кадровый резерв — сотрудничество»\n\nКандидат: Тестовый кандидат\nГород: пример\nTelegram: @test_candidate\n\n🗂 КАНДИДАТ ПРИГЛАШЁН В КАДРОВЫЙ РЕЗЕРВ — СОТРУДНИЧЕСТВО\nПредложение отправлено кандидату. Запись в эту тему появится после его согласия.\n\nПример сообщения кандидату:\n${PRODUCTIVITY_RESERVE_MESSAGE}`;
-        const passId=await telegram('-1004397133749',passText,{message_thread_id:PRODUCTIVITY_TOPICS.passed,parse_mode:undefined,disable_web_page_preview:true});
         const reservePreviewButtons={inline_keyboard:[[
           {text:'Да, в кадровый резерв',callback_data:'preview_reserve_yes'},
           {text:'Нет, спасибо',callback_data:'preview_reserve_no'},
         ]]};
+        if(v.topic==='reserve'){
+          const reserveId=await telegram('-1004397133749',reserveText,{message_thread_id:PRODUCTIVITY_TOPICS.reserve,parse_mode:undefined,disable_web_page_preview:true,reply_markup:reservePreviewButtons});
+          return json(res,200,{ok:true,topics:{reserve:{threadId:PRODUCTIVITY_TOPICS.reserve,messageId:reserveId}}});
+        }
+        const passId=await telegram('-1004397133749',passText,{message_thread_id:PRODUCTIVITY_TOPICS.passed,parse_mode:undefined,disable_web_page_preview:true});
         const reserveId=await telegram('-1004397133749',reserveText,{message_thread_id:PRODUCTIVITY_TOPICS.reserve,parse_mode:undefined,disable_web_page_preview:true,reply_markup:reservePreviewButtons});
         return json(res,200,{ok:true,topics:{passed:{threadId:PRODUCTIVITY_TOPICS.passed,messageId:passId},reserve:{threadId:PRODUCTIVITY_TOPICS.reserve,messageId:reserveId}}});
       }
