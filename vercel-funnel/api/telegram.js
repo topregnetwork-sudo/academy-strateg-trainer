@@ -530,6 +530,12 @@ async function handleProductivityReserveChoice(callback) {
   return true;
 }
 
+async function handleReservePreviewChoice(callback) {
+  if (!/^preview_reserve_(yes|no)$/.test(callback.data || '')) return false;
+  await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Это демонстрация: данные кандидатов не меняются.' });
+  return true;
+}
+
 async function removeFromCandidateGroup(candidate) {
   const groupChatId = (await sql`SELECT value FROM app_settings WHERE key='candidate_group_chat_id' LIMIT 1`).rows[0]?.value;
   if (!groupChatId) return { removed: false, reason: 'group_not_configured' };
@@ -623,7 +629,7 @@ export default async function handler(req, res) {
     if (callback) {
       await init();
       if((await sql`SELECT id FROM candidates WHERE chat_id=${String(callback.from.id)} AND status='test_1_incomplete_removed'`).rows[0]){await telegramApi('answerCallbackQuery',{callback_query_id:callback.id,text:'Ваше участие в текущем отборе завершено.',show_alert:true});return complete();}
-      if (!await handlePrimaryEntry(callback) && !await handlePrimaryRebookMenu(callback) && !await handleFunnelCallback(callback) && !await handleProductivityReserveChoice(callback) && !await handleOfflineInterviewChoice(callback) && !await handleNadezhdaFinalistChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
+      if (!await handlePrimaryEntry(callback) && !await handlePrimaryRebookMenu(callback) && !await handleFunnelCallback(callback) && !await handleReservePreviewChoice(callback) && !await handleProductivityReserveChoice(callback) && !await handleOfflineInterviewChoice(callback) && !await handleNadezhdaFinalistChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
       return complete();
     }
     const message = update.message;
