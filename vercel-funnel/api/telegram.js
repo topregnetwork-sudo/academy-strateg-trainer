@@ -7,7 +7,7 @@ import { schedulePrimary } from '../lib/funnel-primary.js';
 import {entryKeyboard,handlePrimaryEntry,handlePrimaryRebookMenu,offerPrimaryRebook,requirePrimaryAccess} from '../lib/primary-evidence.js';
 import {effect} from '../lib/funnel-store.js';
 import {isCandidateTestKeyword} from '../lib/telegram-event-policy.js';
-import {ensureProductivityOutcomeStore, sendReserveTopicNotice} from '../lib/productivity-outcomes-064.js';
+import {ensureProductivityOutcomeStore, PRODUCTIVITY_RESERVE_CONFIRMATION, PRODUCTIVITY_RESERVE_DECLINED, sendReserveTopicNotice} from '../lib/productivity-outcomes-064.js';
 
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
 const CANDIDATE_GROUP_COMMAND = /^\/candidate_group(?:@stazherskaya_bot)?(?:\s|$)/i;
@@ -499,9 +499,7 @@ async function handleProductivityReserveChoice(callback) {
     await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Ответ уже сохранён.', show_alert: true });
     return true;
   }
-  const reply = chosen === 'yes'
-    ? 'Спасибо! Мы зафиксировали ваше согласие оставаться в кадровом резерве Академии Стратег. Мы свяжемся с вами, когда появится подходящая возможность.'
-    : 'Спасибо за ответ. Мы зафиксировали ваше решение и желаем вам успехов и подходящих возможностей.';
+  const reply = chosen === 'yes' ? PRODUCTIVITY_RESERVE_CONFIRMATION : PRODUCTIVITY_RESERVE_DECLINED;
   const messageId = await effect(`productivity-reserve:candidate:${candidate.id}:${chosen}`, () => telegram(candidate.chat_id, reply));
   await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id)
     SELECT ${candidate.id},'out',${chosen === 'yes' ? 'productivity_reserve_confirmation' : 'productivity_reserve_declined'},${reply},'delivered',${String(messageId || '')}

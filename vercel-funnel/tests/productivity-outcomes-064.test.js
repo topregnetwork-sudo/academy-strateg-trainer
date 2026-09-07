@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   PRODUCTIVITY_PASS_MESSAGE,
   PRODUCTIVITY_RESERVE_BUTTONS,
+  PRODUCTIVITY_RESERVE_CONFIRMATION,
+  PRODUCTIVITY_RESERVE_DECLINED,
   PRODUCTIVITY_RESERVE_MESSAGE,
   PRODUCTIVITY_TOPICS,
   productivityStaffText,
@@ -12,7 +14,11 @@ test('productivity outcome uses the approved staff topics and candidate wording'
   assert.deepEqual(PRODUCTIVITY_TOPICS, { passed: 1071, reserve: 1073 });
   assert.match(PRODUCTIVITY_PASS_MESSAGE, /следующий этап отбора/iu);
   assert.match(PRODUCTIVITY_PASS_MESSAGE, /Пожалуйста, ожидайте нашего сообщения/iu);
-  assert.match(PRODUCTIVITY_RESERVE_MESSAGE, /кадровый резерв Академии Стратег/iu);
+  assert.match(PRODUCTIVITY_RESERVE_MESSAGE, /проявили интерес к Академии Стратег/iu);
+  assert.match(PRODUCTIVITY_RESERVE_MESSAGE, /в первую очередь вернёмся/iu);
+  assert.match(PRODUCTIVITY_RESERVE_MESSAGE, /кадровом резерве Академии Стратег/iu);
+  assert.match(PRODUCTIVITY_RESERVE_CONFIRMATION, /в первую очередь вернёмся/iu);
+  assert.match(PRODUCTIVITY_RESERVE_DECLINED, /Благодарим за интерес/iu);
   assert.deepEqual(PRODUCTIVITY_RESERVE_BUTTONS.inline_keyboard[0].map(button => button.callback_data), [
     'productivity_reserve_yes',
     'productivity_reserve_no',
