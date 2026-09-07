@@ -483,6 +483,10 @@ async function handleProductivityReserveChoice(callback) {
     await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Карточка кандидата не найдена.', show_alert: true });
     return true;
   }
+  if (candidate.status !== 'productivity_failed') {
+    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Это предложение уже недоступно.', show_alert: true });
+    return true;
+  }
   await ensureProductivityOutcomeStore();
   const claimed = (await sql`UPDATE candidate_productivity_outreach SET reserve_choice=${choice},reserve_choice_at=NOW(),updated_at=NOW() WHERE candidate_id=${candidate.id} AND result='productivity_failed' AND reserve_choice IS NULL RETURNING candidate_id`).rows[0];
   const existing = (await sql`SELECT result,reserve_choice FROM candidate_productivity_outreach WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0];
