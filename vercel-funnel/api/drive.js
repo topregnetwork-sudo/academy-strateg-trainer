@@ -126,7 +126,7 @@ function testAnswersCsv({ candidate, application, test }) {
   return `\uFEFF${rows.map(row => row.map(cell).join(';')).join('\r\n')}`;
 }
 
-export async function syncDriveCandidate(candidateId) {
+export async function syncDriveCandidate(candidateId, options = {}) {
   await init();
   const candidate = (await sql`SELECT c.*,a.full_name,a.age,a.motivation,a.phone AS application_phone,a.source_id AS application_source_id,a.trainer_experience_level FROM candidates c LEFT JOIN applications a ON a.candidate_id=c.id WHERE c.id=${Number(candidateId)} LIMIT 1`).rows[0];
   if (!candidate) throw new Error('Кандидат не найден');
@@ -138,7 +138,7 @@ export async function syncDriveCandidate(candidateId) {
   // Replayed events return its saved link and never reopen, migrate or autofill its interview form.
   const existing = (await sql`SELECT folder_id,folder_url,folder_name FROM candidate_drive WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0];
   const existingResult = existingDriveResult(existing);
-  if (existingResult) return existingResult;
+  if (existingResult && !options.refreshExisting) return existingResult;
   const {primaryAccess}=await import('../lib/primary-evidence.js');
   candidate.primary_zoom_clicked_at=(await primaryAccess(candidate.id)).clickedAt;
   const messageEvents = (await sql`SELECT kind,direction,text,created_at FROM messages WHERE candidate_id=${candidate.id} ORDER BY created_at ASC`).rows;
@@ -154,9 +154,12 @@ export async function syncDriveCandidate(candidateId) {
     textFile('03 — Тест 1 — ответы', testAnswersCsv({ candidate, application, test }), 'text/csv;charset=utf-8', 'spreadsheet', ['03 — Тест 1 — ответы.csv'])
   ];
   const cityFolder = await ensureCityFolder(candidate);
-  const result = await callBridge(folderName, files, cityFolder.id, useInterview ? {
+  const result = await callBridge(existing?.folder_name || folderName, files, cityFolder.id, {
+    ...(existing?.folder_id ? { existingFolderId: existing.folder_id } : {}),
+    ...(useInterview ? {
     interview: interviewPayload({candidate, application, questionnaireTwo})
-  } : {});
+    } : {})
+  });
   if (useInterview && !result.interview?.id) throw new Error('Мост не подтвердил сохранение бланка интервью');
   if (useInterview) {
     // Keep old card/Anketa entries as well as their files; only refreshed Test 1 entries change.
@@ -197,7 +200,7 @@ export default async function handler(req, res) {
       const {syncInterviewAppointment}=await import('../lib/interview-appointment.js');
       return json(res,200,await syncInterviewAppointment(v.candidateId));
     }
-    if (v.action === 'sync_candidate') return json(res, 200, { ok: true, ...(await syncDriveCandidate(v.candidateId)) });
+    if (v.action === 'sync_candidate') return json(res, 200, { ok: true, ...(await syncDriveCandidate(v.candidateId, { refreshExisting: v.refreshExisting === true })) });
     if (v.action === 'upload_file') return json(res, 200, { ok: true, ...(await uploadDriveFile(v.candidateId, v)) });
     return json(res, 400, { error: 'Неизвестное действие Google Drive' });
   } catch (error) {

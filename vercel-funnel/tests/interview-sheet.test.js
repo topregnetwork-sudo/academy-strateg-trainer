@@ -35,6 +35,20 @@ test('interview takes only Q1 and Q2; Test 1 data cannot affect any field', () =
 test('ambiguous job descriptions preserved, not fabricated', () => {
   const raw = 'Работала на себя, потом руководителем';
   assert.deepEqual(splitJobs(raw),[{raw}]);
+  const payload = interviewPayload({candidate:{id:3},questionnaireTwo:{answers:{work_history:raw}}});
+  assert.equal(payload.cells.find(c=>c.sheet==='Работа 1'&&c.cell==='F8')?.text,raw);
+});
+
+test('human work history periods fill job tabs', () => {
+  const raw = '1. АНО Центр / Добровольчество / Руководитель проектов / с 08.2025 по наст. вр\n2. ООО Инком / Производство / Зам. директора / с 01.2014 по 12.2025';
+  const jobs = splitJobs(raw);
+  assert.equal(jobs[0].organization,'АНО Центр');
+  assert.equal(jobs[0].start,'2025');
+  assert.equal(jobs[0].end,'по настоящее время');
+  assert.equal(jobs[1].end,'2025');
+  const payload = interviewPayload({candidate:{id:4},questionnaireTwo:{answers:{work_history:raw}}});
+  assert.equal(payload.cells.find(c=>c.sheet==='Работа 1'&&c.cell==='F10')?.text,'Руководитель проектов');
+  assert.equal(payload.cells.find(c=>c.sheet==='Работа 2'&&c.cell==='F13')?.text,'с 01.2014 по 12.2025');
 });
 
 function fixture() {

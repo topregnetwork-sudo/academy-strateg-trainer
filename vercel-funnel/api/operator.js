@@ -120,7 +120,7 @@ export default async function handler(req,res){
         return json(res,200,{ok:true});
       }
       if(v.action==='sync_drive_candidate'&&v.candidateId){
-        return json(res,200,{ok:true,...(await syncDriveCandidate(v.candidateId))});
+        return json(res,200,{ok:true,...(await syncDriveCandidate(v.candidateId,{refreshExisting:v.refreshExisting===true}))});
       }
       if(v.action==='upload_drive_file'&&v.candidateId){
         if(!v.fileName||!v.fileData)return json(res,400,{error:'Файл не передан'});
