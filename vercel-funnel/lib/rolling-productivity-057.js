@@ -21,11 +21,20 @@ async function openDays(query,sessionId){
    ORDER BY slot_day`).rows.map(r=>r.slot_day);
 }
 
+async function removeInvalidOpenDays(query,sessionId){
+ await query`DELETE FROM funnel_slots s
+   WHERE s.session_id=${sessionId}
+     AND s.starts_at>NOW()
+     AND NOT EXISTS(SELECT 1 FROM funnel_bookings b WHERE b.slot_id=s.id)
+     AND EXTRACT(ISODOW FROM (s.starts_at AT TIME ZONE 'Europe/Moscow')) NOT IN (2,5)`;
+}
+
 export async function ensureRollingWindow057(){
  await initFunnel();
  const result=await transaction(async tx=>{
    const session=(await tx`SELECT * FROM funnel_sessions WHERE active=true AND config->>'campaignKey'=${ROLLING_KEY} ORDER BY id DESC LIMIT 1 FOR UPDATE`).rows[0];
    if(!session)return {active:false,addedDays:[],openDays:[],sessionId:null};
+   await removeInvalidOpenDays(tx,session.id);
    const before=await openDays(tx,session.id),addedDays=[];
    let cursor=(await tx`SELECT COALESCE(MAX((starts_at AT TIME ZONE 'Europe/Moscow')::date)::text,${isoDay(new Date())}) AS slot_day FROM funnel_slots WHERE session_id=${session.id}`).rows[0].slot_day;
    let count=before.length;
