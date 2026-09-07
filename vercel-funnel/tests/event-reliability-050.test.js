@@ -8,6 +8,6 @@ test('all normal Test 1 keyword spellings trigger the same event',()=>{
 });
 
 test('closed stages stay closed instead of silently advancing',()=>{
-  for(const status of ['test_1_incomplete_removed','rejected','cancelled','selection_closed','academy_contact'])assert.equal(isClosedCandidateStatus(status),true,status);
+  for(const status of ['test_1_incomplete_removed','rejected','cancelled','selection_closed','academy_contact','reserve_no_response'])assert.equal(isClosedCandidateStatus(status),true,status);
   for(const status of ['questionnaire','interviewed','test_1_completed'])assert.equal(isClosedCandidateStatus(status),false,status);
 });

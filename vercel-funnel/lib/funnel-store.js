@@ -30,6 +30,20 @@ export async function initFunnel() {
       SELECT p.id,'reserve','Кадровый резерв',9,'{"statuses":["talent_pool"]}'::jsonb,'draft'
       FROM funnel_projects p WHERE p.project_key='academy-trainer'
       AND NOT EXISTS(SELECT 1 FROM funnel_stage_definitions d WHERE d.project_id=p.id AND d.stage_key='reserve')`;
+    // Preserve the old combined stage for audit history, but expose the two resulting
+    // routes as separate operational columns.
+    await sql`INSERT INTO funnel_stage_definitions(project_id,stage_key,stage_name,position,config,version,mode)
+      SELECT p.id,v.stage_key,v.stage_name,v.position,v.config::jsonb,
+        COALESCE((SELECT MAX(d.version)+1 FROM funnel_stage_definitions d WHERE d.project_id=p.id AND d.stage_key=v.stage_key),1),'system'
+      FROM funnel_projects p CROSS JOIN (VALUES
+        ('productivity_passed_stage','Прошёл продуктивность',6,'{"statuses":["productivity_passed"]}'),
+        ('reserve_answer','Кадровый резерв — ожидается ответ',7,'{"statuses":["productivity_failed"]}'),
+        ('reserve','Кадровый резерв',8,'{"statuses":["talent_pool"]}'),
+        ('final','Финальный отбор',9,'{"statuses":["finalist","selection_closed"]}'),
+        ('closed','Завершено / после отбора',10,'{"statuses":["academy_contact","training","internship","hired","rejected","cancelled","test_1_incomplete_removed"]}')
+      ) AS v(stage_key,stage_name,position,config)
+      WHERE p.project_key='academy-trainer'
+      AND NOT EXISTS(SELECT 1 FROM funnel_stage_definitions d WHERE d.project_id=p.id AND d.stage_key=v.stage_key AND d.mode='system' AND d.config=v.config::jsonb)`;
     await sql`CREATE TABLE IF NOT EXISTS funnel_stage_events(id BIGSERIAL PRIMARY KEY,candidate_id BIGINT NOT NULL,project_id BIGINT NOT NULL REFERENCES funnel_projects(id),from_status TEXT,to_status TEXT NOT NULL,trigger TEXT NOT NULL DEFAULT 'system',actor TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(candidate_id,to_status,created_at))`;
     await sql`CREATE INDEX IF NOT EXISTS funnel_stage_events_candidate ON funnel_stage_events(candidate_id,created_at)`;
     await sql`CREATE INDEX IF NOT EXISTS funnel_recipients_job_state ON funnel_recipients(job_id,state)`;

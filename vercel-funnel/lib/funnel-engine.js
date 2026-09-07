@@ -86,7 +86,7 @@ export async function book(sessionId, slotId, candidateId) {
     const session = (await tx`SELECT * FROM funnel_sessions WHERE id=${sessionId} FOR UPDATE`).rows[0];
     if (!session?.active) throw new Error('Запись закрыта');
     const c = (await tx`SELECT * FROM candidates WHERE id=${candidateId} FOR UPDATE`).rows[0];
-    if (!c || ['rejected','cancelled','academy_contact','selection_closed','productivity_passed','productivity_failed','talent_pool','test_1_passed','finalist','hired','training','internship'].includes(c.status) || (session.config.city!=='Все города'&&c.city !== session.config.city)) throw new Error('Запись для вашего этапа недоступна');
+    if (!c || ['rejected','cancelled','academy_contact','selection_closed','productivity_passed','productivity_failed','talent_pool','reserve_no_response','test_1_passed','finalist','hired','training','internship'].includes(c.status) || (session.config.city!=='Все города'&&c.city !== session.config.city)) throw new Error('Запись для вашего этапа недоступна');
     const authorized = (await tx`SELECT 1 FROM funnel_recipients r JOIN funnel_jobs j ON j.id=r.job_id WHERE r.candidate_id=${candidateId} AND r.state='sent' AND (j.config->>'sessionId')::bigint=${sessionId} LIMIT 1`).rows[0];
     if (!authorized) throw new Error('Сначала дождитесь персонального приглашения');
     const slot = (await tx`SELECT * FROM funnel_slots WHERE id=${slotId} AND session_id=${sessionId} AND starts_at>NOW()+${session.config.cutoff}*INTERVAL '1 minute'`).rows[0];
@@ -105,7 +105,7 @@ export async function bookingFollowup(bookingId, version) {
   const booking = (await sql`SELECT b.*,s.starts_at FROM funnel_bookings b JOIN funnel_slots s ON s.id=b.slot_id WHERE b.id=${bookingId}`).rows[0];
   if (!booking || Number(booking.version)!==Number(version)) return {done:true};
   const c=await candidateById(booking.candidate_id), session=await sessionById(booking.session_id);
-  if(!c||c.consent===false||['cancelled','rejected','selection_closed','academy_contact','productivity_failed'].includes(c.status))return {done:true};
+  if(!c||c.consent===false||['cancelled','rejected','selection_closed','academy_contact','productivity_failed','reserve_no_response'].includes(c.status))return {done:true};
   await sendLogged(`booking:${bookingId}:${version}`,c,renderText(session.config.confirmation,c,session.config,booking.starts_at),confirmationKeyboard(session,booking));
   const at = new Date(booking.starts_at), label = at.toLocaleString('ru-RU',{timeZone:'Europe/Moscow'});
   await coordinate(`booking-brief:${bookingId}:${version}`,`✅ <b>${Number(version)>1?'Изменение времени':'Новая запись'} — ${esc(session.config.name)}</b>\n${esc(c.full_name || c.first_name)} · ${esc(c.city)}\nTelegram: @${esc(c.username || 'не указан')}\nТелефон: ${esc(c.phone)}\n${esc(label)} МСК\n${c.folder_url?`<a href="${esc(c.folder_url)}">Папка кандидата</a>`:'Папка пока недоступна'}\n<a href="${SITE}/operator.html?funnel_session=${session.id}">Участники встречи в панели</a>`,undefined,session.config.city);
@@ -172,6 +172,10 @@ export async function runFunnelTask(task) {
     if(result.sessionId&&result.addedDays.length)await refreshSessionInvites(result.sessionId);
     return {done:true};
   }
+  if(task.kind==='productivity_reserve_followup_066'){
+    const {runReserveFollowup}=await import('./productivity-outcomes-064.js');
+    return runReserveFollowup(task.payload.candidateId,task.payload.step);
+  }
   if(task.kind==='interview_appointment_048'){
     if(process.env.INTERVIEW_APPOINTMENT_048==='false')return {done:true};
     const {syncInterviewAppointment}=await import('./interview-appointment.js');
@@ -203,7 +207,7 @@ export async function runFunnelTask(task) {
     const b=(await sql`SELECT b.*,s.starts_at FROM funnel_bookings b JOIN funnel_slots s ON s.id=b.slot_id WHERE b.id=${task.payload.bookingId}`).rows[0];
     if(b&&Number(b.version)===Number(task.payload.version)&&new Date(b.starts_at)>new Date()){
       const c=await candidateById(b.candidate_id),s=await sessionById(b.session_id);
-      if(s.active&&c.consent&&!['cancelled','rejected','selection_closed','academy_contact','productivity_failed'].includes(c.status))await sendLogged(`task:${task.id}`,c,renderText(s.config.reminderText||'Напоминаем о встрече Академии Стратег.\nДата: {date}\nВремя: {time} МСК\n{location}',c,s.config,b.starts_at),s.config.format==='online'?{inline_keyboard:[[{text:'Подключиться к Zoom',url:s.config.location}]]}:undefined);
+      if(s.active&&c.consent&&!['cancelled','rejected','selection_closed','academy_contact','productivity_failed','reserve_no_response'].includes(c.status))await sendLogged(`task:${task.id}`,c,renderText(s.config.reminderText||'Напоминаем о встрече Академии Стратег.\nДата: {date}\nВремя: {time} МСК\n{location}',c,s.config,b.starts_at),s.config.format==='online'?{inline_keyboard:[[{text:'Подключиться к Zoom',url:s.config.location}]]}:undefined);
     }
   }
   if(task.kind==='choice'){

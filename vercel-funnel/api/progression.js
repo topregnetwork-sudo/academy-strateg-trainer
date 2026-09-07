@@ -16,13 +16,13 @@ async function claim(type, token) {
   if (type === 'test_1_completed') return (await sql`
     UPDATE candidate_tests t SET completion_notice_sent_at=NOW(),updated_at=NOW()
     FROM candidates c WHERE t.candidate_id=c.id AND t.token=${token} AND t.submitted_at IS NOT NULL AND c.consent=true
-      AND c.status NOT IN ('test_1_incomplete_removed','rejected','cancelled','selection_closed','academy_contact')
+      AND c.status NOT IN ('test_1_incomplete_removed','rejected','cancelled','selection_closed','academy_contact','reserve_no_response')
       AND t.completion_notice_sent_at IS NULL RETURNING t.id,c.id AS candidate_id,c.chat_id
   `).rows[0];
   if (type === 'questionnaire_2_completed') return (await sql`
     UPDATE candidate_questionnaire_two q SET completion_notice_sent_at=NOW(),updated_at=NOW()
     FROM candidates c WHERE q.candidate_id=c.id AND q.token=${token} AND q.submitted_at IS NOT NULL AND c.consent=true
-      AND c.status NOT IN ('test_1_incomplete_removed','rejected','cancelled','selection_closed','academy_contact')
+      AND c.status NOT IN ('test_1_incomplete_removed','rejected','cancelled','selection_closed','academy_contact','reserve_no_response')
       AND q.completion_notice_sent_at IS NULL RETURNING q.id,c.id AS candidate_id,c.chat_id
   `).rows[0];
   return null;
@@ -46,7 +46,7 @@ export default async function handler(req, res) {
       const owner=type==='test_1_completed'
         ?(await sql`SELECT c.status,c.consent FROM candidate_tests t JOIN candidates c ON c.id=t.candidate_id WHERE t.token=${token}`).rows[0]
         :(await sql`SELECT c.status,c.consent FROM candidate_questionnaire_two q JOIN candidates c ON c.id=q.candidate_id WHERE q.token=${token}`).rows[0];
-      if(owner&&(!owner.consent||['test_1_incomplete_removed','rejected','cancelled','selection_closed','academy_contact'].includes(owner.status)))return json(res,200,{ok:true,status:'selection_closed'});
+      if(owner&&(!owner.consent||['test_1_incomplete_removed','rejected','cancelled','selection_closed','academy_contact','reserve_no_response'].includes(owner.status)))return json(res,200,{ok:true,status:'selection_closed'});
       let drive = null, invitation = null;
       if (type === 'test_1_completed') {
         const existing=(await sql`SELECT candidate_id FROM candidate_tests WHERE token=${token} AND submitted_at IS NOT NULL LIMIT 1`).rows[0];

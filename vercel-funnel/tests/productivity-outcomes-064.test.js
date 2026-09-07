@@ -5,6 +5,8 @@ import {
   PRODUCTIVITY_RESERVE_BUTTONS,
   PRODUCTIVITY_RESERVE_CONFIRMATION,
   PRODUCTIVITY_RESERVE_DECLINED,
+  PRODUCTIVITY_RESERVE_NO_RESPONSE_MESSAGE,
+  PRODUCTIVITY_RESERVE_REMINDER_MESSAGE,
   PRODUCTIVITY_RESERVE_MESSAGE,
   PRODUCTIVITY_TOPICS,
   productivityStaffText,
@@ -18,7 +20,10 @@ test('productivity outcome uses the approved staff topics and candidate wording'
   assert.match(PRODUCTIVITY_RESERVE_MESSAGE, /в первую очередь вернёмся/iu);
   assert.match(PRODUCTIVITY_RESERVE_MESSAGE, /кадровом резерве Академии Стратег/iu);
   assert.match(PRODUCTIVITY_RESERVE_CONFIRMATION, /в первую очередь вернёмся/iu);
+  assert.match(PRODUCTIVITY_RESERVE_CONFIRMATION, /группа кандидатов предназначена для активного потока отбора/iu);
   assert.match(PRODUCTIVITY_RESERVE_DECLINED, /Благодарим за интерес/iu);
+  assert.match(PRODUCTIVITY_RESERVE_REMINDER_MESSAGE, /бережно напоминаем/iu);
+  assert.match(PRODUCTIVITY_RESERVE_NO_RESPONSE_MESSAGE, /не получили ваш ответ/iu);
   assert.deepEqual(PRODUCTIVITY_RESERVE_BUTTONS.inline_keyboard[0].map(button => button.callback_data), [
     'productivity_reserve_yes',
     'productivity_reserve_no',

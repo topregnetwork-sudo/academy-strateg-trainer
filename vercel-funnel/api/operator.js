@@ -40,12 +40,14 @@ export default async function handler(req,res){
         const questionnaireTwo=(await sql`SELECT status,answers,sent_at,submitted_at FROM candidate_questionnaire_two WHERE candidate_id=${id} LIMIT 1`).rows[0]||null;
         const drive=(await sql`SELECT candidate_id,folder_id,folder_url,folder_name,synced_at FROM candidate_drive WHERE candidate_id=${id} LIMIT 1`).rows[0]||null;
         const driveFiles=(await sql`SELECT file_kind,file_name,file_url,drive_file_id,mime_type,updated_at FROM candidate_drive_files WHERE candidate_id=${id} ORDER BY updated_at DESC`).rows;
+        const productivityOutreach=(await sql`SELECT result,reserve_choice,reserve_choice_at,reserve_group_removal_state,reserve_group_removed_at,reserve_group_removal_error,reserve_reminded_at,reserve_response_due_at,reserve_closed_no_response_at FROM candidate_productivity_outreach WHERE candidate_id=${id} LIMIT 1`).rows[0]||null;
         const progress=await candidateProgress(id).catch(()=>({errors:['progress']}));
-        return json(res,200,{candidate,messages,test,testFiles,questionnaireTwo,drive,driveFiles,progress});
+        return json(res,200,{candidate,messages,test,testFiles,questionnaireTwo,drive,driveFiles,productivityOutreach,progress});
       }
       const candidates=(await sql`
         SELECT c.*,m.text AS last_message,d.folder_url,d.folder_name,
           s.file_url AS interview_sheet_url,po.message_pending AS productivity_message_pending,
+          po.reserve_choice,po.reserve_choice_at,po.reserve_group_removal_state,po.reserve_group_removed_at,po.reserve_group_removal_error,po.reserve_reminded_at,po.reserve_response_due_at,po.reserve_closed_no_response_at,
           pb.starts_at AS productivity_at,pb.slot_key AS productivity_slot_id,pb.session_key AS productivity_session_id
         FROM candidates c
         LEFT JOIN LATERAL (SELECT text FROM messages WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) m ON true
@@ -75,7 +77,7 @@ export default async function handler(req,res){
         ) pb ON true
         ORDER BY c.created_at DESC
       `).rows;
-      const analytics=(await sql`SELECT count(*) FILTER (WHERE true)::int AS total,count(*) FILTER (WHERE status='interview_booked')::int AS booked,count(*) FILTER (WHERE status='hired')::int AS hired FROM candidates`).rows[0];
+      const analytics=(await sql`SELECT count(*) FILTER (WHERE true)::int AS total,count(*) FILTER (WHERE status='interview_booked')::int AS booked,count(*) FILTER (WHERE status='productivity_passed')::int AS productivity_passed,count(*) FILTER (WHERE status='productivity_failed')::int AS reserve_waiting,count(*) FILTER (WHERE status='talent_pool')::int AS talent_pool,count(*) FILTER (WHERE status='reserve_no_response')::int AS reserve_no_response,count(*) FILTER (WHERE status='hired')::int AS hired FROM candidates`).rows[0];
       const project=(await sql`SELECT id,project_key,name,description FROM funnel_projects WHERE project_key='academy-trainer' LIMIT 1`).rows[0]||null;
       const stageDefinitions=project?(await sql`SELECT stage_key,stage_name,position,config,version,mode FROM funnel_stage_definitions WHERE project_id=${project.id} AND version=(SELECT MAX(d2.version) FROM funnel_stage_definitions d2 WHERE d2.project_id=funnel_stage_definitions.project_id AND d2.stage_key=funnel_stage_definitions.stage_key) ORDER BY position`).rows:[];
       const stageEvents=(await sql`SELECT candidate_id,from_status,to_status,trigger,actor,created_at FROM funnel_stage_events WHERE project_id=COALESCE(${project?.id||0},0) ORDER BY created_at ASC`).rows;
@@ -83,7 +85,7 @@ export default async function handler(req,res){
     }
     const v=await body(req);
     if(req.method==='PATCH'){
-      const accepted=['test_1_incomplete_removed','new','experienced_not_target','interview_booked','interviewed','questionnaire','test_1_completed','test_1_passed','productivity_invited','productivity_booked','productivity_passed','productivity_failed','talent_pool','finalist','selection_closed','academy_contact','training','internship','hired','rejected','cancelled','collaboration','inactive'];
+      const accepted=['test_1_incomplete_removed','new','experienced_not_target','interview_booked','interviewed','questionnaire','test_1_completed','test_1_passed','productivity_invited','productivity_booked','productivity_passed','productivity_failed','talent_pool','reserve_no_response','finalist','selection_closed','academy_contact','training','internship','hired','rejected','cancelled','collaboration','inactive'];
       if(!accepted.includes(v.status))return json(res,400,{error:'Недопустимый статус'});
       if(v.status==='cancelled'){const {cancelCandidate}=await import('../lib/candidate-decline.js');return json(res,200,{ok:true,...await cancelCandidate(v.candidateId,'operator')});}
       if(['productivity_passed','productivity_failed'].includes(v.status)) return json(res,200,await recordProductivityResult(v.candidateId,v.status));

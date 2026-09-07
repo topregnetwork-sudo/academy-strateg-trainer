@@ -3,7 +3,8 @@ export const CLOSED_CANDIDATE_STATUSES = new Set([
   'rejected',
   'cancelled',
   'selection_closed',
-  'academy_contact'
+  'academy_contact',
+  'reserve_no_response'
 ]);
 
 const TEST_KEYWORD = /^\s*[«"']?тест(?:\s*[-–—]?\s*1)?[»"']?[.!]?\s*$/iu;

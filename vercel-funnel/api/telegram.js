@@ -509,11 +509,23 @@ async function handleProductivityReserveChoice(callback) {
     SELECT ${candidate.id},'in','productivity_reserve_choice',${incoming},'received',${String(callback.message?.message_id || '')}
     WHERE NOT EXISTS(SELECT 1 FROM messages WHERE candidate_id=${candidate.id} AND direction='in' AND kind='productivity_reserve_choice' AND text=${incoming})`;
   const nextStatus = chosen === 'yes' ? 'talent_pool' : 'rejected';
-  if (chosen === 'yes') await sendReserveTopicNotice(candidate.id);
   const changed = (await sql`UPDATE candidates SET status=${nextStatus},updated_at=NOW() WHERE id=${candidate.id} AND status='productivity_failed' RETURNING id`).rows[0];
   if (changed) await sql`INSERT INTO funnel_stage_events(candidate_id,project_id,from_status,to_status,trigger,actor)
     SELECT ${candidate.id},id,'productivity_failed',${nextStatus},'productivity_reserve_choice','candidate'
     FROM funnel_projects WHERE project_key='academy-trainer'`;
+  if (chosen === 'yes') {
+    let removal;
+    try { removal = await removeFromCandidateGroup(candidate); }
+    catch (error) { removal = { removed: false, reason: 'attention', error: String(error?.message || error) }; }
+    const removalState = removal.removed ? 'removed' : removal.reason === 'already_outside' ? 'already_outside' : 'attention';
+    await sql`UPDATE candidate_productivity_outreach
+      SET reserve_group_removal_state=${removalState},
+          reserve_group_removed_at=${removalState === 'removed' ? new Date() : null},
+          reserve_group_removal_error=${removalState === 'attention' ? String(removal.error || removal.reason || '').slice(0,500) : null},
+          updated_at=NOW()
+      WHERE candidate_id=${candidate.id}`;
+    await sendReserveTopicNotice(candidate.id);
+  }
   await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Спасибо! Ответ сохранён.' });
   return true;
 }
@@ -524,6 +536,7 @@ async function removeFromCandidateGroup(candidate) {
   const member = await telegramApi('getChatMember', { chat_id: groupChatId, user_id: Number(candidate.chat_id) });
   if (['left','kicked'].includes(member.status)) return { removed: false, reason: 'already_outside' };
   if (!['member','restricted'].includes(member.status)) return { removed: false, reason: `protected_${member.status}` };
+  await telegramApi('banChatMember', { chat_id: groupChatId, user_id: Number(candidate.chat_id), revoke_messages: false });
   await telegramApi('unbanChatMember', { chat_id: groupChatId, user_id: Number(candidate.chat_id), only_if_banned: false });
   const after = await telegramApi('getChatMember', { chat_id: groupChatId, user_id: Number(candidate.chat_id) });
   return { removed: after.status === 'left', reason: after.status };
