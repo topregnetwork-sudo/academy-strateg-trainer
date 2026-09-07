@@ -24,7 +24,7 @@ test('productivity outcome uses the approved staff topics and candidate wording'
   assert.match(PRODUCTIVITY_RESERVE_DECLINED, /Благодарим за интерес/iu);
   assert.match(PRODUCTIVITY_RESERVE_REMINDER_MESSAGE, /бережно напоминаем/iu);
   assert.match(PRODUCTIVITY_RESERVE_NO_RESPONSE_MESSAGE, /не получили ваш ответ/iu);
-  assert.deepEqual(PRODUCTIVITY_RESERVE_BUTTONS.inline_keyboard[0].map(button => button.callback_data), [
+  assert.deepEqual(PRODUCTIVITY_RESERVE_BUTTONS.inline_keyboard.flat().map(button => button.callback_data), [
     'productivity_reserve_yes',
     'productivity_reserve_no',
   ]);
