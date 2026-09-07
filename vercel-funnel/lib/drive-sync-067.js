@@ -1,5 +1,6 @@
 import { syncDriveCandidate } from '../api/drive.js';
-import { createTask, sql, stableId } from './funnel-store.js';
+import { createTask, sql } from './funnel-store.js';
+import crypto from 'node:crypto';
 
 export const DRIVE_SYNC_TASK_067 = 'candidate_drive_sync_067';
 const RETRY_DELAYS_MINUTES = [2, 5, 10, 20, 40, 60];
@@ -17,7 +18,8 @@ export async function initDriveSync067() {
 }
 
 function taskId(candidateId, attempt) {
-  return stableId(`candidate-drive-sync-067:${Number(candidateId)}:${Number(attempt)}`);
+  const value = crypto.createHash('sha256').update(`candidate-drive-sync-067:${Number(candidateId)}:${Number(attempt)}`).digest('hex').slice(0, 32);
+  return `${value.slice(0,8)}-${value.slice(8,12)}-${value.slice(12,16)}-${value.slice(16,20)}-${value.slice(20)}`;
 }
 
 async function queue(candidateId, attempt, dueAt, error = null) {

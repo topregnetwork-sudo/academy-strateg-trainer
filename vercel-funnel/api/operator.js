@@ -204,6 +204,6 @@ export default async function handler(req,res){
     return json(res,405,{error:'Method not allowed'});
   }catch(error){
     console.error('[operator] failed',error);
-    return json(res,500,{error:'Не удалось выполнить действие: '+String(error?.message||error).slice(0,500)});
+    return json(res,500,{error:'Не удалось выполнить действие'});
   }
 }
