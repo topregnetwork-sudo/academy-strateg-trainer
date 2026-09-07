@@ -2,46 +2,34 @@ import { body, ensureTelegramWebhook, init, json, operator, sql, telegram } from
 import { syncDriveCandidate, uploadDriveFile } from './drive.js';
 import {candidateProgress} from '../lib/candidate-progress.js';
 import {initFunnel} from '../lib/funnel-store.js';
+import {ensureProductivityOutcomeStore, PRODUCTIVITY_PASS_MESSAGE, PRODUCTIVITY_RESERVE_MESSAGE, PRODUCTIVITY_TOPICS, sendProductivityOutcome} from '../lib/productivity-outcomes-064.js';
 
 async function recordProductivityResult(candidateId, result) {
   const id = Number(candidateId);
   const candidate = (await sql`SELECT id,chat_id,status FROM candidates WHERE id=${id} LIMIT 1`).rows[0];
   if (!candidate) return { ok: false, error: 'Кандидат не найден' };
   if (!['productivity_passed','productivity_failed'].includes(result)) return { ok: false, error: 'Неверный результат интервью' };
-  if (candidate.status === result) return { ok: true, already: true, status: result };
-  if (candidate.status !== 'productivity_booked') return { ok: false, error: 'Результат можно указать только для записанного интервью на продуктивность' };
+  if (candidate.status !== 'productivity_booked' && candidate.status !== result) return { ok: false, error: 'Результат можно указать только для записанного интервью на продуктивность' };
 
-  await sql`CREATE TABLE IF NOT EXISTS candidate_productivity_outreach(
-    candidate_id BIGINT PRIMARY KEY,
-    result TEXT NOT NULL,
-    message_pending BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  )`;
-  await sql`UPDATE candidates SET status=${result},updated_at=NOW() WHERE id=${id} AND status='productivity_booked'`;
-  await sql`INSERT INTO funnel_stage_events(candidate_id,project_id,from_status,to_status,trigger,actor)
-    SELECT ${id},id,'productivity_booked',${result},'productivity_result','operator'
-    FROM funnel_projects WHERE project_key='academy-trainer'`;
-  await sql`INSERT INTO candidate_interview_result_events049(candidate_id,status) VALUES(${id},${result}) ON CONFLICT DO NOTHING`;
-  await sql`INSERT INTO candidate_productivity_outreach(candidate_id,result,message_pending,updated_at)
-    VALUES(${id},${result},TRUE,NOW())
-    ON CONFLICT(candidate_id) DO UPDATE SET result=EXCLUDED.result,message_pending=TRUE,updated_at=NOW()`;
+  await ensureProductivityOutcomeStore();
+  const changed = (await sql`UPDATE candidates SET status=${result},updated_at=NOW() WHERE id=${id} AND status='productivity_booked' RETURNING id`).rows[0];
+  if (changed) {
+    await sql`INSERT INTO funnel_stage_events(candidate_id,project_id,from_status,to_status,trigger,actor)
+      SELECT ${id},id,'productivity_booked',${result},'productivity_result','operator'
+      FROM funnel_projects WHERE project_key='academy-trainer'`;
+    await sql`INSERT INTO candidate_interview_result_events049(candidate_id,status) VALUES(${id},${result}) ON CONFLICT DO NOTHING`;
+  }
   const {queueInterviewAppointment}=await import('../lib/interview-appointment.js');
   await queueInterviewAppointment(id);
-  return { ok: true, status: result, messagePending: true };
+  const delivery = await sendProductivityOutcome(id,result);
+  return { ok: true, already: !changed, status: result, ...delivery };
 }
 
 export default async function handler(req,res){
   if(!operator(req))return json(res,401,{error:'Неверный код доступа'});
   try{
     await init(); await initFunnel();
-    await sql`CREATE TABLE IF NOT EXISTS candidate_productivity_outreach(
-      candidate_id BIGINT PRIMARY KEY,
-      result TEXT NOT NULL,
-      message_pending BOOLEAN NOT NULL DEFAULT TRUE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )`;
+    await ensureProductivityOutcomeStore();
     const id=Number(req.query.candidate_id);
     if(req.method==='GET'){
       if(id){
@@ -95,7 +83,7 @@ export default async function handler(req,res){
     }
     const v=await body(req);
     if(req.method==='PATCH'){
-      const accepted=['test_1_incomplete_removed','new','experienced_not_target','interview_booked','interviewed','questionnaire','test_1_completed','test_1_passed','productivity_invited','productivity_booked','productivity_passed','productivity_failed','finalist','selection_closed','academy_contact','training','internship','hired','rejected','cancelled','collaboration','inactive'];
+      const accepted=['test_1_incomplete_removed','new','experienced_not_target','interview_booked','interviewed','questionnaire','test_1_completed','test_1_passed','productivity_invited','productivity_booked','productivity_passed','productivity_failed','talent_pool','finalist','selection_closed','academy_contact','training','internship','hired','rejected','cancelled','collaboration','inactive'];
       if(!accepted.includes(v.status))return json(res,400,{error:'Недопустимый статус'});
       if(v.status==='cancelled'){const {cancelCandidate}=await import('../lib/candidate-decline.js');return json(res,200,{ok:true,...await cancelCandidate(v.candidateId,'operator')});}
       if(['productivity_passed','productivity_failed'].includes(v.status)) return json(res,200,await recordProductivityResult(v.candidateId,v.status));
@@ -170,6 +158,13 @@ export default async function handler(req,res){
         await scheduleStageDeadline(candidate.id,'test1').catch(e=>console.error('[deadline043]',candidate.id,e.message));
         await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','candidate_test_invite',${text},'delivered',${String(messageId||'')})`;
         return json(res,200,{ok:true,status:'sent'});
+      }
+      if(v.action==='send_productivity_topic_test'){
+        const passText=`🧪 ТЕСТОВОЕ СООБЩЕНИЕ — тема «Прошёл продуктивность»\n\nКандидат: Тестовый кандидат\nГород: пример\nTelegram: @test_candidate\n\n✅ ПРОШЁЛ ИНТЕРВЬЮ НА ПРОДУКТИВНОСТЬ\nПереходит на следующий этап тестирования. Персональное сообщение кандидату отправлено.\n\nПример сообщения кандидату:\n${PRODUCTIVITY_PASS_MESSAGE}`;
+        const reserveText=`🧪 ТЕСТОВОЕ СООБЩЕНИЕ — тема «Кадровый резерв»\n\nКандидат: Тестовый кандидат\nГород: пример\nTelegram: @test_candidate\n\n🗂 КАНДИДАТ ПРИГЛАШЁН В КАДРОВЫЙ РЕЗЕРВ\nПредложение отправлено кандидату. Запись в эту тему появится после его согласия.\n\nПример сообщения кандидату:\n${PRODUCTIVITY_RESERVE_MESSAGE}`;
+        const passId=await telegram('-1004397133749',passText,{message_thread_id:PRODUCTIVITY_TOPICS.passed,parse_mode:undefined,disable_web_page_preview:true});
+        const reserveId=await telegram('-1004397133749',reserveText,{message_thread_id:PRODUCTIVITY_TOPICS.reserve,parse_mode:undefined,disable_web_page_preview:true});
+        return json(res,200,{ok:true,topics:{passed:{threadId:PRODUCTIVITY_TOPICS.passed,messageId:passId},reserve:{threadId:PRODUCTIVITY_TOPICS.reserve,messageId:reserveId}}});
       }
       const statusFilter=v.statusFilter||null;
       const cityFilter=v.cityFilter||null;
