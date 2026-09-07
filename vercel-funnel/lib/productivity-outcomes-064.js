@@ -114,7 +114,7 @@ export function productivityStaffText(candidate, result) {
   if (result === 'productivity_passed') {
     return `✅ ПРОШЁЛ ИНТЕРВЬЮ НА ПРОДУКТИВНОСТЬ\n\n${staffLine(candidate)}\n\nПереходит на следующий этап тестирования. Персональное сообщение кандидату отправлено.`;
   }
-  return `🗂 КАНДИДАТ ПРИГЛАШЁН В КАДРОВЫЙ РЕЗЕРВ\n\n${staffLine(candidate)}\n\nПредложение кадрового резерва отправлено кандидату. Запись в тему сделана после его согласия.`;
+  return `🗂 КАНДИДАТ ПРИГЛАШЁН В КАДРОВЫЙ РЕЗЕРВ — СОТРУДНИЧЕСТВО\n\n${staffLine(candidate)}\n\nПредложение кадрового резерва отправлено кандидату. Запись в тему сделана после его согласия.`;
 }
 
 export function reserveStaffText(candidate, removal = {}) {
@@ -125,7 +125,7 @@ export function reserveStaffText(candidate, removal = {}) {
       : removal.reserve_group_removal_state === 'attention'
         ? 'Из группы текущего отбора: требуется проверка в карточке кандидата.'
         : 'Из группы текущего отбора: состояние ещё не подтверждено.';
-  return `🗂 КАДРОВЫЙ РЕЗЕРВ — СОГЛАСИЕ ПОЛУЧЕНО\n\n${staffLine(candidate)}\n\nКандидат подтвердил согласие оставаться в кадровом резерве.\n${groupState}`;
+  return `🗂 КАДРОВЫЙ РЕЗЕРВ — СОТРУДНИЧЕСТВО: СОГЛАСИЕ ПОЛУЧЕНО\n\n${staffLine(candidate)}\n\nКандидат подтвердил согласие оставаться на связи.\n${groupState}`;
 }
 
 async function saveCandidateMessage(candidate, kind, text, messageId) {

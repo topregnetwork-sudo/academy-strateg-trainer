@@ -3,6 +3,7 @@ import { syncDriveCandidate, uploadDriveFile } from './drive.js';
 import {candidateProgress} from '../lib/candidate-progress.js';
 import {initFunnel} from '../lib/funnel-store.js';
 import {ensureProductivityOutcomeStore, PRODUCTIVITY_PASS_MESSAGE, PRODUCTIVITY_RESERVE_MESSAGE, PRODUCTIVITY_TOPICS, sendProductivityOutcome} from '../lib/productivity-outcomes-064.js';
+import { reconcileDriveSync067 } from '../lib/drive-sync-067.js';
 
 async function recordProductivityResult(candidateId, result) {
   const id = Number(candidateId);
@@ -112,6 +113,7 @@ export default async function handler(req,res){
       if(v.action==='sync_drive_candidate'&&v.candidateId){
         return json(res,200,{ok:true,...(await syncDriveCandidate(v.candidateId,{refreshExisting:v.refreshExisting===true}))});
       }
+      if(v.action==='reconcile_drive_sync_067') return json(res,200,{ok:true,...(await reconcileDriveSync067())});
       if(v.action==='upload_drive_file'&&v.candidateId){
         if(!v.fileName||!v.fileData)return json(res,400,{error:'Файл не передан'});
         if(String(v.fileData).length>12000000)return json(res,413,{error:'Файл больше 8 МБ'});
@@ -163,7 +165,7 @@ export default async function handler(req,res){
       }
       if(v.action==='send_productivity_topic_test'){
         const passText=`🧪 ТЕСТОВОЕ СООБЩЕНИЕ — тема «Прошёл продуктивность»\n\nКандидат: Тестовый кандидат\nГород: пример\nTelegram: @test_candidate\n\n✅ ПРОШЁЛ ИНТЕРВЬЮ НА ПРОДУКТИВНОСТЬ\nПереходит на следующий этап тестирования. Персональное сообщение кандидату отправлено.\n\nПример сообщения кандидату:\n${PRODUCTIVITY_PASS_MESSAGE}`;
-        const reserveText=`🧪 ТЕСТОВОЕ СООБЩЕНИЕ — тема «Кадровый резерв»\n\nКандидат: Тестовый кандидат\nГород: пример\nTelegram: @test_candidate\n\n🗂 КАНДИДАТ ПРИГЛАШЁН В КАДРОВЫЙ РЕЗЕРВ\nПредложение отправлено кандидату. Запись в эту тему появится после его согласия.\n\nПример сообщения кандидату:\n${PRODUCTIVITY_RESERVE_MESSAGE}`;
+        const reserveText=`🧪 ТЕСТОВОЕ СООБЩЕНИЕ — тема «Кадровый резерв — сотрудничество»\n\nКандидат: Тестовый кандидат\nГород: пример\nTelegram: @test_candidate\n\n🗂 КАНДИДАТ ПРИГЛАШЁН В КАДРОВЫЙ РЕЗЕРВ — СОТРУДНИЧЕСТВО\nПредложение отправлено кандидату. Запись в эту тему появится после его согласия.\n\nПример сообщения кандидату:\n${PRODUCTIVITY_RESERVE_MESSAGE}`;
         const passId=await telegram('-1004397133749',passText,{message_thread_id:PRODUCTIVITY_TOPICS.passed,parse_mode:undefined,disable_web_page_preview:true});
         const reserveId=await telegram('-1004397133749',reserveText,{message_thread_id:PRODUCTIVITY_TOPICS.reserve,parse_mode:undefined,disable_web_page_preview:true});
         return json(res,200,{ok:true,topics:{passed:{threadId:PRODUCTIVITY_TOPICS.passed,messageId:passId},reserve:{threadId:PRODUCTIVITY_TOPICS.reserve,messageId:reserveId}}});

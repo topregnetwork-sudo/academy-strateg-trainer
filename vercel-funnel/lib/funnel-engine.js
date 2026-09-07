@@ -176,6 +176,10 @@ export async function runFunnelTask(task) {
     const {runReserveFollowup}=await import('./productivity-outcomes-064.js');
     return runReserveFollowup(task.payload.candidateId,task.payload.step);
   }
+  if(task.kind==='candidate_drive_sync_067'){
+    const {runDriveSync067}=await import('./drive-sync-067.js');
+    return runDriveSync067(task.payload.candidateId,task.payload.attempt);
+  }
   if(task.kind==='interview_appointment_048'){
     if(process.env.INTERVIEW_APPOINTMENT_048==='false')return {done:true};
     const {syncInterviewAppointment}=await import('./interview-appointment.js');

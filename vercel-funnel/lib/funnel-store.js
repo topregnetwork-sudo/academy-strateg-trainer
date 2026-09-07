@@ -38,7 +38,7 @@ export async function initFunnel() {
       FROM funnel_projects p CROSS JOIN (VALUES
         ('productivity_passed_stage','Прошёл продуктивность',6,'{"statuses":["productivity_passed"]}'),
         ('reserve_answer','Кадровый резерв — ожидается ответ',7,'{"statuses":["productivity_failed"]}'),
-        ('reserve','Кадровый резерв',8,'{"statuses":["talent_pool"]}'),
+        ('reserve','Кадровый резерв — сотрудничество',8,'{"statuses":["talent_pool","collaboration","academy_contact"]}'),
         ('final','Финальный отбор',9,'{"statuses":["finalist","selection_closed"]}'),
         ('closed','Завершено / после отбора',10,'{"statuses":["academy_contact","training","internship","hired","rejected","cancelled","test_1_incomplete_removed"]}')
       ) AS v(stage_key,stage_name,position,config)
