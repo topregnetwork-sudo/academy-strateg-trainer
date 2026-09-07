@@ -165,9 +165,10 @@ export default async function handler(req,res){
       }
       if(v.action==='send_productivity_topic_test'){
         const passText=`🧪 ТЕСТОВОЕ СООБЩЕНИЕ — тема «Прошёл продуктивность»\n\nКандидат: Тестовый кандидат\nГород: пример\nTelegram: @test_candidate\n\n✅ ПРОШЁЛ ИНТЕРВЬЮ НА ПРОДУКТИВНОСТЬ\nПереходит на следующий этап тестирования. Персональное сообщение кандидату отправлено.\n\nПример сообщения кандидату:\n${PRODUCTIVITY_PASS_MESSAGE}`;
-        const reserveText=`🧪 ТЕСТОВОЕ СООБЩЕНИЕ — тема «Кадровый резерв — сотрудничество»\n\nКандидат: Тестовый кандидат\nГород: пример\nTelegram: @test_candidate\n\n🗂 КАНДИДАТ ПРИГЛАШЁН В КАДРОВЫЙ РЕЗЕРВ — СОТРУДНИЧЕСТВО\nПредложение отправлено кандидату. Запись в эту тему появится после его согласия.\n\nПример сообщения кандидату:\n${PRODUCTIVITY_RESERVE_MESSAGE}`;
+        const reserveText=`🧪 <b>Внутренний образец — как его увидит кандидат</b>\n\n${PRODUCTIVITY_RESERVE_MESSAGE}`;
         const reservePreviewButtons={inline_keyboard:[[
           {text:'Да, в кадровый резерв',callback_data:'preview_reserve_yes'},
+        ],[
           {text:'Нет, спасибо',callback_data:'preview_reserve_no'},
         ]]};
         if(v.topic==='reserve'){
