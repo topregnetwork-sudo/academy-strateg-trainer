@@ -18,12 +18,12 @@ test('keeps two open days and replay creates no duplicate slots or tasks',async(
  const config={campaignKey:ROLLING_KEY,cutoff:60,multiDay:true};
  const session=(await sql`INSERT INTO funnel_sessions(config) VALUES(${JSON.stringify(config)}::text::jsonb) RETURNING id`).rows[0];
  const first=await ensureRollingWindow057();assert.equal(first.openDays.length,2);assert.equal(first.addedDays.length,2);
- assert.equal(Number((await sql`SELECT count(*) n FROM funnel_slots WHERE session_id=${session.id}`).rows[0].n),12);
+ assert.equal(Number((await sql`SELECT count(*) n FROM funnel_slots WHERE session_id=${session.id}`).rows[0].n),8);
  const replay=await ensureRollingWindow057();assert.equal(replay.addedDays.length,0);
- assert.equal(Number((await sql`SELECT count(*) n FROM funnel_slots WHERE session_id=${session.id}`).rows[0].n),12);
+ assert.equal(Number((await sql`SELECT count(*) n FROM funnel_slots WHERE session_id=${session.id}`).rows[0].n),8);
  assert.equal(Number((await sql`SELECT count(*) n FROM funnel_tasks WHERE kind='rolling_window_refresh_057'`).rows[0].n),1);
  await sql`UPDATE funnel_slots SET capacity=0 WHERE session_id=${session.id} AND (starts_at AT TIME ZONE 'Europe/Moscow')::date::text=${first.openDays[0]}`;
  const extended=await ensureRollingWindow057();assert.equal(extended.addedDays.length,1);assert.equal(extended.openDays.length,2);
- assert.equal(Number((await sql`SELECT count(*) n FROM funnel_slots WHERE session_id=${session.id}`).rows[0].n),18);
+ assert.equal(Number((await sql`SELECT count(*) n FROM funnel_slots WHERE session_id=${session.id}`).rows[0].n),12);
 });
 test.after(()=>db.close());

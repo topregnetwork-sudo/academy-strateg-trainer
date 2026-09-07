@@ -2,7 +2,7 @@ import {initFunnel,sql,transaction,createTask} from './funnel-store.js';
 import crypto from 'node:crypto';
 
 export const ROLLING_KEY='shared-productivity-20260903-04';
-const TIMES=['11:00','11:20','11:40','12:00','12:20','12:40'];
+const TIMES=['11:00','11:30','12:00','12:30'];
 const DAY_LIMIT=2;
 const stableId=key=>{const s=crypto.createHash('sha256').update(key).digest('hex').slice(0,32);return `${s.slice(0,8)}-${s.slice(8,12)}-${s.slice(12,16)}-${s.slice(16,20)}-${s.slice(20)}`;};
 const dayAt=(day,time)=>new Date(`${day}T${time}:00+03:00`);
@@ -26,7 +26,11 @@ async function removeInvalidOpenDays(query,sessionId){
    WHERE s.session_id=${sessionId}
      AND s.starts_at>NOW()
      AND NOT EXISTS(SELECT 1 FROM funnel_bookings b WHERE b.slot_id=s.id)
-     AND EXTRACT(ISODOW FROM (s.starts_at AT TIME ZONE 'Europe/Moscow')) NOT IN (2,5)`;
+     AND NOT (
+       EXTRACT(ISODOW FROM (s.starts_at AT TIME ZONE 'Europe/Moscow')) IN (2,5)
+       AND EXTRACT(HOUR FROM (s.starts_at AT TIME ZONE 'Europe/Moscow')) IN (11,12)
+       AND EXTRACT(MINUTE FROM (s.starts_at AT TIME ZONE 'Europe/Moscow')) IN (0,30)
+     )`;
 }
 
 export async function ensureRollingWindow057(){
