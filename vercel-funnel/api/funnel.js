@@ -54,6 +54,12 @@ export default async function handler(req,res) {
         await telegram(test.chat_id,'ТЕСТ — данные и запись не меняются\n\n'+renderText(config.text,test,session?.config),{parse_mode:undefined,reply_markup:await messageKeyboard(config,'test',test.id,true)});
         return json(res,200,{ok:true});
       }
+      if(v.action==='test_topics'){
+        const text='🧪 <b>Тестовый образец сообщения для кандидатов</b>\n\nСпасибо, что заполнили анкету и завершили Тест 1.\n\nПриглашаем вас на интервью на продуктивность в Академии Стратег.\n\nНовые записи доступны только по вторникам и пятницам. Выберите удобный день и время по кнопке ниже.\n\nДо встречи изучите Цели Академии Стратег:\nhttps://academy-strateg-trainer.vercel.app/goals.html\n\nКнопки ниже тестовые: запись и статус не меняются.';
+        const keyboard={inline_keyboard:[[{text:'Вторник — 11:00',callback_data:'fc_demo'},{text:'Пятница — 11:00',callback_data:'fc_demo'}]]};
+        const sent=[];for(const thread of [619,635])sent.push(await telegram('-1004397133749',text,{message_thread_id:thread,parse_mode:'HTML',disable_web_page_preview:true,reply_markup:keyboard}));
+        return json(res,200,{ok:true,sent});
+      }
       const ids=[...new Set((v.candidateIds||[]).map(Number))];
       assert(ids.length&&ids.length<=300&&ids.every(i=>Number.isSafeInteger(i)&&i>0),'Выберите от 1 до 300 кандидатов');
       const rows=(await sql`SELECT c.*,a.full_name,EXISTS(SELECT 1 FROM candidate_tests t WHERE t.candidate_id=c.id AND t.submitted_at IS NOT NULL) AS test_completed,EXISTS(SELECT 1 FROM funnel_bookings b WHERE b.candidate_id=c.id AND b.session_id=${config.sessionId||0}) AS booked_session,EXISTS(SELECT 1 FROM funnel_recipients r JOIN funnel_jobs j ON j.id=r.job_id WHERE r.candidate_id=c.id AND r.state='sent' AND j.config->>'sessionId'=${String(config.sessionId||0)}) AS invited_session
