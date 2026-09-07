@@ -43,7 +43,7 @@ export default async function handler(req,res) {
       await sql`UPDATE funnel_sessions SET active=${v.active} WHERE id=${Number(v.sessionId)}`;
       return json(res,200,{ok:true});
     }
-    if(v.action==='preview'||v.action==='test'||v.action==='test_topics'){
+    if(v.action==='preview'||v.action==='test'){
       const config=validateMessage(v.config);
       if(!['invite','test_passed'].includes(config.action))config.sessionId=null;
       const session=config.sessionId?await sessionById(config.sessionId):null;
@@ -53,12 +53,6 @@ export default async function handler(req,res) {
         assert(test,'Тестовый аккаунт @HRAcademyStrateg не найден');
         await telegram(test.chat_id,'ТЕСТ — данные и запись не меняются\n\n'+renderText(config.text,test,session?.config),{parse_mode:undefined,reply_markup:await messageKeyboard(config,'test',test.id,true)});
         return json(res,200,{ok:true});
-      }
-      if(v.action==='test_topics'){
-        const text='🧪 <b>Тестовый образец сообщения для кандидатов</b>\n\nСпасибо, что заполнили анкету и завершили Тест 1.\n\nПриглашаем вас на интервью на продуктивность в Академии Стратег.\n\nНовые записи доступны только по вторникам и пятницам. Выберите удобный день и время по кнопке ниже.\n\nДо встречи изучите Цели Академии Стратег:\nhttps://academy-strateg-trainer.vercel.app/goals.html\n\nКнопки ниже тестовые: запись и статус не меняются.';
-        const keyboard={inline_keyboard:[[{text:'Вторник — 11:00',callback_data:'fc_demo'},{text:'Пятница — 11:00',callback_data:'fc_demo'}]]};
-        const sent=[];for(const thread of [619,635])sent.push(await telegram('-1004397133749',text,{message_thread_id:thread,parse_mode:'HTML',disable_web_page_preview:true,reply_markup:keyboard}));
-        return json(res,200,{ok:true,sent});
       }
       const ids=[...new Set((v.candidateIds||[]).map(Number))];
       assert(ids.length&&ids.length<=300&&ids.every(i=>Number.isSafeInteger(i)&&i>0),'Выберите от 1 до 300 кандидатов');
