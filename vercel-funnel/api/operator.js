@@ -2,7 +2,7 @@ import { body, ensureTelegramWebhook, init, json, operator, sql, telegram } from
 import { syncDriveCandidate, uploadDriveFile } from './drive.js';
 import {candidateProgress} from '../lib/candidate-progress.js';
 import {initFunnel} from '../lib/funnel-store.js';
-import {ensureProductivityOutcomeStore, PRODUCTIVITY_PASS_BUTTONS, PRODUCTIVITY_PASS_MESSAGE, PRODUCTIVITY_RESERVE_BUTTONS, PRODUCTIVITY_RESERVE_MESSAGE, PRODUCTIVITY_TOPICS, sendProductivityOutcome} from '../lib/productivity-outcomes-064.js';
+import {ensureActiveGroupRemoval, ensureProductivityOutcomeStore, PRODUCTIVITY_PASS_BUTTONS, PRODUCTIVITY_PASS_MESSAGE, PRODUCTIVITY_RESERVE_BUTTONS, PRODUCTIVITY_RESERVE_MESSAGE, PRODUCTIVITY_TOPICS, sendProductivityOutcome} from '../lib/productivity-outcomes-064.js';
 import { reconcileDriveSync067 } from '../lib/drive-sync-067.js';
 
 async function recordProductivityResult(candidateId, result) {
@@ -96,6 +96,18 @@ export default async function handler(req,res){
       return json(res,200,{ok:true});
     }
     if(req.method==='POST'){
+      if(v.action==='reconcile_productivity_failed_group_removal_078'){
+        const failed=(await sql`SELECT id,chat_id,first_name,last_name,username,city FROM candidates WHERE status='productivity_failed' ORDER BY id`).rows;
+        const results=[];
+        for(const candidate of failed){
+          await sql`INSERT INTO candidate_productivity_outreach(candidate_id,result,message_pending)
+            VALUES(${candidate.id},'productivity_failed',FALSE)
+            ON CONFLICT(candidate_id) DO NOTHING`;
+          const removal=await ensureActiveGroupRemoval(candidate);
+          results.push({id:candidate.id,full_name:[candidate.first_name,candidate.last_name].filter(Boolean).join(' ')||candidate.username||`Кандидат ${candidate.id}`,city:candidate.city||'',...removal});
+        }
+        return json(res,200,{ok:true,count:results.length,results});
+      }
       if(v.action==='save_stage_definition'){
         const project=(await sql`SELECT id FROM funnel_projects WHERE project_key='academy-trainer' LIMIT 1`).rows[0];
         if(!project)return json(res,404,{error:'Проект воронки не найден'});

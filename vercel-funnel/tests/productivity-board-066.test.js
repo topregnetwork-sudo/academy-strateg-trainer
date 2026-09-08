@@ -32,6 +32,8 @@ test('failed productivity outcome removes the candidate immediately and exposes 
   assert.match(telegram, /chosen === 'not_relevant'\) await ensureActiveGroupRemoval/);
   assert.match(outcomes, /active_group_removal_state/);
   assert.match(operator, /active_group_removal_state/);
+  assert.match(operator, /reconcile_productivity_failed_group_removal_078/);
+  assert.match(operator, /status='productivity_failed'/);
   assert.match(progress, /Исключён из группы текущего отбора/);
   assert.match(progress, /Требует проверки/);
 });
