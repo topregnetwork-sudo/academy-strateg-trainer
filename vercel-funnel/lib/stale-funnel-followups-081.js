@@ -94,6 +94,7 @@ export async function runFollowup081(candidateId, step, phase = 'remind') {
   const item = await context(candidateId);
   if (!row || !item || !active(item, step)) { if (row) await sql`UPDATE candidate_followups081 SET state='resolved',updated_at=NOW() WHERE candidate_id=${Number(candidateId)} AND step=${step}`; return { done: true, skipped: true }; }
   if (phase === 'remind') {
+    if (row.state === 'attention' && botBlocked(row.error)) return closeUnreachable(item, step, row.error);
     if (row.state !== 'scheduled') return { done: true, skipped: true };
     const human = (await sql`SELECT 1 FROM messages WHERE candidate_id=${item.candidate.id} AND direction='in' AND kind<>'link_open' AND created_at>${row.issued_at} LIMIT 1`).rows[0];
     if (human) {
