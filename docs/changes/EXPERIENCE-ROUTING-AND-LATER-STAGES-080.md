@@ -15,3 +15,11 @@
 - No backfill: existing experienced candidates receive nothing from this deployment. Their first batch is a separate approved send.
 - Verification: syntax checks, focused static checks, a production API check, and a single real new experienced-candidate path only after explicit user approval.
 - Rollback: revert only the implementation commit; do not retract already delivered Telegram messages or move candidates back automatically.
+
+## Result
+
+- Implementation commit: `190131f`.
+- Preview: `https://academy-strateg-trainer-cr36n4o9i-topregnetwork-sudos-projects.vercel.app` — READY.
+- Production: `https://academy-strateg-trainer.vercel.app` — deployment `dpl_4iWRQnez9WbpvUfwiGCsa9qiXSKL`, READY.
+- Checked: three focused routing tests, five existing reserve-regression tests, syntax checks for every changed runtime/client file, whitespace diff check, preview and production static assets.
+- Not performed: no message was sent to an existing experienced candidate and no synthetic Telegram callback was created. A real new experienced-candidate event remains the first live end-to-end check; it will send one personal offer only to that person.
