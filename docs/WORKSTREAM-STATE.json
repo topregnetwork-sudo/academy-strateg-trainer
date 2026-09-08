@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updated_at": "2026-09-02T00:00:00+03:00",
+  "updated_at": "2026-09-08T18:20:00+03:00",
   "workstreams": {
     "_allowed_modes": ["design", "tuning", "pilot", "active", "frozen", "retired"],
     "_default_rule": "Published does not mean frozen. Every funnel stage remains independently editable and versioned. Only an explicit user command freezes a stage.",
@@ -20,6 +20,22 @@
         "the user explicitly says the stage is approved and fixed"
       ],
       "rule": "The current template remains editable, but rollout is new-only. Existing candidate folders and interview workbooks are historical artifacts and must never be reopened, migrated or autofilled by replayed sync events. A new workbook is created only when Test 1 is completed and candidate_drive has no folder for that candidate."
+    },
+    "productivity_outcome_group_removal": {
+      "mode": "pilot",
+      "version": "078",
+      "locked": false,
+      "mass_update_allowed": false,
+      "rollout": "event_only",
+      "approved_for_use": true,
+      "definition_of_done": [
+        "operator Не прошёл removes the candidate from the active candidate group immediately",
+        "candidate Не актуально removes the candidate from the active candidate group immediately",
+        "candidate Спасибо leaves the candidate in the active group",
+        "Telegram confirmation and any error are stored in the candidate card",
+        "no live candidate is changed during code verification"
+      ],
+      "rule": "Removal is event-driven and idempotent. It applies only to the active candidate group after the specified outcome; it does not delete candidate records, messages, tests, Google Drive files or history."
     }
   }
 }
