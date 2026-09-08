@@ -1,5 +1,5 @@
 import {sql} from '../api/_core.js';
-import {PRIMARY_ENTRY_WINDOW_MINUTES} from './primary-evidence.js';
+import {PRIMARY_ENTRY_BEFORE_MINUTES,PRIMARY_ENTRY_AFTER_MINUTES} from './primary-evidence.js';
 
 // Read only, scoped to one candidate. Missing optional tables never erase chat data.
 export async function candidateProgress(id) {
@@ -14,8 +14,8 @@ export async function candidateProgress(id) {
   const botEvents=(await sql`SELECT to_regclass('public.telegram_update_events050') AS events`).rows[0];
   if(botEvents?.events)await read('botEvents',()=>sql`SELECT e.update_id,e.state,e.kind,e.error,e.attempts,e.updated_at FROM telegram_update_events050 e JOIN candidates c ON c.chat_id=e.chat_id WHERE c.id=${id} ORDER BY e.updated_at DESC LIMIT 5`);
   if(declines?.events)await read('declines',()=>sql`SELECT created_at,notified_at,error FROM candidate_decline_events WHERE candidate_id=${id} ORDER BY created_at DESC LIMIT 3`);
-  if(sessions?.entries)await read('primaryEntry',()=>sql`SELECT clicked_at,interview_at,slot_id FROM (SELECT * FROM candidate_zoom_entries UNION ALL SELECT candidate_id,clicked_at,interview_at,slot_id FROM candidate_zoom_session_entries) e WHERE candidate_id=${id} AND clicked_at BETWEEN interview_at-(${PRIMARY_ENTRY_WINDOW_MINUTES} * INTERVAL '1 minute') AND interview_at+INTERVAL '60 minutes' ORDER BY clicked_at LIMIT 1`);
-  else if(evidenceTables?.entries)await read('primaryEntry',()=>sql`SELECT clicked_at,interview_at,slot_id FROM candidate_zoom_entries WHERE candidate_id=${id} AND clicked_at BETWEEN interview_at-(${PRIMARY_ENTRY_WINDOW_MINUTES} * INTERVAL '1 minute') AND interview_at+INTERVAL '60 minutes'`);
+  if(sessions?.entries)await read('primaryEntry',()=>sql`SELECT clicked_at,interview_at,slot_id FROM (SELECT * FROM candidate_zoom_entries UNION ALL SELECT candidate_id,clicked_at,interview_at,slot_id FROM candidate_zoom_session_entries) e WHERE candidate_id=${id} AND clicked_at BETWEEN interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND interview_at+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute') ORDER BY clicked_at LIMIT 1`);
+  else if(evidenceTables?.entries)await read('primaryEntry',()=>sql`SELECT clicked_at,interview_at,slot_id FROM candidate_zoom_entries WHERE candidate_id=${id} AND clicked_at BETWEEN interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND interview_at+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute')`);
   if(evidenceTables?.tasks)await read('timers',()=>sql`SELECT t.kind,t.due_at,t.state,t.error FROM funnel_tasks t WHERE (t.payload->>'candidateId')=${String(id)} OR (t.kind='primary_session' AND (t.payload->>'at')::timestamptz=(SELECT interview_at FROM candidates WHERE id=${id}) AND t.payload->>'slot'=(SELECT slot_id FROM candidates WHERE id=${id})) OR (t.kind='minsk_review_30m' AND EXISTS(SELECT 1 FROM offline_interview_bookings b WHERE b.candidate_id=${id} AND b.status='booked' AND b.event_date=(t.payload->>'date')::date AND b.slot_time=t.payload->>'slot')) ORDER BY t.due_at DESC LIMIT 12`);
   if(tables?.recipients)await read('campaigns',()=>sql`SELECT r.state,r.message_id,r.error,r.choice,r.updated_at,j.config,j.state AS job_state FROM funnel_recipients r JOIN funnel_jobs j ON j.id=r.job_id WHERE r.candidate_id=${id} ORDER BY r.updated_at DESC`);
   if(tables?.bookings)await read('bookings',()=>sql`SELECT b.updated_at,s.starts_at,f.config,f.active FROM funnel_bookings b JOIN funnel_slots s ON s.id=b.slot_id JOIN funnel_sessions f ON f.id=b.session_id WHERE b.candidate_id=${id} ORDER BY s.starts_at DESC`);

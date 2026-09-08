@@ -1,5 +1,5 @@
 import {sql,transaction,telegram,slots} from '../api/_core.js';
-import {initPrimaryEvidence,PRIMARY_ENTRY_WINDOW_MINUTES} from './primary-evidence.js';
+import {initPrimaryEvidence,PRIMARY_ENTRY_BEFORE_MINUTES,PRIMARY_ENTRY_AFTER_MINUTES} from './primary-evidence.js';
 import {initFunnel,effect} from './funnel-store.js';
 
 export const followupText='Здравствуйте! Вы были записаны на собеседование с Академией Стратег. Если сегодня не получилось подключиться, выберите новое удобное время ниже.\n\nЕсли вакансия для вас больше не актуальна, напишите в ответ: <b>не актуально</b>.';
@@ -12,9 +12,9 @@ export async function runPrimaryFollowup({at,slot}){
   const due=(await sql`SELECT c.id FROM candidates c WHERE c.status='interview_booked' AND c.consent=true AND c.no_show_followup_sent=false
     AND c.interview_at=${at}::timestamptz AND c.slot_id=${slot}
     AND c.interview_at<=NOW()-INTERVAL '60 minutes' AND c.interview_at>=NOW()-INTERVAL '6 hours'
-    AND NOT EXISTS(SELECT 1 FROM candidate_zoom_entries e WHERE e.candidate_id=c.id AND e.interview_at=c.interview_at AND e.slot_id=c.slot_id AND e.clicked_at BETWEEN e.interview_at-(${PRIMARY_ENTRY_WINDOW_MINUTES} * INTERVAL '1 minute') AND e.interview_at+INTERVAL '60 minutes')
-    AND NOT EXISTS(SELECT 1 FROM candidate_zoom_session_entries e WHERE e.candidate_id=c.id AND e.interview_at=c.interview_at AND e.slot_id=c.slot_id AND e.clicked_at BETWEEN e.interview_at-(${PRIMARY_ENTRY_WINDOW_MINUTES} * INTERVAL '1 minute') AND e.interview_at+INTERVAL '60 minutes')
-    AND NOT EXISTS(SELECT 1 FROM messages m WHERE m.candidate_id=c.id AND m.kind='primary_zoom_link' AND m.created_at BETWEEN c.interview_at-(${PRIMARY_ENTRY_WINDOW_MINUTES} * INTERVAL '1 minute') AND c.interview_at+INTERVAL '60 minutes')
+    AND NOT EXISTS(SELECT 1 FROM candidate_zoom_entries e WHERE e.candidate_id=c.id AND e.interview_at=c.interview_at AND e.slot_id=c.slot_id AND e.clicked_at BETWEEN e.interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND e.interview_at+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute'))
+    AND NOT EXISTS(SELECT 1 FROM candidate_zoom_session_entries e WHERE e.candidate_id=c.id AND e.interview_at=c.interview_at AND e.slot_id=c.slot_id AND e.clicked_at BETWEEN e.interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND e.interview_at+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute'))
+    AND NOT EXISTS(SELECT 1 FROM messages m WHERE m.candidate_id=c.id AND m.kind='primary_zoom_link' AND m.created_at BETWEEN c.interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND c.interview_at+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute'))
     ORDER BY c.id`).rows;
   let sent=0,failed=0;
   for(const {id} of due){
@@ -22,9 +22,9 @@ export async function runPrimaryFollowup({at,slot}){
       // Recheck immediately before send: another event may have moved the booking or recorded a click.
       const c=(await sql`SELECT c.id,c.chat_id FROM candidates c WHERE c.id=${id} AND c.status='interview_booked' AND c.consent=true AND c.no_show_followup_sent=false
         AND c.interview_at=${at}::timestamptz AND c.slot_id=${slot}
-        AND NOT EXISTS(SELECT 1 FROM candidate_zoom_entries e WHERE e.candidate_id=c.id AND e.interview_at=c.interview_at AND e.slot_id=c.slot_id AND e.clicked_at BETWEEN e.interview_at-(${PRIMARY_ENTRY_WINDOW_MINUTES} * INTERVAL '1 minute') AND e.interview_at+INTERVAL '60 minutes')
-        AND NOT EXISTS(SELECT 1 FROM candidate_zoom_session_entries e WHERE e.candidate_id=c.id AND e.interview_at=c.interview_at AND e.slot_id=c.slot_id AND e.clicked_at BETWEEN e.interview_at-(${PRIMARY_ENTRY_WINDOW_MINUTES} * INTERVAL '1 minute') AND e.interview_at+INTERVAL '60 minutes')
-        AND NOT EXISTS(SELECT 1 FROM messages m WHERE m.candidate_id=c.id AND m.kind='primary_zoom_link' AND m.created_at BETWEEN c.interview_at-(${PRIMARY_ENTRY_WINDOW_MINUTES} * INTERVAL '1 minute') AND c.interview_at+INTERVAL '60 minutes')`).rows[0];
+        AND NOT EXISTS(SELECT 1 FROM candidate_zoom_entries e WHERE e.candidate_id=c.id AND e.interview_at=c.interview_at AND e.slot_id=c.slot_id AND e.clicked_at BETWEEN e.interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND e.interview_at+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute'))
+        AND NOT EXISTS(SELECT 1 FROM candidate_zoom_session_entries e WHERE e.candidate_id=c.id AND e.interview_at=c.interview_at AND e.slot_id=c.slot_id AND e.clicked_at BETWEEN e.interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND e.interview_at+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute'))
+        AND NOT EXISTS(SELECT 1 FROM messages m WHERE m.candidate_id=c.id AND m.kind='primary_zoom_link' AND m.created_at BETWEEN c.interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND c.interview_at+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute'))`).rows[0];
       if(!c)continue;
       const messageId=await effect(`primary-no-entry:${id}:${new Date(at).toISOString()}:${slot}`,()=>telegram(c.chat_id,followupText,{reply_markup:keyboard}));
       // A failed history write rolls back the flag; effect retains the actual delivery for a safe retry.
