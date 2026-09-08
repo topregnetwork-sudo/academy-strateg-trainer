@@ -13,6 +13,22 @@ export const PRODUCTIVITY_PASS_MESSAGE = `Спасибо большое, что 
 
 Чуть позже мы пригласим вас на следующее тестирование. Пожалуйста, ожидайте нашего сообщения.`;
 
+export const PRODUCTIVITY_PASS_BUTTONS = {
+  inline_keyboard: [[
+    { text: 'Спасибо', callback_data: 'productivity_pass_thanks' },
+  ], [
+    { text: 'Не актуально', callback_data: 'productivity_pass_not_relevant' },
+  ]],
+};
+
+export const PRODUCTIVITY_PASS_CONFIRMATION = `Спасибо! Мы зафиксировали ваш интерес к следующему этапу.
+
+Пожалуйста, ожидайте приглашения на следующее тестирование.`;
+
+export const PRODUCTIVITY_PASS_NOT_RELEVANT = `Спасибо, что сообщили.
+
+Мы отметили, что продолжение отбора сейчас для вас не актуально, и завершили ваше участие в текущем наборе.`;
+
 export const PRODUCTIVITY_RESERVE_MESSAGE = `Добрый день!
 
 Спасибо, что проявили интерес к Академии Стратег.
@@ -77,6 +93,8 @@ export async function ensureProductivityOutcomeStore() {
     reserve_group_removal_state TEXT,
     reserve_group_removed_at TIMESTAMPTZ,
     reserve_group_removal_error TEXT,
+    pass_choice TEXT,
+    pass_choice_at TIMESTAMPTZ,
     reserve_reminded_at TIMESTAMPTZ,
     reserve_response_due_at TIMESTAMPTZ,
     reserve_closed_no_response_at TIMESTAMPTZ,
@@ -95,6 +113,8 @@ export async function ensureProductivityOutcomeStore() {
   await sql`ALTER TABLE candidate_productivity_outreach ADD COLUMN IF NOT EXISTS reserve_group_removal_state TEXT`;
   await sql`ALTER TABLE candidate_productivity_outreach ADD COLUMN IF NOT EXISTS reserve_group_removed_at TIMESTAMPTZ`;
   await sql`ALTER TABLE candidate_productivity_outreach ADD COLUMN IF NOT EXISTS reserve_group_removal_error TEXT`;
+  await sql`ALTER TABLE candidate_productivity_outreach ADD COLUMN IF NOT EXISTS pass_choice TEXT`;
+  await sql`ALTER TABLE candidate_productivity_outreach ADD COLUMN IF NOT EXISTS pass_choice_at TIMESTAMPTZ`;
   await sql`ALTER TABLE candidate_productivity_outreach ADD COLUMN IF NOT EXISTS reserve_reminded_at TIMESTAMPTZ`;
   await sql`ALTER TABLE candidate_productivity_outreach ADD COLUMN IF NOT EXISTS reserve_response_due_at TIMESTAMPTZ`;
   await sql`ALTER TABLE candidate_productivity_outreach ADD COLUMN IF NOT EXISTS reserve_closed_no_response_at TIMESTAMPTZ`;
@@ -170,7 +190,9 @@ export async function sendProductivityOutcome(candidateId, result) {
     const messageId = await effect(`productivity-outcome:${result}:candidate:${candidate.id}`, () => telegram(
       candidate.chat_id,
       text,
-      result === 'productivity_failed' ? { reply_markup: PRODUCTIVITY_RESERVE_BUTTONS } : {},
+      result === 'productivity_failed'
+        ? { reply_markup: PRODUCTIVITY_RESERVE_BUTTONS }
+        : { reply_markup: PRODUCTIVITY_PASS_BUTTONS },
     ));
     await saveCandidateMessage(candidate, result === 'productivity_passed' ? 'productivity_passed_notice' : 'productivity_reserve_offer', text, messageId);
     await sql`UPDATE candidate_productivity_outreach SET candidate_message_id=${String(messageId || '')},candidate_message_sent_at=NOW(),error=NULL,updated_at=NOW() WHERE candidate_id=${candidate.id}`;

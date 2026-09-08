@@ -7,7 +7,7 @@ import { schedulePrimary } from '../lib/funnel-primary.js';
 import {entryKeyboard,handlePrimaryEntry,handlePrimaryRebookMenu,offerPrimaryRebook,requirePrimaryAccess} from '../lib/primary-evidence.js';
 import {effect} from '../lib/funnel-store.js';
 import {isCandidateTestKeyword} from '../lib/telegram-event-policy.js';
-import {ensureProductivityOutcomeStore, PRODUCTIVITY_RESERVE_CONFIRMATION, PRODUCTIVITY_RESERVE_DECLINED, sendReserveTopicNotice} from '../lib/productivity-outcomes-064.js';
+import {ensureProductivityOutcomeStore, PRODUCTIVITY_PASS_CONFIRMATION, PRODUCTIVITY_PASS_NOT_RELEVANT, PRODUCTIVITY_RESERVE_CONFIRMATION, PRODUCTIVITY_RESERVE_DECLINED, sendReserveTopicNotice} from '../lib/productivity-outcomes-064.js';
 
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
 const CANDIDATE_GROUP_COMMAND = /^\/candidate_group(?:@stazherskaya_bot)?(?:\s|$)/i;
@@ -530,6 +530,55 @@ async function handleProductivityReserveChoice(callback) {
   return true;
 }
 
+async function handleProductivityPassedChoice(callback) {
+  const match = callback.data?.match(/^productivity_pass_(thanks|not_relevant)$/);
+  if (!match) return false;
+  const choice = match[1];
+  const chatId = String(callback.message?.chat?.id || callback.from?.id || '');
+  const candidate = (await sql`SELECT id,chat_id,status FROM candidates WHERE chat_id=${chatId} LIMIT 1`).rows[0];
+  if (!candidate) {
+    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Карточка кандидата не найдена.', show_alert: true });
+    return true;
+  }
+  if (candidate.status !== 'productivity_passed') {
+    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Это сообщение уже недоступно.', show_alert: true });
+    return true;
+  }
+  await ensureProductivityOutcomeStore();
+  const outreach = (await sql`SELECT result,pass_choice FROM candidate_productivity_outreach WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0];
+  if (!outreach || outreach.result !== 'productivity_passed') {
+    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Это сообщение уже недоступно.', show_alert: true });
+    return true;
+  }
+  const claimed = (await sql`UPDATE candidate_productivity_outreach SET pass_choice=${choice},pass_choice_at=NOW(),updated_at=NOW() WHERE candidate_id=${candidate.id} AND result='productivity_passed' AND pass_choice IS NULL RETURNING candidate_id`).rows[0];
+  let chosen = claimed ? choice : outreach.pass_choice;
+  if (!chosen) chosen = (await sql`SELECT pass_choice FROM candidate_productivity_outreach WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0]?.pass_choice;
+  if (!chosen) {
+    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Не удалось сохранить ответ. Попробуйте ещё раз.', show_alert: true });
+    return true;
+  }
+  if (chosen !== choice && chosen) {
+    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Ответ уже сохранён.', show_alert: true });
+    return true;
+  }
+  const reply = chosen === 'thanks' ? PRODUCTIVITY_PASS_CONFIRMATION : PRODUCTIVITY_PASS_NOT_RELEVANT;
+  const messageId = await effect(`productivity-pass:candidate:${candidate.id}:${chosen}`, () => telegram(candidate.chat_id, reply));
+  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id)
+    SELECT ${candidate.id},'out',${chosen === 'thanks' ? 'productivity_pass_confirmation' : 'productivity_pass_not_relevant'},${reply},'delivered',${String(messageId || '')}
+    WHERE NOT EXISTS(SELECT 1 FROM messages WHERE candidate_id=${candidate.id} AND direction='out' AND telegram_message_id=${String(messageId || '')})`;
+  const incoming = chosen === 'thanks' ? 'Спасибо' : 'Не актуально';
+  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id)
+    SELECT ${candidate.id},'in','productivity_pass_choice',${incoming},'received',${String(callback.message?.message_id || '')}
+    WHERE NOT EXISTS(SELECT 1 FROM messages WHERE candidate_id=${candidate.id} AND direction='in' AND kind='productivity_pass_choice' AND text=${incoming})`;
+  const nextStatus = chosen === 'thanks' ? 'productivity_passed' : 'rejected';
+  const changed = (await sql`UPDATE candidates SET status=${nextStatus},updated_at=NOW() WHERE id=${candidate.id} AND status='productivity_passed' RETURNING id`).rows[0];
+  if (changed && nextStatus === 'rejected') await sql`INSERT INTO funnel_stage_events(candidate_id,project_id,from_status,to_status,trigger,actor)
+    SELECT ${candidate.id},id,'productivity_passed','rejected','productivity_pass_choice','candidate'
+    FROM funnel_projects WHERE project_key='academy-trainer'`;
+  await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Спасибо! Ответ сохранён.' });
+  return true;
+}
+
 async function handleReservePreviewChoice(callback) {
   if (!/^preview_reserve_(yes|no)$/.test(callback.data || '')) return false;
   await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Это демонстрация: данные кандидатов не меняются.' });
@@ -629,7 +678,7 @@ export default async function handler(req, res) {
     if (callback) {
       await init();
       if((await sql`SELECT id FROM candidates WHERE chat_id=${String(callback.from.id)} AND status='test_1_incomplete_removed'`).rows[0]){await telegramApi('answerCallbackQuery',{callback_query_id:callback.id,text:'Ваше участие в текущем отборе завершено.',show_alert:true});return complete();}
-      if (!await handlePrimaryEntry(callback) && !await handlePrimaryRebookMenu(callback) && !await handleFunnelCallback(callback) && !await handleReservePreviewChoice(callback) && !await handleProductivityReserveChoice(callback) && !await handleOfflineInterviewChoice(callback) && !await handleNadezhdaFinalistChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
+      if (!await handlePrimaryEntry(callback) && !await handlePrimaryRebookMenu(callback) && !await handleFunnelCallback(callback) && !await handleReservePreviewChoice(callback) && !await handleProductivityPassedChoice(callback) && !await handleProductivityReserveChoice(callback) && !await handleOfflineInterviewChoice(callback) && !await handleNadezhdaFinalistChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
       return complete();
     }
     const message = update.message;

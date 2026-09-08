@@ -2,7 +2,7 @@ import { body, ensureTelegramWebhook, init, json, operator, sql, telegram } from
 import { syncDriveCandidate, uploadDriveFile } from './drive.js';
 import {candidateProgress} from '../lib/candidate-progress.js';
 import {initFunnel} from '../lib/funnel-store.js';
-import {ensureProductivityOutcomeStore, PRODUCTIVITY_PASS_MESSAGE, PRODUCTIVITY_RESERVE_MESSAGE, PRODUCTIVITY_TOPICS, sendProductivityOutcome} from '../lib/productivity-outcomes-064.js';
+import {ensureProductivityOutcomeStore, PRODUCTIVITY_PASS_BUTTONS, PRODUCTIVITY_PASS_MESSAGE, PRODUCTIVITY_RESERVE_BUTTONS, PRODUCTIVITY_RESERVE_MESSAGE, PRODUCTIVITY_TOPICS, sendProductivityOutcome} from '../lib/productivity-outcomes-064.js';
 import { reconcileDriveSync067 } from '../lib/drive-sync-067.js';
 
 async function recordProductivityResult(candidateId, result) {
@@ -164,19 +164,14 @@ export default async function handler(req,res){
         return json(res,200,{ok:true,status:'sent'});
       }
       if(v.action==='send_productivity_topic_test'){
-        const passText=`🧪 ТЕСТОВОЕ СООБЩЕНИЕ — тема «Прошёл продуктивность»\n\nКандидат: Тестовый кандидат\nГород: пример\nTelegram: @test_candidate\n\n✅ ПРОШЁЛ ИНТЕРВЬЮ НА ПРОДУКТИВНОСТЬ\nПереходит на следующий этап тестирования. Персональное сообщение кандидату отправлено.\n\nПример сообщения кандидату:\n${PRODUCTIVITY_PASS_MESSAGE}`;
-        const reserveText=`🧪 <b>Внутренний образец — как его увидит кандидат</b>\n\n${PRODUCTIVITY_RESERVE_MESSAGE}`;
-        const reservePreviewButtons={inline_keyboard:[[
-          {text:'Да, в кадровый резерв',callback_data:'preview_reserve_yes'},
-        ],[
-          {text:'Нет, спасибо',callback_data:'preview_reserve_no'},
-        ]]};
+        const passText=PRODUCTIVITY_PASS_MESSAGE;
+        const reserveText=PRODUCTIVITY_RESERVE_MESSAGE;
         if(v.topic==='reserve'){
-          const reserveId=await telegram('-1004397133749',reserveText,{message_thread_id:PRODUCTIVITY_TOPICS.reserve,parse_mode:undefined,disable_web_page_preview:true,reply_markup:reservePreviewButtons});
+          const reserveId=await telegram('-1004397133749',reserveText,{message_thread_id:PRODUCTIVITY_TOPICS.reserve,parse_mode:undefined,disable_web_page_preview:true,reply_markup:PRODUCTIVITY_RESERVE_BUTTONS});
           return json(res,200,{ok:true,topics:{reserve:{threadId:PRODUCTIVITY_TOPICS.reserve,messageId:reserveId}}});
         }
-        const passId=await telegram('-1004397133749',passText,{message_thread_id:PRODUCTIVITY_TOPICS.passed,parse_mode:undefined,disable_web_page_preview:true});
-        const reserveId=await telegram('-1004397133749',reserveText,{message_thread_id:PRODUCTIVITY_TOPICS.reserve,parse_mode:undefined,disable_web_page_preview:true,reply_markup:reservePreviewButtons});
+        const passId=await telegram('-1004397133749',passText,{message_thread_id:PRODUCTIVITY_TOPICS.passed,parse_mode:undefined,disable_web_page_preview:true,reply_markup:PRODUCTIVITY_PASS_BUTTONS});
+        const reserveId=await telegram('-1004397133749',reserveText,{message_thread_id:PRODUCTIVITY_TOPICS.reserve,parse_mode:undefined,disable_web_page_preview:true,reply_markup:PRODUCTIVITY_RESERVE_BUTTONS});
         return json(res,200,{ok:true,topics:{passed:{threadId:PRODUCTIVITY_TOPICS.passed,messageId:passId},reserve:{threadId:PRODUCTIVITY_TOPICS.reserve,messageId:reserveId}}});
       }
       const statusFilter=v.statusFilter||null;

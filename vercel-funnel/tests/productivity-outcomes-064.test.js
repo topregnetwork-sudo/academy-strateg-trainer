@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   PRODUCTIVITY_PASS_MESSAGE,
+  PRODUCTIVITY_PASS_BUTTONS,
   PRODUCTIVITY_RESERVE_BUTTONS,
   PRODUCTIVITY_RESERVE_CONFIRMATION,
   PRODUCTIVITY_RESERVE_DECLINED,
@@ -16,9 +17,13 @@ test('productivity outcome uses the approved staff topics and candidate wording'
   assert.deepEqual(PRODUCTIVITY_TOPICS, { passed: 1071, reserve: 1073 });
   assert.match(PRODUCTIVITY_PASS_MESSAGE, /следующий этап отбора/iu);
   assert.match(PRODUCTIVITY_PASS_MESSAGE, /Пожалуйста, ожидайте нашего сообщения/iu);
+  assert.deepEqual(PRODUCTIVITY_PASS_BUTTONS.inline_keyboard.flat().map(button => button.callback_data), [
+    'productivity_pass_thanks',
+    'productivity_pass_not_relevant',
+  ]);
   assert.match(PRODUCTIVITY_RESERVE_MESSAGE, /проявили интерес к Академии Стратег/iu);
-  assert.match(PRODUCTIVITY_RESERVE_MESSAGE, /в первую очередь вернёмся/iu);
-  assert.match(PRODUCTIVITY_RESERVE_MESSAGE, /кадровом резерве Академии Стратег/iu);
+  assert.match(PRODUCTIVITY_RESERVE_MESSAGE, /перенесём.*отдельный чат/iu);
+  assert.match(PRODUCTIVITY_RESERVE_MESSAGE, /«кадровый резерв» Академии Стратег/iu);
   assert.match(PRODUCTIVITY_RESERVE_CONFIRMATION, /в первую очередь вернёмся/iu);
   assert.match(PRODUCTIVITY_RESERVE_CONFIRMATION, /группа кандидатов предназначена для активного потока отбора/iu);
   assert.match(PRODUCTIVITY_RESERVE_DECLINED, /Благодарим за интерес/iu);
