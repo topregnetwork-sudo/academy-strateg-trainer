@@ -176,6 +176,10 @@ export async function runFunnelTask(task) {
     const {runReserveFollowup}=await import('./productivity-outcomes-064.js');
     return runReserveFollowup(task.payload.candidateId,task.payload.step);
   }
+  if(task.kind==='stale_funnel_followup_081'){
+    const {runFollowup081}=await import('./stale-funnel-followups-081.js');
+    return runFollowup081(task.payload.candidateId,task.payload.step,task.payload.phase);
+  }
   if(task.kind==='candidate_drive_sync_067'){
     const {runDriveSync067}=await import('./drive-sync-067.js');
     return runDriveSync067(task.payload.candidateId,task.payload.attempt);

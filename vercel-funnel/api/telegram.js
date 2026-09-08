@@ -1,7 +1,7 @@
 import { body, init, json, nextInterview, slots, telegram, telegramApi, sql } from './_core.js';
 import { handleOfflineInterviewChoice } from './offline-interview.js';
 import { cleanupRemovalService } from './_removal-service.js';
-import {scheduleStageDeadline} from '../lib/stage-deadlines-043.js';
+import {scheduleFollowup081} from '../lib/stale-funnel-followups-081.js';
 import { handleFunnelCallback } from '../lib/funnel-engine.js';
 import { schedulePrimary } from '../lib/funnel-primary.js';
 import {entryKeyboard,handlePrimaryEntry,handlePrimaryRebookMenu,offerPrimaryRebook,requirePrimaryAccess} from '../lib/primary-evidence.js';
@@ -240,7 +240,7 @@ async function handleCandidateGroupKeyword(message) {
   try {
     const messageId = await telegram(chatId, text, { reply_markup: { inline_keyboard: [[{ text: 'Перейти в группу кандидатов', url: inviteUrl }],[{ text: 'Заполнить Анкету 2', url: questionnaireUrl }]] } });
     await sql`UPDATE candidate_questionnaire_two SET status=CASE WHEN submitted_at IS NULL THEN 'sent' ELSE status END,sent_at=COALESCE(sent_at,NOW()),updated_at=NOW() WHERE id=${questionnaire.id}`;
-    await scheduleStageDeadline(candidate.id,'q2').catch(e=>console.error('[deadline043]',candidate.id,e.message));
+    await scheduleFollowup081(candidate.id,'q2').catch(e=>console.error('[followup081]',candidate.id,e.message));
     if (!questionnaire.submitted_at) await sql`UPDATE candidates SET status='questionnaire',updated_at=NOW() WHERE id=${candidate.id} AND status IN ('interview_booked','interviewed','questionnaire')`;
     try {
       await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','candidate_group_invite',${text},'delivered',${String(messageId || '')})`;
@@ -273,7 +273,7 @@ async function handleCandidateTestKeyword(message) {
     const questionnaireText='Сначала заполните обязательную Анкету 2. После отправки продолжите изучение материалов группы и следуйте инструкциям.';
     const questionnaireMessageId=await effect(`questionnaire-required:${candidate.id}:${questionnaire.id}`,()=>telegram(chatId,questionnaireText,{reply_markup:{inline_keyboard:[[{text:'Заполнить Анкету 2',url:questionnaireUrl}]]}}));
     await sql`UPDATE candidate_questionnaire_two SET status='sent',sent_at=COALESCE(sent_at,NOW()),updated_at=NOW() WHERE id=${questionnaire.id}`;
-    await scheduleStageDeadline(candidate.id,'q2').catch(e=>console.error('[deadline043]',candidate.id,e.message));
+    await scheduleFollowup081(candidate.id,'q2').catch(e=>console.error('[followup081]',candidate.id,e.message));
     await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','questionnaire_2_required',${questionnaireText},'delivered',${String(questionnaireMessageId||'')})`;
     return true;
   }
@@ -294,7 +294,7 @@ async function handleCandidateTestKeyword(message) {
   const text = '📝 <b>Тест 1 — эффективность руководителя</b>\n\nОткройте персональную ссылку и ответьте на 200 вопросов. Все вопросы находятся на одной странице; напротив каждого выберите «Да», «Может быть» или «Нет».\n\nПосле отправки ответы автоматически прикрепятся к вашей анкете.';
   const messageId = await effect(`candidate-test-invite:${candidate.id}:${test.id}`,()=>telegram(chatId, text, { reply_markup: { inline_keyboard: [[{ text: 'Пройти тест 1', url: testUrl }]] } }));
   await sql`UPDATE candidate_tests SET status='sent',sent_at=COALESCE(sent_at,NOW()),updated_at=NOW() WHERE id=${test.id}`;
-  await scheduleStageDeadline(candidate.id,'test1').catch(e=>console.error('[deadline043]',candidate.id,e.message));
+  await scheduleFollowup081(candidate.id,'test1').catch(e=>console.error('[followup081]',candidate.id,e.message));
   await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','candidate_test_invite',${text},'delivered',${String(messageId || '')})`;
   return true;
 }
@@ -423,6 +423,7 @@ async function handlePrivateStart(message) {
   const keyboard = { reply_markup: { inline_keyboard: Object.entries(slots).map(([slotId, title]) => [{ text: title, callback_data: `trainer_slot_${app.code}_${slotId}` }]) } };
   const messageId = await telegram(chatId, reply, keyboard);
   await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${row.id},'out','text',${reply},'delivered',${String(messageId || '')})`;
+  await scheduleFollowup081(row.id,'primary').catch(e=>console.error('[followup081]',row.id,e.message));
 }
 
 async function handleSlotChoice(callback) {

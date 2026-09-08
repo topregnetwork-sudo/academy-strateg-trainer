@@ -96,6 +96,10 @@ export default async function handler(req,res){
       return json(res,200,{ok:true});
     }
     if(req.method==='POST'){
+      if(v.action==='reconcile_stale_funnel_081'){
+        const {reconcileStaleFunnel081}=await import('../lib/stale-funnel-followups-081.js');
+        return json(res,200,{ok:true,...await reconcileStaleFunnel081(v.apply===true)});
+      }
       if(v.action==='reconcile_productivity_failed_group_removal_078'){
         const failed=(await sql`SELECT id,chat_id,first_name,last_name,username,city FROM candidates WHERE status='productivity_failed' ORDER BY id`).rows;
         const results=[];
@@ -170,8 +174,8 @@ export default async function handler(req,res){
         const text='📝 <b>Тест кандидата Академии Стратег</b>\n\nОткройте персональную ссылку и ответьте на 200 вопросов. На одной странице нужно выбрать «Да», «Может быть» или «Нет» напротив каждого вопроса.\n\nПосле отправки ответы автоматически прикрепятся к вашей анкете.';
         const messageId=await telegram(candidate.chat_id,text,{reply_markup:{inline_keyboard:[[{text:'Пройти тест',url:testUrl}]]}});
         await sql`UPDATE candidate_tests SET status='sent',sent_at=COALESCE(sent_at,NOW()),updated_at=NOW() WHERE id=${test.id}`;
-        const {scheduleStageDeadline}=await import('../lib/stage-deadlines-043.js');
-        await scheduleStageDeadline(candidate.id,'test1').catch(e=>console.error('[deadline043]',candidate.id,e.message));
+        const {scheduleFollowup081}=await import('../lib/stale-funnel-followups-081.js');
+        await scheduleFollowup081(candidate.id,'test1').catch(e=>console.error('[followup081]',candidate.id,e.message));
         await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','candidate_test_invite',${text},'delivered',${String(messageId||'')})`;
         return json(res,200,{ok:true,status:'sent'});
       }

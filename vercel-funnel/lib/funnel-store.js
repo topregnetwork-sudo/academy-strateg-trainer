@@ -49,6 +49,7 @@ export async function initFunnel() {
       WHERE p.project_key='academy-trainer'
       AND NOT EXISTS(SELECT 1 FROM funnel_stage_definitions d WHERE d.project_id=p.id AND d.stage_key=v.stage_key AND d.mode='system' AND d.stage_name=v.stage_name)`;
     const requiredStages = [
+      { key: 'productivity_booked', name: 'Записан на продуктивность', position: 4, statuses: ['test_1_passed', 'productivity_invited', 'productivity_booked'] },
       { key: 'offline_testing', name: 'Офлайн-тестирование', position: 7, statuses: ['offline_testing'] },
       { key: 'final', name: 'Финал / договорённости', position: 8, statuses: ['finalist', 'selection_closed'] },
       { key: 'reserve', name: 'Кадровый резерв — сотрудничество', position: 9, statuses: ['productivity_failed', 'talent_pool', 'collaboration', 'academy_contact'] },

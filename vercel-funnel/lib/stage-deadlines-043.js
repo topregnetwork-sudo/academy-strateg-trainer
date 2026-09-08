@@ -16,6 +16,8 @@ async function detail(id){
 }
 async function staff(key,text){return effect(key,()=>telegram('-1004397133749',text,{message_thread_id:30,parse_mode:undefined}));}
 export async function scheduleStageDeadline(id,step){
+ const {scheduleFollowup081}=await import('./stale-funnel-followups-081.js');
+ return scheduleFollowup081(id,step);
  if(!['q2','test1'].includes(step))throw Error('Invalid stage');
  await init();const d=await detail(id);if(!d||!open(d.c))return {skipped:true};
  const item=step==='q2'?d.q:d.t;
@@ -32,6 +34,8 @@ export async function scheduleStageDeadline(id,step){
  catch(e){await sql`UPDATE stage_deadlines043 SET error=${String(e.message)} WHERE candidate_id=${Number(id)} AND step=${step}`;await staff(`stage043:schedule-error:${id}:${step}`,`⚠️ Не удалось поставить точный срок: ${label(step)}, кандидат №${id}. Требуется проверка таймера; исключение не выполнялось.`);return {error:true};}
 }
 export async function runStageDeadline(id,step,now=new Date()){
+ const {runFollowup081}=await import('./stale-funnel-followups-081.js');
+ return runFollowup081(id,step,'remind');
  await init();const job=(await sql`SELECT * FROM stage_deadlines043 WHERE candidate_id=${Number(id)} AND step=${step}`).rows[0];
  if(!job)return {done:true};
  if(new Date(job.due_at)>now)return {done:false};
