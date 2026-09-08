@@ -27,6 +27,9 @@ test('081 closes unanswered primary and group stages into existing inactive stat
   assert.match(source, /reserve_no_response/);
   assert.match(source, /test_1_incomplete_removed/);
   assert.match(source, /removeFromCandidateGroup/);
+  assert.match(source, /bot was blocked by the user/i);
+  assert.match(source, /bot_blocked_081/);
+  assert.match(source, /closeBlockedReserve/);
 });
 
 test('081 operator audit is read-only until apply is explicitly true', () => {

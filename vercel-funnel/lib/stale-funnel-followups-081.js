@@ -60,6 +60,23 @@ function closure(step) {
   return 'Мы не получили завершённый следующий шаг после напоминания, поэтому завершаем текущий маршрут отбора. Спасибо за интерес к Академии Стратег и уделённое время. Если позже захотите вернуться к разговору, напишите нам в этот бот.';
 }
 
+const botBlocked = error => /bot was blocked by the user/i.test(String(error?.message || error || ''));
+
+async function closeUnreachable(item, step, error) {
+  if (step !== 'primary') await removeFromCandidateGroup(item.candidate).catch(() => null);
+  const next = step === 'primary' ? 'reserve_no_response' : 'test_1_incomplete_removed';
+  const changed = (await sql`UPDATE candidates SET status=${next},consent=FALSE,updated_at=NOW() WHERE id=${item.candidate.id} AND status=${item.candidate.status} RETURNING id`).rows[0];
+  await sql`UPDATE candidate_followups081 SET state='closed',error=${String(error?.message || error || 'Бот недоступен').slice(0,400)},updated_at=NOW() WHERE candidate_id=${item.candidate.id} AND step=${step}`;
+  if (changed) await sql`INSERT INTO funnel_stage_events(candidate_id,project_id,from_status,to_status,trigger,actor) SELECT ${item.candidate.id},id,${item.candidate.status},${next},'bot_blocked_081','system' FROM funnel_projects WHERE project_key='academy-trainer'`;
+  return { done: true, closed: true, deliveryFailed: true };
+}
+
+async function closeBlockedReserve(candidateId, expectedStatus, error) {
+  const changed = (await sql`UPDATE candidates SET status='reserve_no_response',consent=FALSE,updated_at=NOW() WHERE id=${Number(candidateId)} AND status=${expectedStatus} RETURNING id`).rows[0];
+  if (changed) await sql`INSERT INTO funnel_stage_events(candidate_id,project_id,from_status,to_status,trigger,actor) SELECT ${Number(candidateId)},id,${expectedStatus},'reserve_no_response','bot_blocked_081','system' FROM funnel_projects WHERE project_key='academy-trainer'`;
+  return Boolean(changed);
+}
+
 export async function scheduleFollowup081(candidateId, step) {
   await init();
   const item = await context(candidateId), start = item && issuedAt(item, step);
@@ -88,6 +105,7 @@ export async function runFollowup081(candidateId, step, phase = 'remind') {
     try {
       messageId = await effect(`followup081:remind:${item.candidate.id}:${step}`, () => telegram(item.candidate.chat_id, reminder.text, reminder.extra));
     } catch (error) {
+      if (botBlocked(error)) return closeUnreachable(item, step, error);
       await sql`UPDATE candidate_followups081 SET state='attention',error=${String(error.message || error).slice(0,400)},updated_at=NOW() WHERE candidate_id=${item.candidate.id} AND step=${step}`;
       return { done: true, attention: true, deliveryFailed: true };
     }
@@ -123,13 +141,23 @@ export async function reconcileStaleFunnel081(apply = false) {
       result.reserve.due++;
       if (apply) {
         const moved = (await sql`UPDATE candidates SET status='productivity_failed',updated_at=NOW() WHERE id=${candidate.id} AND status='productivity_invited' RETURNING id`).rows[0];
-        if (moved) { await sql`INSERT INTO funnel_stage_events(candidate_id,project_id,from_status,to_status,trigger,actor) SELECT ${candidate.id},id,'productivity_invited','productivity_failed','stale_followup_081','system' FROM funnel_projects WHERE project_key='academy-trainer'`; await sendProductivityOutcome(candidate.id, 'productivity_failed'); result.reserve.sent++; }
+        if (moved) {
+          await sql`INSERT INTO funnel_stage_events(candidate_id,project_id,from_status,to_status,trigger,actor) SELECT ${candidate.id},id,'productivity_invited','productivity_failed','stale_followup_081','system' FROM funnel_projects WHERE project_key='academy-trainer'`;
+          try { await sendProductivityOutcome(candidate.id, 'productivity_failed'); result.reserve.sent++; }
+          catch (error) { if (botBlocked(error)) { if (await closeBlockedReserve(candidate.id, 'productivity_failed', error)) result.reserve.closed++; } else throw error; }
+        }
       }
       continue;
     }
     if (candidate.status === 'productivity_failed') {
       const has = (await sql`SELECT candidate_message_sent_at FROM candidate_productivity_outreach WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0];
-      if (!has?.candidate_message_sent_at) { result.reserve.due++; if (apply) { await sendProductivityOutcome(candidate.id, 'productivity_failed'); result.reserve.sent++; } }
+      if (!has?.candidate_message_sent_at) {
+        result.reserve.due++;
+        if (apply) {
+          try { await sendProductivityOutcome(candidate.id, 'productivity_failed'); result.reserve.sent++; }
+          catch (error) { if (botBlocked(error)) { if (await closeBlockedReserve(candidate.id, 'productivity_failed', error)) result.reserve.closed++; } else throw error; }
+        }
+      }
       continue;
     }
     const item = await context(candidate.id);
