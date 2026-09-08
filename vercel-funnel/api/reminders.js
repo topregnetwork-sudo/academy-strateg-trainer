@@ -2,6 +2,7 @@ import { init, json, telegram, sql, slots } from './_core.js';
 import {runPrimaryFollowup} from '../lib/primary-followup.js';
 import crypto from 'node:crypto';
 import {entryKeyboard} from '../lib/primary-evidence.js';
+import { claimInterviewBrief, ensureBriefDeliveryStore, markInterviewBriefFailure, markInterviewBriefSent } from '../lib/brief-delivery.js';
 const trustedScope = Symbol('exact-session');
 export async function runExactSession(scope) {
   if(!scope?.at||!slots[scope.slot]||!Number.isFinite(Date.parse(scope.at)))throw new Error('Точная дата и слот задачи отсутствуют');
@@ -63,22 +64,22 @@ function buildBrief(session, participants, { test = false } = {}) {
 }
 
 async function sendBrief(req, session, { test = false } = {}) {
+  await ensureBriefDeliveryStore(sql);
   const destination = await briefDestination(), participants = await participantsFor(session), link = panelLink(req, session);
   let claimed = false;
   if (!test) {
-    const claim = (await sql`INSERT INTO interview_brief_deliveries(interview_at,slot_id,chat_id,thread_id) VALUES(${session.interview_at},${session.slot_id},${destination.chatId},${destination.threadId}) ON CONFLICT(interview_at,chat_id,thread_id) DO NOTHING RETURNING interview_at`).rows;
-    if (!claim.length) return { sent: false, skipped: true, participants: participants.length };
-    claimed = true;
+    claimed = Boolean(await claimInterviewBrief(sql, { interviewAt: session.interview_at, slotId: session.slot_id, chatId: destination.chatId, threadId: destination.threadId }));
+    if (!claimed) return { sent: false, skipped: true, participants: participants.length };
   }
   try {
     const messageId = await telegram(destination.chatId, buildBrief(session, participants, { test }), {
       ...(destination.threadId ? { message_thread_id: Number(destination.threadId) } : {}),
       reply_markup: { inline_keyboard: [[{ text: 'Открыть участников в панели', url: link }]] }
     });
-    if (!test) await sql`UPDATE interview_brief_deliveries SET telegram_message_id=${String(messageId || '')} WHERE interview_at=${session.interview_at} AND chat_id=${destination.chatId} AND thread_id=${destination.threadId}`;
+    if (!test) await markInterviewBriefSent(sql, { interviewAt: session.interview_at, chatId: destination.chatId, threadId: destination.threadId, messageId });
     return { sent: true, skipped: false, participants: participants.length, messageId: String(messageId || '') };
   } catch (error) {
-    if (claimed) await sql`DELETE FROM interview_brief_deliveries WHERE interview_at=${session.interview_at} AND chat_id=${destination.chatId} AND thread_id=${destination.threadId} AND telegram_message_id IS NULL`;
+    if (claimed) await markInterviewBriefFailure(sql, { interviewAt: session.interview_at, chatId: destination.chatId, threadId: destination.threadId, error, uncertain: !error?.definite });
     throw error;
   }
 }

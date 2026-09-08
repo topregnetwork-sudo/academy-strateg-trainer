@@ -27,7 +27,7 @@
 |---|---|---|
 | APPLICATION.SUBMITTED | Анкета 1, опыт, источник, ответ после статьи; переход в бот | app.js, api/application.js, api/telegram.js |
 | PRIMARY.BOOKED | Подтверждение даты/времени, задачи −30 и +60 минут | api/telegram.js, lib/funnel-primary.js |
-| PRIMARY.MINUS_30 | Напоминание всем городам; бриф в теме первого Zoom | api/reminders.js |
+| PRIMARY.MINUS_30 | Напоминание всем городам; бриф в теме первого Zoom; состояние очереди и результата читается через `GET /api/telegram-diagnostic` | api/reminders.js, api/telegram-diagnostic.js, lib/brief-delivery.js |
 | PRIMARY.ENTRY_CLICKED | Первое нажатие для отсчёта + нажатие конкретной записи для повторного приглашения; отчёт | lib/primary-evidence.js |
 | PRIMARY.CODE_RECEIVED | Проверка нажатия / исторического допуска, группа + Анкета 2 | api/telegram.js |
 | PRIMARY.NO_ENTRY_FOLLOWUP | Через 60 минут от назначенного начала: если всё ещё записан и не нажал вход для этой записи — предложение нового времени | lib/primary-followup.js; таймер lib/funnel-primary.js; tests/primary-followup-039.test.js |
