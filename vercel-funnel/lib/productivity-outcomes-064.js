@@ -224,8 +224,8 @@ export async function sendProductivityOutcome(candidateId, result) {
     if (result === 'productivity_failed') {
       const dueAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
       await sql`UPDATE candidate_productivity_outreach SET reserve_response_due_at=${dueAt},updated_at=NOW() WHERE candidate_id=${candidate.id}`;
-      try { await scheduleReserveTask(candidate.id, 'reminder', dueAt); }
-      catch (error) { await sql`UPDATE candidate_productivity_outreach SET error=${'Не удалось назначить напоминание: '+String(error?.message || error).slice(0,420)},updated_at=NOW() WHERE candidate_id=${candidate.id}`; }
+      try { await scheduleReserveTask(candidate.id, 'close', dueAt); }
+      catch (error) { await sql`UPDATE candidate_productivity_outreach SET error=${'Не удалось назначить контроль ответа: '+String(error?.message || error).slice(0,420)},updated_at=NOW() WHERE candidate_id=${candidate.id}`; }
     }
     outreach = (await sql`SELECT * FROM candidate_productivity_outreach WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0];
   }
@@ -250,16 +250,7 @@ export async function runReserveFollowup(candidateId, step) {
   const candidate = await candidateForOutcome(candidateId);
   const outreach = (await sql`SELECT * FROM candidate_productivity_outreach WHERE candidate_id=${Number(candidateId)} AND result='productivity_failed' LIMIT 1`).rows[0];
   if (!candidate || !outreach || outreach.reserve_choice || candidate.status !== 'productivity_failed') return { done: true, skipped: true };
-  if (step === 'reminder') {
-    const messageId = await effect(`productivity-reserve:reminder:${candidate.id}`, () => telegram(candidate.chat_id, PRODUCTIVITY_RESERVE_REMINDER_MESSAGE, { reply_markup: PRODUCTIVITY_RESERVE_BUTTONS }));
-    await saveCandidateMessage(candidate, 'productivity_reserve_reminder', PRODUCTIVITY_RESERVE_REMINDER_MESSAGE, messageId);
-    const dueAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
-    await sql`UPDATE candidate_productivity_outreach SET reserve_reminded_at=NOW(),reserve_response_due_at=${dueAt},error=NULL,updated_at=NOW() WHERE candidate_id=${candidate.id}`;
-    try { await scheduleReserveTask(candidate.id, 'close', dueAt); }
-    catch (error) { await sql`UPDATE candidate_productivity_outreach SET error=${'Не удалось назначить закрытие маршрута: '+String(error?.message || error).slice(0,400)},updated_at=NOW() WHERE candidate_id=${candidate.id}`; }
-    return { done: true, reminderSent: true };
-  }
-  if (step === 'close') {
+  if (step === 'reminder' || step === 'close') {
     const changed = (await sql`UPDATE candidates SET status='reserve_no_response',updated_at=NOW() WHERE id=${candidate.id} AND status='productivity_failed' RETURNING id`).rows[0];
     if (!changed) return { done: true, skipped: true };
     const messageId = await effect(`productivity-reserve:close:${candidate.id}`, () => telegram(candidate.chat_id, PRODUCTIVITY_RESERVE_NO_RESPONSE_MESSAGE));

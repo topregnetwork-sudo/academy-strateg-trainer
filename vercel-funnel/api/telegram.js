@@ -5,7 +5,7 @@ import {scheduleStageDeadline} from '../lib/stage-deadlines-043.js';
 import { handleFunnelCallback } from '../lib/funnel-engine.js';
 import { schedulePrimary } from '../lib/funnel-primary.js';
 import {entryKeyboard,handlePrimaryEntry,handlePrimaryRebookMenu,offerPrimaryRebook,requirePrimaryAccess} from '../lib/primary-evidence.js';
-import {effect} from '../lib/funnel-store.js';
+import {effect,initFunnel} from '../lib/funnel-store.js';
 import {isCandidateTestKeyword} from '../lib/telegram-event-policy.js';
 import {ensureActiveGroupRemoval, ensureProductivityOutcomeStore, PRODUCTIVITY_PASS_CONFIRMATION, PRODUCTIVITY_PASS_NOT_RELEVANT, PRODUCTIVITY_RESERVE_CONFIRMATION, PRODUCTIVITY_RESERVE_DECLINED, sendReserveTopicNotice} from '../lib/productivity-outcomes-064.js';
 import { removeFromCandidateGroup } from '../lib/candidate-group-removal-078.js';
@@ -17,6 +17,33 @@ const NOT_RELEVANT_KEYWORD = /^\s*не\s*актуально[.!]?\s*$/iu;
 const TEST_VERSION = 'executive-effectiveness-2020-ru-v1';
 const COORDINATION_CHAT_ID = '-1004397133749';
 const COORDINATION_THREAD_ID = 30;
+
+const EXPERIENCED_COLLABORATION_OFFER = `Добрый день, {name}!
+
+Спасибо, что откликнулись на предложение Академии Стратег.
+
+Мы внимательно рассмотрели ваш опыт. Сейчас в основную программу мы набираем людей без опыта бизнес-тренера — это особенность текущего набора, а не оценка вашей компетентности и квалификации.
+
+Мы ценим ваш опыт и видим, что он может быть полезен в других направлениях Академии Стратег.
+
+Предлагаем оставаться на связи и рассмотреть возможные варианты сотрудничества с Академией.
+
+Если вам это интересно, нажмите кнопку ниже. Мы пригласим вас в отдельный чат, где можно будет спокойно обсудить возможные форматы взаимодействия.`;
+
+const EXPERIENCED_COLLABORATION_BUTTONS = {
+  reply_markup: { inline_keyboard: [
+    [{ text: 'Да, интересно', callback_data: 'experienced_collaboration_yes' }],
+    [{ text: 'Нет, спасибо', callback_data: 'experienced_collaboration_no' }],
+  ] },
+};
+
+const EXPERIENCED_COLLABORATION_YES = `Спасибо! Мы зафиксировали ваш интерес к сотрудничеству с Академией Стратег.
+
+Когда будет готов отдельный чат для обсуждения вариантов взаимодействия, мы направим вам приглашение в этот бот.`;
+
+const EXPERIENCED_COLLABORATION_NO = `Спасибо за открытый ответ.
+
+Благодарим за интерес к Академии Стратег и желаем вам сильных проектов, интересных задач и хороших возможностей.`;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -388,10 +415,12 @@ async function handlePrivateStart(message) {
     await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${row.id},'out','repeat_application_preserved',${reply},'delivered',${String(messageId || '')})`;
     return;
   }
-  const reply = experienced
-    ? 'Спасибо, анкета получена. Нам нужно уточнить несколько моментов по вашему опыту. Если ваш профиль подойдёт к формату текущего набора, мы свяжемся с вами в Telegram.'
-    : 'Спасибо, анкета получена. Выберите удобное время собеседования:';
-  const keyboard = experienced ? {} : { reply_markup: { inline_keyboard: Object.entries(slots).map(([slotId, title]) => [{ text: title, callback_data: `trainer_slot_${app.code}_${slotId}` }]) } };
+  if (experienced) {
+    await sendExperiencedCollaborationOffer(row);
+    return;
+  }
+  const reply = 'Спасибо, анкета получена. Выберите удобное время собеседования:';
+  const keyboard = { reply_markup: { inline_keyboard: Object.entries(slots).map(([slotId, title]) => [{ text: title, callback_data: `trainer_slot_${app.code}_${slotId}` }]) } };
   const messageId = await telegram(chatId, reply, keyboard);
   await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${row.id},'out','text',${reply},'delivered',${String(messageId || '')})`;
 }
@@ -472,6 +501,53 @@ async function handleRescheduleChoice(callback) {
 
 async function ensureOfflineOutcomeChoices() {
   await sql`CREATE TABLE IF NOT EXISTS candidate_outreach_choices(candidate_id BIGINT NOT NULL,campaign_id TEXT NOT NULL,choice TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),PRIMARY KEY(candidate_id,campaign_id))`;
+}
+
+function experiencedOfferText(candidate) {
+  return EXPERIENCED_COLLABORATION_OFFER.replace('{name}', escapeHtml(candidate.first_name || 'коллега'));
+}
+
+async function sendExperiencedCollaborationOffer(candidate) {
+  const sent = (await sql`SELECT id FROM messages WHERE candidate_id=${candidate.id} AND direction='out' AND kind='experienced_collaboration_offer' LIMIT 1`).rows[0];
+  if (sent) return { sent: false, existing: true };
+  const text = experiencedOfferText(candidate);
+  const messageId = await telegram(candidate.chat_id, text, EXPERIENCED_COLLABORATION_BUTTONS);
+  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id)
+    VALUES(${candidate.id},'out','experienced_collaboration_offer',${text},'delivered',${String(messageId || '')})`;
+  return { sent: true, messageId };
+}
+
+async function handleExperiencedCollaborationChoice(callback) {
+  const match = callback.data?.match(/^experienced_collaboration_(yes|no)$/);
+  if (!match) return false;
+  const choice = match[1];
+  const chatId = String(callback.message?.chat?.id || callback.from?.id || '');
+  await initFunnel();
+  const candidate = (await sql`SELECT id,chat_id,status FROM candidates WHERE chat_id=${chatId} LIMIT 1`).rows[0];
+  if (!candidate) {
+    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Карточка кандидата не найдена.', show_alert: true });
+    return true;
+  }
+  const nextStatus = choice === 'yes' ? 'talent_pool' : 'rejected';
+  const changed = (await sql`UPDATE candidates SET status=${nextStatus},updated_at=NOW()
+    WHERE id=${candidate.id} AND status='experienced_not_target' RETURNING id`).rows[0];
+  if (!changed) {
+    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Ответ уже сохранён или предложение больше не актуально.', show_alert: true });
+    return true;
+  }
+  const incoming = choice === 'yes' ? 'Да, интересно' : 'Нет, спасибо';
+  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id)
+    VALUES(${candidate.id},'in','experienced_collaboration_choice',${incoming},'received',${String(callback.message?.message_id || '')})`;
+  await sql`INSERT INTO funnel_stage_events(candidate_id,project_id,from_status,to_status,trigger,actor)
+    SELECT ${candidate.id},id,'experienced_not_target',${nextStatus},'experienced_collaboration_choice','candidate'
+    FROM funnel_projects WHERE project_key='academy-trainer'`;
+  const reply = choice === 'yes' ? EXPERIENCED_COLLABORATION_YES : EXPERIENCED_COLLABORATION_NO;
+  const messageId = await effect(`experienced-collaboration:candidate:${candidate.id}:${choice}`, () => telegram(candidate.chat_id, reply));
+  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id)
+    SELECT ${candidate.id},'out',${choice === 'yes' ? 'experienced_collaboration_confirmation' : 'experienced_collaboration_declined'},${reply},'delivered',${String(messageId || '')}
+    WHERE NOT EXISTS(SELECT 1 FROM messages WHERE candidate_id=${candidate.id} AND direction='out' AND telegram_message_id=${String(messageId || '')})`;
+  await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Спасибо! Ответ сохранён.' });
+  return true;
 }
 
 async function handleProductivityReserveChoice(callback) {
@@ -669,7 +745,7 @@ export default async function handler(req, res) {
     if (callback) {
       await init();
       if((await sql`SELECT id FROM candidates WHERE chat_id=${String(callback.from.id)} AND status='test_1_incomplete_removed'`).rows[0]){await telegramApi('answerCallbackQuery',{callback_query_id:callback.id,text:'Ваше участие в текущем отборе завершено.',show_alert:true});return complete();}
-      if (!await handlePrimaryEntry(callback) && !await handlePrimaryRebookMenu(callback) && !await handleFunnelCallback(callback) && !await handleReservePreviewChoice(callback) && !await handleProductivityPassedChoice(callback) && !await handleProductivityReserveChoice(callback) && !await handleOfflineInterviewChoice(callback) && !await handleNadezhdaFinalistChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
+      if (!await handlePrimaryEntry(callback) && !await handlePrimaryRebookMenu(callback) && !await handleFunnelCallback(callback) && !await handleReservePreviewChoice(callback) && !await handleExperiencedCollaborationChoice(callback) && !await handleProductivityPassedChoice(callback) && !await handleProductivityReserveChoice(callback) && !await handleOfflineInterviewChoice(callback) && !await handleNadezhdaFinalistChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
       return complete();
     }
     const message = update.message;

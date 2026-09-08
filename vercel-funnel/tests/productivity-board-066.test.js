@@ -12,7 +12,7 @@ const progress = fs.readFileSync(new URL('../public/operator-progress.js', impor
 
 test('board separates passed productivity, pending reserve response, and merged reserve-collaboration', () => {
   assert.match(board, /Прошёл продуктивность/iu);
-  assert.match(board, /Кадровый резерв — ожидается ответ/iu);
+  assert.match(board, /Ожидаем ответ/iu);
   assert.match(board, /Кадровый резерв — сотрудничество/iu);
   assert.match(board, /reserve_no_response/iu);
   assert.match(store, /productivity_passed_stage/);

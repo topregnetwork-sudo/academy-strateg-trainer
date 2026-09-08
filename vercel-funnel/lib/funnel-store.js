@@ -30,6 +30,10 @@ export async function initFunnel() {
       SELECT p.id,'reserve','Кадровый резерв',9,'{"statuses":["talent_pool"]}'::jsonb,'draft'
       FROM funnel_projects p WHERE p.project_key='academy-trainer'
       AND NOT EXISTS(SELECT 1 FROM funnel_stage_definitions d WHERE d.project_id=p.id AND d.stage_key='reserve')`;
+    await sql`INSERT INTO funnel_stage_definitions(project_id,stage_key,stage_name,position,config,mode)
+      SELECT p.id,'offline_testing','Офлайн-тестирование',7,'{"statuses":["offline_testing"]}'::jsonb,'system'
+      FROM funnel_projects p WHERE p.project_key='academy-trainer'
+      AND NOT EXISTS(SELECT 1 FROM funnel_stage_definitions d WHERE d.project_id=p.id AND d.stage_key='offline_testing')`;
     // Preserve the old combined stage for audit history, but expose the two resulting
     // routes as separate operational columns.
     await sql`INSERT INTO funnel_stage_definitions(project_id,stage_key,stage_name,position,config,version,mode)
@@ -44,6 +48,22 @@ export async function initFunnel() {
       ) AS v(stage_key,stage_name,position,config)
       WHERE p.project_key='academy-trainer'
       AND NOT EXISTS(SELECT 1 FROM funnel_stage_definitions d WHERE d.project_id=p.id AND d.stage_key=v.stage_key AND d.mode='system' AND d.stage_name=v.stage_name)`;
+    const requiredStages = [
+      { key: 'offline_testing', name: 'Офлайн-тестирование', position: 7, statuses: ['offline_testing'] },
+      { key: 'final', name: 'Финал / договорённости', position: 8, statuses: ['finalist', 'selection_closed'] },
+      { key: 'reserve', name: 'Кадровый резерв — сотрудничество', position: 9, statuses: ['productivity_failed', 'talent_pool', 'collaboration', 'academy_contact'] },
+    ];
+    for (const stage of requiredStages) {
+      const current = (await sql`SELECT stage_name,position,config,version FROM funnel_stage_definitions
+        WHERE project_id=(SELECT id FROM funnel_projects WHERE project_key='academy-trainer') AND stage_key=${stage.key}
+        ORDER BY version DESC LIMIT 1`).rows[0];
+      const currentStatuses = Array.isArray(current?.config?.statuses) ? current.config.statuses : [];
+      if (current && current.stage_name === stage.name && Number(current.position) === stage.position && JSON.stringify(currentStatuses) === JSON.stringify(stage.statuses)) continue;
+      await sql`INSERT INTO funnel_stage_definitions(project_id,stage_key,stage_name,position,config,version,mode)
+        SELECT id,${stage.key},${stage.name},${stage.position},${JSON.stringify({ statuses: stage.statuses })}::text::jsonb,
+          COALESCE((SELECT MAX(version)+1 FROM funnel_stage_definitions WHERE project_id=funnel_projects.id AND stage_key=${stage.key}),1),'system'
+        FROM funnel_projects WHERE project_key='academy-trainer'`;
+    }
     await sql`CREATE TABLE IF NOT EXISTS funnel_stage_events(id BIGSERIAL PRIMARY KEY,candidate_id BIGINT NOT NULL,project_id BIGINT NOT NULL REFERENCES funnel_projects(id),from_status TEXT,to_status TEXT NOT NULL,trigger TEXT NOT NULL DEFAULT 'system',actor TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),UNIQUE(candidate_id,to_status,created_at))`;
     await sql`CREATE INDEX IF NOT EXISTS funnel_stage_events_candidate ON funnel_stage_events(candidate_id,created_at)`;
     await sql`CREATE INDEX IF NOT EXISTS funnel_recipients_job_state ON funnel_recipients(job_id,state)`;
