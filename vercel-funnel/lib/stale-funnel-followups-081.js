@@ -136,7 +136,14 @@ export async function runFollowup081(candidateId, step, phase = 'remind') {
 export async function reconcileStaleFunnel081(apply = false) {
   await init();
   const rows = (await sql`SELECT id,status FROM candidates WHERE consent=true AND status IN ('new','questionnaire','productivity_invited','productivity_failed') ORDER BY id`).rows;
-  const result = { primary: { due: 0, sent: 0, closed: 0 }, q2: { due: 0, sent: 0, closed: 0 }, test1: { due: 0, sent: 0, closed: 0 }, reserve: { due: 0, sent: 0, closed: 0 }, attention: 0, errors: [] };
+  const result = { primary: { due: 0, sent: 0, closed: 0 }, q2: { due: 0, sent: 0, closed: 0 }, test1: { due: 0, sent: 0, closed: 0 }, reserve: { due: 0, sent: 0, closed: 0 }, unreachableClosed: 0, attention: 0, errors: [] };
+  if (apply) {
+    const blocked = (await sql`SELECT f.candidate_id,f.step FROM candidate_followups081 f JOIN candidates c ON c.id=f.candidate_id WHERE f.state='attention' AND f.error ILIKE '%bot was blocked by the user%' AND c.status IN ('new','questionnaire')`).rows;
+    for (const item of blocked) {
+      const candidate = await context(item.candidate_id);
+      if (candidate && (await closeUnreachable(candidate, item.step, 'bot was blocked by the user')).closed) result.unreachableClosed++;
+    }
+  }
   for (const candidate of rows) try {
     if (candidate.status === 'productivity_invited') {
       result.reserve.due++;
