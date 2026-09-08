@@ -18,6 +18,8 @@ test('081 respects human replies before either reminder or closure', () => {
   assert.match(source, /Кандидат ответил до напоминания/);
   assert.match(source, /Кандидат ответил после напоминания/);
   assert.match(source, /direction='in' AND kind<>'link_open'/);
+  assert.match(source, /deliveryFailed: true/);
+  assert.match(source, /state='attention'/);
 });
 
 test('081 closes unanswered primary and group stages into existing inactive statuses', () => {
@@ -33,6 +35,7 @@ test('081 operator audit is read-only until apply is explicitly true', () => {
   const operator = read('../api/operator.js');
   assert.match(operator, /action==='reconcile_stale_funnel_081'/);
   assert.match(operator, /reconcileStaleFunnel081\(v\.apply===true\)/);
+  assert.match(source, /followupStates/);
 });
 
 test('081 board has no waiting-productivity column and joins it to booked productivity', () => {

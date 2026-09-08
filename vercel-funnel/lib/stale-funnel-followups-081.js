@@ -84,7 +84,13 @@ export async function runFollowup081(candidateId, step, phase = 'remind') {
       return { done: true, attention: true };
     }
     const reminder = copy(item, step);
-    const messageId = await effect(`followup081:remind:${item.candidate.id}:${step}`, () => telegram(item.candidate.chat_id, reminder.text, reminder.extra));
+    let messageId;
+    try {
+      messageId = await effect(`followup081:remind:${item.candidate.id}:${step}`, () => telegram(item.candidate.chat_id, reminder.text, reminder.extra));
+    } catch (error) {
+      await sql`UPDATE candidate_followups081 SET state='attention',error=${String(error.message || error).slice(0,400)},updated_at=NOW() WHERE candidate_id=${item.candidate.id} AND step=${step}`;
+      return { done: true, attention: true, deliveryFailed: true };
+    }
     await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${item.candidate.id},'out',${`followup081_${step}_reminder`},${reminder.text},'delivered',${String(messageId || '')})`;
     const closeDue = new Date(Date.now() + THREE_DAYS);
     await sql`UPDATE candidate_followups081 SET state='reminded',reminder_sent_at=NOW(),reminder_message_id=${String(messageId || '')},close_due_at=${closeDue},error=NULL,updated_at=NOW() WHERE candidate_id=${item.candidate.id} AND step=${step}`;
@@ -136,5 +142,6 @@ export async function reconcileStaleFunnel081(apply = false) {
       if (overdue) { const out = await runFollowup081(candidate.id, step, 'remind'); if (out.reminded) result[step].sent++; if (out.closed) result[step].closed++; if (out.attention) result.attention++; }
     }
   } catch (error) { result.errors.push({ id: candidate.id, error: String(error.message || error).slice(0,180) }); }
+  result.followupStates = (await sql`SELECT step,state,count(*)::int AS count FROM candidate_followups081 GROUP BY step,state ORDER BY step,state`).rows;
   return result;
 }
