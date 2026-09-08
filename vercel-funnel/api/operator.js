@@ -41,14 +41,14 @@ export default async function handler(req,res){
         const questionnaireTwo=(await sql`SELECT status,answers,sent_at,submitted_at FROM candidate_questionnaire_two WHERE candidate_id=${id} LIMIT 1`).rows[0]||null;
         const drive=(await sql`SELECT candidate_id,folder_id,folder_url,folder_name,synced_at FROM candidate_drive WHERE candidate_id=${id} LIMIT 1`).rows[0]||null;
         const driveFiles=(await sql`SELECT file_kind,file_name,file_url,drive_file_id,mime_type,updated_at FROM candidate_drive_files WHERE candidate_id=${id} ORDER BY updated_at DESC`).rows;
-        const productivityOutreach=(await sql`SELECT result,reserve_choice,reserve_choice_at,reserve_group_removal_state,reserve_group_removed_at,reserve_group_removal_error,reserve_reminded_at,reserve_response_due_at,reserve_closed_no_response_at FROM candidate_productivity_outreach WHERE candidate_id=${id} LIMIT 1`).rows[0]||null;
+        const productivityOutreach=(await sql`SELECT result,reserve_choice,reserve_choice_at,reserve_group_removal_state,reserve_group_removed_at,reserve_group_removal_error,active_group_removal_state,active_group_removed_at,active_group_removal_error,reserve_reminded_at,reserve_response_due_at,reserve_closed_no_response_at FROM candidate_productivity_outreach WHERE candidate_id=${id} LIMIT 1`).rows[0]||null;
         const progress=await candidateProgress(id).catch(()=>({errors:['progress']}));
         return json(res,200,{candidate,messages,test,testFiles,questionnaireTwo,drive,driveFiles,productivityOutreach,progress});
       }
       const candidates=(await sql`
         SELECT c.*,m.text AS last_message,d.folder_url,d.folder_name,
           s.file_url AS interview_sheet_url,po.message_pending AS productivity_message_pending,
-          po.reserve_choice,po.reserve_choice_at,po.reserve_group_removal_state,po.reserve_group_removed_at,po.reserve_group_removal_error,po.reserve_reminded_at,po.reserve_response_due_at,po.reserve_closed_no_response_at,
+          po.reserve_choice,po.reserve_choice_at,po.reserve_group_removal_state,po.reserve_group_removed_at,po.reserve_group_removal_error,po.active_group_removal_state,po.active_group_removed_at,po.active_group_removal_error,po.reserve_reminded_at,po.reserve_response_due_at,po.reserve_closed_no_response_at,
           pb.starts_at AS productivity_at,pb.slot_key AS productivity_slot_id,pb.session_key AS productivity_session_id
         FROM candidates c
         LEFT JOIN LATERAL (SELECT text FROM messages WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) m ON true

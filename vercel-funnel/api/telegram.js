@@ -7,7 +7,8 @@ import { schedulePrimary } from '../lib/funnel-primary.js';
 import {entryKeyboard,handlePrimaryEntry,handlePrimaryRebookMenu,offerPrimaryRebook,requirePrimaryAccess} from '../lib/primary-evidence.js';
 import {effect} from '../lib/funnel-store.js';
 import {isCandidateTestKeyword} from '../lib/telegram-event-policy.js';
-import {ensureProductivityOutcomeStore, PRODUCTIVITY_PASS_CONFIRMATION, PRODUCTIVITY_PASS_NOT_RELEVANT, PRODUCTIVITY_RESERVE_CONFIRMATION, PRODUCTIVITY_RESERVE_DECLINED, sendReserveTopicNotice} from '../lib/productivity-outcomes-064.js';
+import {ensureActiveGroupRemoval, ensureProductivityOutcomeStore, PRODUCTIVITY_PASS_CONFIRMATION, PRODUCTIVITY_PASS_NOT_RELEVANT, PRODUCTIVITY_RESERVE_CONFIRMATION, PRODUCTIVITY_RESERVE_DECLINED, sendReserveTopicNotice} from '../lib/productivity-outcomes-064.js';
+import { removeFromCandidateGroup } from '../lib/candidate-group-removal-078.js';
 
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
 const CANDIDATE_GROUP_COMMAND = /^\/candidate_group(?:@stazherskaya_bot)?(?:\s|$)/i;
@@ -575,6 +576,7 @@ async function handleProductivityPassedChoice(callback) {
   if (changed && nextStatus === 'rejected') await sql`INSERT INTO funnel_stage_events(candidate_id,project_id,from_status,to_status,trigger,actor)
     SELECT ${candidate.id},id,'productivity_passed','rejected','productivity_pass_choice','candidate'
     FROM funnel_projects WHERE project_key='academy-trainer'`;
+  if (chosen === 'not_relevant') await ensureActiveGroupRemoval(candidate);
   await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Спасибо! Ответ сохранён.' });
   return true;
 }
@@ -585,17 +587,6 @@ async function handleReservePreviewChoice(callback) {
   return true;
 }
 
-async function removeFromCandidateGroup(candidate) {
-  const groupChatId = (await sql`SELECT value FROM app_settings WHERE key='candidate_group_chat_id' LIMIT 1`).rows[0]?.value;
-  if (!groupChatId) return { removed: false, reason: 'group_not_configured' };
-  const member = await telegramApi('getChatMember', { chat_id: groupChatId, user_id: Number(candidate.chat_id) });
-  if (['left','kicked'].includes(member.status)) return { removed: false, reason: 'already_outside' };
-  if (!['member','restricted'].includes(member.status)) return { removed: false, reason: `protected_${member.status}` };
-  await telegramApi('banChatMember', { chat_id: groupChatId, user_id: Number(candidate.chat_id), revoke_messages: false });
-  await telegramApi('unbanChatMember', { chat_id: groupChatId, user_id: Number(candidate.chat_id), only_if_banned: false });
-  const after = await telegramApi('getChatMember', { chat_id: groupChatId, user_id: Number(candidate.chat_id) });
-  return { removed: after.status === 'left', reason: after.status };
-}
 
 async function handleOfflineOutcomeChoice(callback) {
   const match = callback.data?.match(/^offline_outcome_20260829_(yes|no)$/);

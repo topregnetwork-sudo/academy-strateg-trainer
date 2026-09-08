@@ -1,6 +1,7 @@
 import { telegram } from '../api/_core.js';
 import { createTask, effect, sql } from './funnel-store.js';
 import crypto from 'node:crypto';
+import { removeFromCandidateGroup } from './candidate-group-removal-078.js';
 
 export const PRODUCTIVITY_TOPICS = Object.freeze({
   passed: 1071,
@@ -95,6 +96,9 @@ export async function ensureProductivityOutcomeStore() {
     reserve_group_removal_error TEXT,
     pass_choice TEXT,
     pass_choice_at TIMESTAMPTZ,
+    active_group_removal_state TEXT,
+    active_group_removed_at TIMESTAMPTZ,
+    active_group_removal_error TEXT,
     reserve_reminded_at TIMESTAMPTZ,
     reserve_response_due_at TIMESTAMPTZ,
     reserve_closed_no_response_at TIMESTAMPTZ,
@@ -115,6 +119,9 @@ export async function ensureProductivityOutcomeStore() {
   await sql`ALTER TABLE candidate_productivity_outreach ADD COLUMN IF NOT EXISTS reserve_group_removal_error TEXT`;
   await sql`ALTER TABLE candidate_productivity_outreach ADD COLUMN IF NOT EXISTS pass_choice TEXT`;
   await sql`ALTER TABLE candidate_productivity_outreach ADD COLUMN IF NOT EXISTS pass_choice_at TIMESTAMPTZ`;
+  await sql`ALTER TABLE candidate_productivity_outreach ADD COLUMN IF NOT EXISTS active_group_removal_state TEXT`;
+  await sql`ALTER TABLE candidate_productivity_outreach ADD COLUMN IF NOT EXISTS active_group_removed_at TIMESTAMPTZ`;
+  await sql`ALTER TABLE candidate_productivity_outreach ADD COLUMN IF NOT EXISTS active_group_removal_error TEXT`;
   await sql`ALTER TABLE candidate_productivity_outreach ADD COLUMN IF NOT EXISTS reserve_reminded_at TIMESTAMPTZ`;
   await sql`ALTER TABLE candidate_productivity_outreach ADD COLUMN IF NOT EXISTS reserve_response_due_at TIMESTAMPTZ`;
   await sql`ALTER TABLE candidate_productivity_outreach ADD COLUMN IF NOT EXISTS reserve_closed_no_response_at TIMESTAMPTZ`;
@@ -176,6 +183,24 @@ async function scheduleReserveTask(candidateId, step, dueAt) {
   await createTask('productivity_reserve_followup_066', { candidateId: Number(candidateId), step }, dueAt, reserveTaskId(candidateId, step));
 }
 
+export async function ensureActiveGroupRemoval(candidate) {
+  const current = (await sql`SELECT active_group_removal_state FROM candidate_productivity_outreach WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0];
+  if (['removed', 'already_outside'].includes(current?.active_group_removal_state)) {
+    return { removed: current.active_group_removal_state === 'removed', reason: current.active_group_removal_state };
+  }
+  let removal;
+  try { removal = await removeFromCandidateGroup(candidate); }
+  catch (error) { removal = { removed: false, reason: 'attention', error: String(error?.message || error) }; }
+  const state = removal.removed ? 'removed' : removal.reason === 'already_outside' ? 'already_outside' : 'attention';
+  await sql`UPDATE candidate_productivity_outreach
+    SET active_group_removal_state=${state},
+        active_group_removed_at=${state === 'removed' ? new Date() : null},
+        active_group_removal_error=${state === 'attention' ? String(removal.error || removal.reason || '').slice(0,500) : null},
+        updated_at=NOW()
+    WHERE candidate_id=${candidate.id}`;
+  return { ...removal, state };
+}
+
 export async function sendProductivityOutcome(candidateId, result) {
   if (!['productivity_passed', 'productivity_failed'].includes(result)) throw new Error('Неверный результат интервью');
   await ensureProductivityOutcomeStore();
@@ -213,8 +238,11 @@ export async function sendProductivityOutcome(candidateId, result) {
     ));
     await sql`UPDATE candidate_productivity_outreach SET staff_message_id=${String(staffMessageId || '')},staff_message_sent_at=NOW(),error=NULL,updated_at=NOW() WHERE candidate_id=${candidate.id}`;
   }
+  const activeGroupRemoval = result === 'productivity_failed'
+    ? await ensureActiveGroupRemoval(candidate)
+    : null;
   await sql`UPDATE candidate_productivity_outreach SET message_pending=FALSE,error=NULL,updated_at=NOW() WHERE candidate_id=${candidate.id}`;
-  return { messagePending: false, candidateMessageSent: true, staffMessageSent: result === 'productivity_passed' };
+  return { messagePending: false, candidateMessageSent: true, staffMessageSent: result === 'productivity_passed', activeGroupRemoval };
 }
 
 export async function runReserveFollowup(candidateId, step) {
