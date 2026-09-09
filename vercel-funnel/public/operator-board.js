@@ -30,6 +30,12 @@ async function loadBoardStages(){
     if(data.stageDefinitions?.length)boardStages=data.stageDefinitions
       .map(d=>({id:d.stage_key,name:d.stage_name,statuses:d.config?.statuses||[],position:d.position}))
       .sort((a,b)=>(a.position||0)-(b.position||0));
+    const incoming=boardStages.find(s=>s.id==='new');
+    if(incoming){
+      incoming.name='Новая заявка';
+      incoming.statuses=['new'];
+      incoming.position=incoming.position||1;
+    }
     const reserve=boardStages.find(s=>s.id==='reserve');
     if(reserve){
       reserve.name='Кадровый резерв';
