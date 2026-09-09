@@ -138,6 +138,13 @@ export async function reconcileStaleFunnel081(apply = false) {
   const rows = (await sql`SELECT id,status FROM candidates WHERE consent=true AND status IN ('new','questionnaire','productivity_invited','productivity_failed') ORDER BY id`).rows;
   const result = { primary: { due: 0, sent: 0, closed: 0 }, q2: { due: 0, sent: 0, closed: 0 }, test1: { due: 0, sent: 0, closed: 0 }, reserve: { due: 0, sent: 0, closed: 0 }, unreachableClosed: 0, attention: 0, errors: [] };
   if (apply) {
+    const closable = (await sql`SELECT candidate_id,step FROM candidate_followups081 WHERE state='reminded' AND close_due_at<=NOW() ORDER BY candidate_id`).rows;
+    for (const row of closable) {
+      const out = await runFollowup081(row.candidate_id, row.step, 'close');
+      if (out.closed && result[row.step]) result[row.step].closed++;
+      if (out.attention) result.attention++;
+      if (out.deliveryFailed) result.unreachableClosed++;
+    }
     const blocked = (await sql`SELECT f.candidate_id,f.step FROM candidate_followups081 f JOIN candidates c ON c.id=f.candidate_id WHERE f.state='attention' AND f.error ILIKE '%bot was blocked by the user%' AND c.status IN ('new','questionnaire')`).rows;
     for (const item of blocked) {
       const candidate = await context(item.candidate_id);
@@ -175,6 +182,20 @@ export async function reconcileStaleFunnel081(apply = false) {
     if (overdue) result[step].due++;
     if (apply) {
       await scheduleFollowup081(candidate.id, step);
+      const existing = (await sql`SELECT * FROM candidate_followups081 WHERE candidate_id=${candidate.id} AND step=${step}`).rows[0];
+      if (existing?.state === 'reminded' && existing.reminder_sent_at && (!existing.close_due_at || new Date(existing.close_due_at) <= new Date())) {
+        const closeDue = existing.close_due_at || new Date(new Date(existing.reminder_sent_at).getTime() + THREE_DAYS);
+        if (new Date(closeDue) <= new Date()) {
+          await sql`UPDATE candidate_followups081 SET close_due_at=${closeDue},updated_at=NOW() WHERE candidate_id=${candidate.id} AND step=${step}`;
+          const out = await runFollowup081(candidate.id, step, 'close');
+          if (out.closed) result[step].closed++;
+          if (out.attention) result.attention++;
+          continue;
+        }
+      }
+      if (existing && existing.state !== 'scheduled' && !existing.reminder_sent_at) {
+        await sql`UPDATE candidate_followups081 SET state='scheduled',error=NULL,updated_at=NOW() WHERE candidate_id=${candidate.id} AND step=${step}`;
+      }
       if (overdue) { const out = await runFollowup081(candidate.id, step, 'remind'); if (out.reminded) result[step].sent++; if (out.closed) result[step].closed++; if (out.attention) result.attention++; }
     }
   } catch (error) { result.errors.push({ id: candidate.id, error: String(error.message || error).slice(0,180) }); }

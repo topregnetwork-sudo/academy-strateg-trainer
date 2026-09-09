@@ -100,6 +100,15 @@ export default async function handler(req,res){
         const {reconcileStaleFunnel081}=await import('../lib/stale-funnel-followups-081.js');
         return json(res,200,{ok:true,...await reconcileStaleFunnel081(v.apply===true)});
       }
+      if(v.action==='reconcile_primary_backlog_082'){
+        const {reconcilePrimaryNoEntry082}=await import('../lib/primary-followup.js');
+        const {reconcileExperiencedBacklog082}=await import('../lib/experienced-backlog-082.js');
+        const primary=await reconcilePrimaryNoEntry082(v.apply===true);
+        const experienced=await reconcileExperiencedBacklog082(v.apply===true);
+        const {reconcileStaleFunnel081}=await import('../lib/stale-funnel-followups-081.js');
+        const stale=await reconcileStaleFunnel081(v.apply===true);
+        return json(res,200,{ok:true,primary,experienced,stale});
+      }
       if(v.action==='reconcile_productivity_failed_group_removal_078'){
         const failed=(await sql`SELECT id,chat_id,first_name,last_name,username,city FROM candidates WHERE status='productivity_failed' ORDER BY id`).rows;
         const results=[];
