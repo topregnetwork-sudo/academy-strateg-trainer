@@ -19,7 +19,7 @@ async function latestIncoming(candidateId) {
 async function latestOutgoing(candidateId, kinds) {
   return (await sql`
     SELECT kind,text,created_at FROM messages
-    WHERE candidate_id=${Number(candidateId)} AND direction='out' AND kind=ANY(${kinds})
+    WHERE candidate_id=${Number(candidateId)} AND direction='out' AND kind IN ${sql(kinds)}
     ORDER BY created_at DESC,id DESC LIMIT 1
   `).rows[0] || null;
 }
