@@ -109,6 +109,10 @@ export default async function handler(req,res){
         const stale=await reconcileStaleFunnel081(v.apply===true);
         return json(res,200,{ok:true,primary,experienced,stale});
       }
+      if(v.action==='resolve_unprocessed_backlog_083'){
+        const {resolveUnprocessedBacklog083}=await import('../lib/unprocessed-backlog-083.js');
+        return json(res,200,{ok:true,...await resolveUnprocessedBacklog083(v.apply===true)});
+      }
       if(v.action==='reconcile_productivity_failed_group_removal_078'){
         const failed=(await sql`SELECT id,chat_id,first_name,last_name,username,city FROM candidates WHERE status='productivity_failed' ORDER BY id`).rows;
         const results=[];
