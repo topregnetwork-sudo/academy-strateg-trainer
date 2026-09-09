@@ -7,6 +7,7 @@ import { schedulePrimary } from '../lib/funnel-primary.js';
 import {entryKeyboard,handlePrimaryEntry,handlePrimaryRebookMenu,offerPrimaryRebook,requirePrimaryAccess} from '../lib/primary-evidence.js';
 import {effect,initFunnel} from '../lib/funnel-store.js';
 import {isCandidateTestKeyword} from '../lib/telegram-event-policy.js';
+import {handleAttentionBacklogChoice084} from '../lib/unprocessed-backlog-083.js';
 import {ensureActiveGroupRemoval, ensureProductivityOutcomeStore, PRODUCTIVITY_PASS_CONFIRMATION, PRODUCTIVITY_PASS_NOT_RELEVANT, PRODUCTIVITY_RESERVE_CONFIRMATION, PRODUCTIVITY_RESERVE_DECLINED, sendReserveTopicNotice} from '../lib/productivity-outcomes-064.js';
 import { removeFromCandidateGroup } from '../lib/candidate-group-removal-078.js';
 
@@ -551,6 +552,21 @@ async function handleExperiencedCollaborationChoice(callback) {
   return true;
 }
 
+async function handleAttentionChoice084(callback) {
+  const result = await handleAttentionBacklogChoice084(callback);
+  if (!result?.handled) return false;
+  await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: result.ok ? 'Спасибо. Ответ сохранён.' : 'Это сообщение уже недоступно.', show_alert: !result.ok });
+  if (result.ok) {
+    const chatId = String(callback.message?.chat?.id || callback.from?.id || '');
+    const text = 'Спасибо за ответ. Мы зафиксировали, что вакансия сейчас не актуальна.';
+    const candidate = (await sql`SELECT id FROM candidates WHERE chat_id=${chatId} LIMIT 1`).rows[0];
+    const messageId = await telegram(chatId, text);
+    if (candidate) await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id)
+      VALUES(${candidate.id},'out','attention_primary_declined_084',${text},'delivered',${String(messageId || '')})`;
+  }
+  return true;
+}
+
 async function handleProductivityReserveChoice(callback) {
   const match = callback.data?.match(/^productivity_reserve_(yes|no)$/);
   if (!match) return false;
@@ -746,7 +762,7 @@ export default async function handler(req, res) {
     if (callback) {
       await init();
       if((await sql`SELECT id FROM candidates WHERE chat_id=${String(callback.from.id)} AND status='test_1_incomplete_removed'`).rows[0]){await telegramApi('answerCallbackQuery',{callback_query_id:callback.id,text:'Ваше участие в текущем отборе завершено.',show_alert:true});return complete();}
-      if (!await handlePrimaryEntry(callback) && !await handlePrimaryRebookMenu(callback) && !await handleFunnelCallback(callback) && !await handleReservePreviewChoice(callback) && !await handleExperiencedCollaborationChoice(callback) && !await handleProductivityPassedChoice(callback) && !await handleProductivityReserveChoice(callback) && !await handleOfflineInterviewChoice(callback) && !await handleNadezhdaFinalistChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
+      if (!await handlePrimaryEntry(callback) && !await handlePrimaryRebookMenu(callback) && !await handleFunnelCallback(callback) && !await handleReservePreviewChoice(callback) && !await handleExperiencedCollaborationChoice(callback) && !await handleAttentionChoice084(callback) && !await handleProductivityPassedChoice(callback) && !await handleProductivityReserveChoice(callback) && !await handleOfflineInterviewChoice(callback) && !await handleNadezhdaFinalistChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
       return complete();
     }
     const message = update.message;

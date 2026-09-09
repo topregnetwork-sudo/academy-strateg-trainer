@@ -37,7 +37,17 @@ async function move(candidate, status, trigger) {
   return true;
 }
 
-const rebookKeyboard = () => ({ reply_markup: { inline_keyboard: Object.entries(slots).map(([slotId, title]) => [{ text: title, callback_data: `trainer_rebook_${slotId}` }]) } });
+async function zoomUrl() {
+  const setting = (await sql`SELECT value FROM app_settings WHERE key='zoom_meeting_url' LIMIT 1`).rows[0];
+  return setting?.value || process.env.ZOOM_MEETING_URL || '';
+}
+async function primaryAttentionKeyboard() {
+  const zoom = await zoomUrl();
+  return { reply_markup: { inline_keyboard: [
+    ...(zoom ? [[{ text: 'Подключиться к Zoom', url: zoom }]] : []),
+    [{ text: 'Не актуально', callback_data: 'attention_primary_not_relevant_084' }],
+  ] } };
+}
 const slotKeyboard = code => ({ reply_markup: { inline_keyboard: Object.entries(slots).map(([slotId, title]) => [{ text: title, callback_data: `trainer_slot_${code}_${slotId}` }]) } });
 
 function primaryAttentionText() {
@@ -45,9 +55,9 @@ function primaryAttentionText() {
 
 Спасибо, что подождали.
 
-Если вакансия тренера Академии Стратег для вас ещё актуальна, выберите новое удобное время первого Zoom-собеседования по кнопке ниже.
+Если вакансия тренера Академии Стратег для вас ещё актуальна, подключайтесь к первому Zoom по кнопке ниже.
 
-Если сейчас не актуально, напишите в ответ: не актуально.`;
+Если сейчас не актуально, нажмите вторую кнопку.`;
 }
 
 function dataAttentionText(kind) {
@@ -177,11 +187,11 @@ export async function resolveUnprocessedBacklog083(apply = false) {
       } else if (incoming && dueAfter(incoming.created_at) && candidate.interview_at && new Date(candidate.interview_at) < new Date()) {
         if (apply) {
           await sql`UPDATE candidates SET no_show_followup_sent=true,updated_at=NOW() WHERE id=${candidate.id}`;
-          await sendAttention(candidate, 'primary', primaryAttentionText(), rebookKeyboard());
+          await sendAttention(candidate, 'primary', primaryAttentionText(), await primaryAttentionKeyboard());
         }
         result.primarySent++;
       } else if (out && incoming && new Date(incoming.created_at) > new Date(out.created_at)) {
-        if (apply) await sendAttention(candidate, 'primary', primaryAttentionText(), rebookKeyboard());
+        if (apply) await sendAttention(candidate, 'primary', primaryAttentionText(), await primaryAttentionKeyboard());
         result.primarySent++;
       } else if (!out && candidate.interview_at && new Date(candidate.interview_at) < new Date()) {
         if (dueAfter(candidate.interview_at)) {
@@ -238,4 +248,21 @@ export async function runAttentionBacklogClose084(candidateId, route) {
   }
   const closed = await move(candidate, 'reserve_no_response', `${route}_attention_task_no_response_084`);
   return { done: true, closed };
+}
+
+export async function handleAttentionBacklogChoice084(callback) {
+  if (callback.data !== 'attention_primary_not_relevant_084') return false;
+  const chatId = String(callback.message?.chat?.id || callback.from?.id || '');
+  const candidate = (await sql`SELECT id,status FROM candidates WHERE chat_id=${chatId} AND status IN ('new','interview_booked') LIMIT 1`).rows[0];
+  if (!candidate) return { handled: true, ok: false };
+  const previous = candidate.status;
+  const changed = (await sql`UPDATE candidates SET status='rejected',consent=FALSE,updated_at=NOW() WHERE id=${candidate.id} AND status=${previous} RETURNING id`).rows[0];
+  if (changed) {
+    await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id)
+      VALUES(${candidate.id},'in','attention_primary_choice_084','Не актуально','received',${String(callback.message?.message_id || '')})`;
+    await sql`INSERT INTO funnel_stage_events(candidate_id,project_id,from_status,to_status,trigger,actor)
+      SELECT ${candidate.id},id,${previous},'rejected','attention_primary_not_relevant_084','candidate'
+      FROM funnel_projects WHERE project_key='academy-trainer'`;
+  }
+  return { handled: true, ok: Boolean(changed) };
 }
