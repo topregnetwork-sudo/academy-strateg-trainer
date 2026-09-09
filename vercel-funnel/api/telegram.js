@@ -20,7 +20,7 @@ const COORDINATION_THREAD_ID = 30;
 
 const EXPERIENCED_COLLABORATION_OFFER = `Добрый день, {name}!
 
-Спасибо, что откликнулись на предложение Академии Стратег.
+Спасибо, что подождали.
 
 Мы внимательно рассмотрели ваш опыт. Сейчас в основную программу мы набираем людей без опыта бизнес-тренера — это особенность текущего набора, а не оценка вашей компетентности и квалификации.
 
@@ -28,7 +28,7 @@ const EXPERIENCED_COLLABORATION_OFFER = `Добрый день, {name}!
 
 Предлагаем оставаться на связи и рассмотреть возможные варианты сотрудничества с Академией.
 
-Если вам это интересно, нажмите кнопку ниже. Мы пригласим вас в отдельный чат, где можно будет спокойно обсудить возможные форматы взаимодействия.`;
+Если вам это интересно, нажмите кнопку ниже. Чуть позже мы пришлём приглашение в отдельный чат, где можно будет спокойно обсудить возможные форматы взаимодействия.`;
 
 const EXPERIENCED_COLLABORATION_BUTTONS = {
   reply_markup: { inline_keyboard: [
@@ -529,7 +529,7 @@ async function handleExperiencedCollaborationChoice(callback) {
     await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Карточка кандидата не найдена.', show_alert: true });
     return true;
   }
-  const nextStatus = choice === 'yes' ? 'talent_pool' : 'rejected';
+  const nextStatus = choice === 'yes' ? 'collaboration' : 'rejected';
   const changed = (await sql`UPDATE candidates SET status=${nextStatus},updated_at=NOW()
     WHERE id=${candidate.id} AND status='experienced_not_target' RETURNING id`).rows[0];
   if (!changed) {

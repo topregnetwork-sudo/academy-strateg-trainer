@@ -52,7 +52,8 @@ export async function initFunnel() {
       { key: 'productivity_booked', name: 'Записан на продуктивность', position: 4, statuses: ['test_1_passed', 'productivity_invited', 'productivity_booked'] },
       { key: 'offline_testing', name: 'Офлайн-тестирование', position: 7, statuses: ['offline_testing'] },
       { key: 'final', name: 'Финал / договорённости', position: 8, statuses: ['finalist', 'selection_closed'] },
-      { key: 'reserve', name: 'Кадровый резерв — сотрудничество', position: 9, statuses: ['productivity_failed', 'talent_pool', 'collaboration', 'academy_contact'] },
+      { key: 'reserve', name: 'Кадровый резерв', position: 9, statuses: ['productivity_failed', 'talent_pool'] },
+      { key: 'collaboration', name: 'Сотрудничество', position: 10, statuses: ['experienced_not_target', 'collaboration', 'academy_contact'] },
     ];
     for (const stage of requiredStages) {
       const current = (await sql`SELECT stage_name,position,config,version FROM funnel_stage_definitions

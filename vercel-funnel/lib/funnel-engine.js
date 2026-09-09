@@ -176,6 +176,14 @@ export async function runFunnelTask(task) {
     const {runReserveFollowup}=await import('./productivity-outcomes-064.js');
     return runReserveFollowup(task.payload.candidateId,task.payload.step);
   }
+  if(task.kind==='experienced_collaboration_close_084'){
+    const {runExperiencedCollaborationClose084}=await import('./experienced-backlog-082.js');
+    return runExperiencedCollaborationClose084(task.payload.candidateId);
+  }
+  if(task.kind==='attention_backlog_close_084'){
+    const {runAttentionBacklogClose084}=await import('./unprocessed-backlog-083.js');
+    return runAttentionBacklogClose084(task.payload.candidateId,task.payload.route);
+  }
   if(task.kind==='stale_funnel_followup_081'){
     const {runFollowup081}=await import('./stale-funnel-followups-081.js');
     return runFollowup081(task.payload.candidateId,task.payload.step,task.payload.phase);
