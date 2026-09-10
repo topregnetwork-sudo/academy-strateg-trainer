@@ -107,7 +107,14 @@ function interviewDate(value) {
 
 function hrBrief(candidate, restored = false) {
   const title = restored ? 'Восстановленная запись на собеседование' : 'Новая запись на собеседование';
-  return `🎯 <b>${title}</b>\n\nКандидат: <b>${escapeHtml(candidateName(candidate))}</b>\nГород: ${escapeHtml(candidate.city || 'не указан')}\nТелефон: ${escapeHtml(candidate.phone || 'не указан')}\nИсточник: ${escapeHtml(candidate.source_id || 'direct')}\nДата: <b>${escapeHtml(interviewDate(candidate.interview_at))}</b>\nВремя: <b>${escapeHtml(slots[candidate.slot_id] || 'не указано')}</b>\nTelegram: ${candidate.username ? '@' + escapeHtml(candidate.username) : 'без username'}\n\nСтатус: ${escapeHtml(candidate.status || 'записан')}.`;
+  const experience = { none: 'без опыта бизнес-тренера', occasional: 'отдельные занятия / выступления', under_one_year: 'опыт до года', professional: 'опытный бизнес-тренер' }[candidate.trainer_experience_level] || 'не указан';
+  return `🎯 <b>${title}</b>\n\nКандидат: <b>${escapeHtml(candidateName(candidate))}</b>\nГород: ${escapeHtml(candidate.city || 'не указан')}\nОпыт: <b>${escapeHtml(experience)}</b>\nТелефон: ${escapeHtml(candidate.phone || 'не указан')}\nИсточник: ${escapeHtml(candidate.source_id || 'direct')}\nДата: <b>${escapeHtml(interviewDate(candidate.interview_at))}</b>\nВремя: <b>${escapeHtml(slots[candidate.slot_id] || 'не указано')}</b>\nTelegram: ${candidate.username ? '@' + escapeHtml(candidate.username) : 'без username'}\n\nСтатус: ${escapeHtml(candidate.status || 'записан')}.`;
+}
+
+async function enrichHrBriefCandidate(candidate) {
+  if (candidate?.trainer_experience_level) return candidate;
+  const application = (await sql`SELECT trainer_experience_level FROM applications WHERE candidate_id=${candidate.id} ORDER BY created_at DESC,id DESC LIMIT 1`).rows[0];
+  return { ...candidate, trainer_experience_level: application?.trainer_experience_level || null };
 }
 
 async function getHrDestination() {
@@ -174,13 +181,13 @@ async function wasDelivered(candidate, destination) {
 async function deliverHrBrief(candidate, destination, restored = false) {
   if (!destination || await wasDelivered(candidate, destination)) return false;
   const extra = destination.threadId ? { message_thread_id: Number(destination.threadId) } : {};
-  const messageId = await telegram(destination.chatId, hrBrief(candidate, restored), extra);
+  const messageId = await telegram(destination.chatId, hrBrief(await enrichHrBriefCandidate(candidate), restored), extra);
   await sql`INSERT INTO hr_brief_deliveries(candidate_id,interview_at,chat_id,thread_id,telegram_message_id) VALUES(${candidate.id},${candidate.interview_at},${destination.chatId},${destination.threadId},${String(messageId || '')}) ON CONFLICT DO NOTHING`;
   return true;
 }
 
 async function backfillTrainerTopic(destination) {
-  const candidates = await sql`SELECT id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status FROM candidates WHERE interview_at IS NOT NULL ORDER BY interview_at,id`;
+  const candidates = await sql`SELECT c.id,c.first_name,c.last_name,c.username,c.phone,c.city,c.slot_id,c.interview_at,c.source_id,c.status,a.trainer_experience_level FROM candidates c LEFT JOIN LATERAL(SELECT trainer_experience_level FROM applications WHERE candidate_id=c.id ORDER BY created_at DESC,id DESC LIMIT 1) a ON TRUE WHERE c.interview_at IS NOT NULL ORDER BY c.interview_at,c.id`;
   let sent = 0;
   let skipped = 0;
   let failed = 0;
