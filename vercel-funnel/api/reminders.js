@@ -112,17 +112,17 @@ export default async function handler(req, res) {
       try { const result = await sendBrief(req, session); if (result.skipped) briefSkipped++; else briefSent++; }
       catch (error) { briefFailed++; console.error('[reminders] interview brief failed', { interviewAt: session.interview_at, slotId: session.slot_id, message: String(error) }); }
     }
-    const due = (await sql`SELECT id FROM candidates WHERE status='interview_booked' AND consent=true AND reminded_30m=false AND (${scopeAt}::timestamptz IS NULL OR interview_at=${scopeAt}::timestamptz) AND (${scopeSlot}::text IS NULL OR slot_id=${scopeSlot}) AND interview_at > NOW() AND interview_at <= NOW() + INTERVAL '40 minutes' AND (${scopeAt}::timestamptz IS NOT NULL OR interview_at >= NOW() + INTERVAL '20 minutes') ORDER BY id`).rows;
+    const due = (await sql`SELECT c.id,(SELECT a.code FROM applications a WHERE a.candidate_id=c.id ORDER BY a.created_at DESC,a.id DESC LIMIT 1) AS application_code FROM candidates c WHERE c.status='interview_booked' AND c.consent=true AND c.reminded_30m=false AND (${scopeAt}::timestamptz IS NULL OR c.interview_at=${scopeAt}::timestamptz) AND (${scopeSlot}::text IS NULL OR c.slot_id=${scopeSlot}) AND c.interview_at > NOW() AND c.interview_at <= NOW() + INTERVAL '40 minutes' AND (${scopeAt}::timestamptz IS NOT NULL OR c.interview_at >= NOW() + INTERVAL '20 minutes') ORDER BY c.id`).rows;
     let sent = 0, failed = 0;
     const batchSize = 10;
     for (let offset = 0; offset < due.length; offset += batchSize) {
-      const results = await Promise.allSettled(due.slice(offset, offset + batchSize).map(async ({ id }) => {
+      const results = await Promise.allSettled(due.slice(offset, offset + batchSize).map(async ({ id,application_code }) => {
         const claimed = (await sql`UPDATE candidates SET reminded_30m=true,updated_at=NOW() WHERE id=${id} AND status='interview_booked' AND consent=true AND reminded_30m=false RETURNING *`).rows[0];
         if (!claimed) return false;
         try {
           const minutes=Math.max(1,Math.round((new Date(claimed.interview_at)-Date.now())/60000));
           const text=reminderText.replace('30 минут',minutes+' минут')+`\nДата: ${moscowReadableDate(claimed.interview_at)}\nВремя: ${slots[claimed.slot_id]}\nВ назначенное время нажмите «Открыть Zoom».`;
-          const messageId = await telegram(claimed.chat_id, text,{reply_markup:entryKeyboard()});
+          const messageId = await telegram(claimed.chat_id, text,{reply_markup:entryKeyboard(application_code)});
           await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${claimed.id},'out','primary_reminder_30m',${text},'delivered',${String(messageId || '')})`;
           return true;
         } catch (error) {

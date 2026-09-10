@@ -220,13 +220,14 @@ export async function resumeTrainerTopic() {
 async function handleCandidateGroupKeyword(message) {
   if (!CANDIDATE_GROUP_KEYWORD.test(message.text || '')) return false;
   const chatId = String(message.chat.id);
-  const candidate = (await sql`SELECT id,chat_id,status FROM candidates WHERE chat_id=${chatId} LIMIT 1`).rows[0];
+  const candidate = (await sql`SELECT id,chat_id,status,interview_at FROM candidates WHERE chat_id=${chatId} LIMIT 1`).rows[0];
   if (!candidate || !['interview_booked','interviewed','questionnaire','test_1_completed','test_1_passed','training','internship','hired'].includes(candidate.status)) {
     await telegram(chatId, 'Приглашение в группу кандидатов доступно после записи и прохождения собеседования.');
     return true;
   }
 
-  if(!await requirePrimaryAccess(candidate))return true;
+  const hostCodeWindow=candidate.status==='interview_booked'&&candidate.interview_at&&Date.now()>=Date.parse(candidate.interview_at)&&Date.now()<=Date.parse(candidate.interview_at)+6*60*60*1000;
+  if(!hostCodeWindow&&!await requirePrimaryAccess(candidate))return true;
   const inviteUrl = await getCandidateGroupInviteUrl();
   if (!inviteUrl) {
     await telegram(chatId, 'Группа кандидатов сейчас настраивается. Напишите координатору, и мы пришлём ссылку.');
@@ -460,7 +461,7 @@ async function handleSlotChoice(callback) {
   const reply = `✅ <b>Вы записаны на собеседование</b>\n\nДата: <b>${date}</b>\nВремя: <b>${slots[slotId]}</b>\n\n${zoom ? 'Ссылка Zoom — по кнопке ниже.' : 'Координатор пришлёт ссылку Zoom в этот чат.'}\n\nЗа 30 минут до встречи придёт напоминание.`;
   let messageId;
   try {
-    messageId = await telegram(chatId, reply, zoom ? { reply_markup: entryKeyboard() } : {});
+    messageId = await telegram(chatId, reply, zoom ? { reply_markup: entryKeyboard(app.code) } : {});
   } catch (error) {
     await sql`UPDATE candidates SET slot_id=NULL,interview_at=NULL,status='new',reminded_30m=false,updated_at=NOW() WHERE id=${candidate.id}`;
     await sql`UPDATE applications SET slot_id=NULL WHERE id=${app.id}`;
@@ -494,7 +495,8 @@ async function handleRescheduleChoice(callback) {
   const reply = `✅ <b>Новое время собеседования сохранено</b>\n\nДата: <b>${date}</b>\nВремя: <b>${slots[slotId]}</b>\n\n${zoom ? 'Ссылка Zoom — по кнопке ниже.' : 'Координатор пришлёт ссылку Zoom в этот чат.'}\n\nЗа 30 минут до встречи придёт напоминание.`;
   let messageId;
   try {
-    messageId = await telegram(chatId, reply, zoom ? { reply_markup: entryKeyboard() } : {});
+    const applicationCode=(await sql`SELECT code FROM applications WHERE candidate_id=${candidate.id} ORDER BY created_at DESC,id DESC LIMIT 1`).rows[0]?.code||'';
+    messageId = await telegram(chatId, reply, zoom ? { reply_markup: entryKeyboard(applicationCode) } : {});
   } catch (error) {
     await sql`UPDATE candidates SET slot_id=${candidate.slot_id},interview_at=${candidate.interview_at},status='interview_booked',reminded_30m=true,no_show_followup_sent=true,updated_at=NOW() WHERE id=${candidate.id}`;
     await sql`UPDATE applications SET slot_id=${candidate.slot_id} WHERE candidate_id=${candidate.id}`;

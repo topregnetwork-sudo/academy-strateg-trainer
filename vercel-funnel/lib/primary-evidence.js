@@ -20,7 +20,9 @@ export async function initPrimaryEvidence(){
   return ready;
 }
 export function rebookKeyboard(){return {inline_keyboard:Object.entries(slots).map(([id,title])=>[{text:title,callback_data:`trainer_rebook_${id}`}])};}
-export function entryKeyboard(){return {inline_keyboard:[[{text:'Открыть Zoom',callback_data:'primary_zoom_enter'}],[{text:'Выбрать новое время',callback_data:'primary_rebook_menu'}]]};}
+const publicOrigin=()=>String(process.env.PUBLIC_SITE_URL||'https://academy-strateg-trainer.vercel.app').replace(/\/$/,'');
+export function primaryEntryUrl(applicationCode){return /^[a-zA-Z0-9]{20}$/.test(String(applicationCode||''))?`${publicOrigin()}/api/primary-entry?code=${encodeURIComponent(applicationCode)}`:'';}
+export function entryKeyboard(applicationCode){const url=primaryEntryUrl(applicationCode);return {inline_keyboard:[url?[{text:'Подключиться к Zoom',url}]:[{text:'Открыть Zoom',callback_data:'primary_zoom_enter'}],[{text:'Выбрать новое время',callback_data:'primary_rebook_menu'}]]};}
 const rebookText='Если вы не смогли попасть на первое собеседование, выберите новое удобное время ниже. Прежняя запись заменится только после выбора нового слота.';
 export async function offerPrimaryRebook(chatId,eventKey){
   await initPrimaryEvidence();await initFunnel();
@@ -58,10 +60,22 @@ export async function primaryAccess(id){
   const clickedAt=row?.clicked_at||row?.message_clicked_at||null;
   return {clickedAt,legacy:!!row?.legacy,allowed:!!(clickedAt||row?.legacy)};
 }
+export async function recordPrimaryEntry(candidate){
+  await initPrimaryEvidence();
+  if(!candidate?.id||!candidate?.interview_at||!candidate?.slot_id)return null;
+  const qualified=(await sql`INSERT INTO candidate_zoom_session_entries(candidate_id,interview_at,slot_id) SELECT ${candidate.id},${candidate.interview_at}::timestamptz,${candidate.slot_id} WHERE NOW() BETWEEN ${candidate.interview_at}::timestamptz-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND ${candidate.interview_at}::timestamptz+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute') ON CONFLICT(candidate_id,interview_at,slot_id) DO UPDATE SET clicked_at=candidate_zoom_session_entries.clicked_at RETURNING clicked_at`).rows[0];
+  if(qualified){
+    await sql`INSERT INTO candidate_zoom_entries(candidate_id,interview_at,slot_id,clicked_at) VALUES(${candidate.id},${candidate.interview_at},${candidate.slot_id},${qualified.clicked_at}) ON CONFLICT DO NOTHING`;
+    await initFunnel();
+    await createTask('primary_entry_report',{candidateId:Number(candidate.id)},new Date(),evidenceId(`primary-entry-report:${candidate.id}`));
+  }
+  return qualified||null;
+}
+async function applicationCodeForCandidate(id){return (await sql`SELECT code FROM applications WHERE candidate_id=${id} ORDER BY created_at DESC,id DESC LIMIT 1`).rows[0]?.code||'';}
 export async function requirePrimaryAccess(candidate){
   if((await primaryAccess(candidate.id)).allowed)return true;
   const text='Дальнейший этап доступен после первого собеседования. В назначенное время нажмите «Открыть Zoom» в боте и присоединитесь к встрече. После встречи следуйте инструкции ведущего.';
-  const messageId=await telegram(candidate.chat_id,text,candidate.status==='interview_booked'?{reply_markup:entryKeyboard()}:{});
+  const messageId=await telegram(candidate.chat_id,text,candidate.status==='interview_booked'?{reply_markup:entryKeyboard(await applicationCodeForCandidate(candidate.id))}:{});
   await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','primary_access_required',${text},'delivered',${String(messageId)})`;
   return false;
 }
@@ -83,15 +97,13 @@ export async function handlePrimaryEntry(callback){
   }
   const zoom=(await sql`SELECT value FROM app_settings WHERE key='zoom_meeting_url'`).rows[0]?.value||process.env.ZOOM_MEETING_URL;
   if(!zoom)throw new Error('Primary Zoom URL is missing');
-  const qualified=(await sql`INSERT INTO candidate_zoom_session_entries(candidate_id,interview_at,slot_id) SELECT ${c.id},${c.interview_at}::timestamptz,${c.slot_id} WHERE NOW() BETWEEN ${c.interview_at}::timestamptz-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND ${c.interview_at}::timestamptz+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute') ON CONFLICT(candidate_id,interview_at,slot_id) DO UPDATE SET clicked_at=candidate_zoom_session_entries.clicked_at RETURNING clicked_at`).rows[0];
-  if(qualified)await sql`INSERT INTO candidate_zoom_entries(candidate_id,interview_at,slot_id,clicked_at) VALUES(${c.id},${c.interview_at},${c.slot_id},${qualified.clicked_at}) ON CONFLICT DO NOTHING`;
+  const qualified=await recordPrimaryEntry(c);
   await telegramApi('answerCallbackQuery',{callback_query_id:callback.id,text:'Ссылка на первое собеседование — в сообщении ниже.'});
   await initFunnel();
   const text='Подключитесь к первому собеседованию по кнопке ниже в назначенное вам время.';
   const messageId=await effect(`primary-entry-link:${callback.id}`,()=>telegram(c.chat_id,text,{reply_markup:{inline_keyboard:[[{text:'Подключиться к Zoom',url:zoom}]]}}));
   await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) SELECT ${c.id},'out','primary_zoom_link',${text},'delivered',${String(messageId)} WHERE NOT EXISTS(SELECT 1 FROM messages WHERE candidate_id=${c.id} AND kind='primary_zoom_link' AND telegram_message_id=${String(messageId)})`;
   // Repeat delivery can recover a failed report scheduling; stable task ID prevents duplicates.
-  if(qualified)await createTask('primary_entry_report',{candidateId:Number(c.id)},new Date(),evidenceId(`primary-entry-report:${c.id}`));
   return true;
 }
 const esc=v=>String(v??'').replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));

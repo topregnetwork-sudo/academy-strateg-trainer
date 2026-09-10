@@ -6,7 +6,7 @@ const query=(conn)=>(s,...v)=>conn.query(s.reduce((a,b,i)=>a+(i?'$'+i:'')+b,''),
 await db.exec(`CREATE TABLE candidates(id bigint PRIMARY KEY,chat_id text,status text,consent boolean,no_show_followup_sent boolean,interview_at timestamptz,slot_id text,updated_at timestamptz);
 CREATE TABLE candidate_zoom_entries(candidate_id bigint PRIMARY KEY,clicked_at timestamptz,interview_at timestamptz,slot_id text);
 CREATE TABLE candidate_zoom_session_entries(candidate_id bigint,clicked_at timestamptz,interview_at timestamptz,slot_id text);
-CREATE TABLE messages(candidate_id bigint,direction text,kind text,text text,delivery_status text,telegram_message_id text);
+CREATE TABLE messages(candidate_id bigint,direction text,kind text,text text,delivery_status text,telegram_message_id text,created_at timestamptz default now());
 INSERT INTO candidates SELECT n,n::text,'interview_booked',true,false,NOW()-INTERVAL '61 minutes','mon-0800',NOW() FROM generate_series(1,7) n;
 INSERT INTO candidate_zoom_entries SELECT id,interview_at,interview_at,slot_id FROM candidates WHERE id=2;
 INSERT INTO candidate_zoom_entries SELECT id,interview_at-INTERVAL '7 days',interview_at,slot_id FROM candidates WHERE id=3;
@@ -15,7 +15,7 @@ UPDATE candidates SET status='productivity_passed' WHERE id=5;
 UPDATE candidates SET consent=false WHERE id=6;
 UPDATE candidates SET interview_at=interview_at+INTERVAL '1 day' WHERE id=7;`);
 await mock.module('../api/_core.js',{namedExports:{sql:query(db),transaction:fn=>db.transaction(tx=>fn(query(tx))),telegram:async(chat)=>{sent.push(chat);return sent.length;},slots:{'mon-0800':'Пн 08:00'}}});
-await mock.module('../lib/primary-evidence.js',{namedExports:{initPrimaryEvidence:async()=>{}}});
+await mock.module('../lib/primary-evidence.js',{namedExports:{initPrimaryEvidence:async()=>{},PRIMARY_ENTRY_BEFORE_MINUTES:60,PRIMARY_ENTRY_AFTER_MINUTES:10}});
 await mock.module('../lib/funnel-store.js',{namedExports:{initFunnel:async()=>{},effect:async(k,fn)=>{if(effects.has(k))return effects.get(k);const r=await fn();effects.set(k,r);return r;}}});
 const {runPrimaryFollowup}=await import('../lib/primary-followup.js');
 test('only exact missed appointment; early click does not count; real clicks/advanced/declined/future excluded; repeated event safe',async()=>{
