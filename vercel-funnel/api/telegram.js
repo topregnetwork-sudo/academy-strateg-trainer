@@ -19,6 +19,7 @@ const NOT_RELEVANT_KEYWORD = /^\s*не\s*актуально[.!]?\s*$/iu;
 const TEST_VERSION = 'executive-effectiveness-2020-ru-v1';
 const COORDINATION_CHAT_ID = '-1004397133749';
 const COORDINATION_THREAD_ID = 30;
+const PRIMARY_CODE_AFTER_DAYS = 7;
 
 const EXPERIENCED_COLLABORATION_OFFER = `Добрый день, {name}!
 
@@ -227,7 +228,11 @@ async function handleCandidateGroupKeyword(message) {
     return true;
   }
 
-  const hostCodeWindow=candidate.status==='interview_booked'&&candidate.interview_at&&Date.now()>=Date.parse(candidate.interview_at)&&Date.now()<=Date.parse(candidate.interview_at)+6*60*60*1000;
+  const primaryStartedAt = candidate.interview_at ? Date.parse(candidate.interview_at) : NaN;
+  const hostCodeWindow = candidate.status === 'interview_booked'
+    && Number.isFinite(primaryStartedAt)
+    && Date.now() >= primaryStartedAt
+    && Date.now() <= primaryStartedAt + PRIMARY_CODE_AFTER_DAYS * 24 * 60 * 60 * 1000;
   if(!hostCodeWindow&&!await requirePrimaryAccess(candidate))return true;
   const inviteUrl = await getCandidateGroupInviteUrl();
   if (!inviteUrl) {
@@ -417,7 +422,7 @@ async function handlePrivateStart(message) {
   }
 
   const experienced = app.trainer_experience_level === 'professional';
-  const row = (await sql`INSERT INTO candidates(chat_id,username,first_name,last_name,phone,city,slot_id,interview_at,source_id,status) VALUES(${chatId},${message.from?.username || null},${message.from?.first_name || app.full_name},${message.from?.last_name || null},${app.phone || null},${app.city},NULL,NULL,${app.source_id},${experienced ? 'experienced_not_target' : 'new'}) ON CONFLICT(chat_id) DO UPDATE SET username=EXCLUDED.username,first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,phone=COALESCE(EXCLUDED.phone,candidates.phone),city=EXCLUDED.city,source_id=EXCLUDED.source_id,status=CASE WHEN candidates.status IN ('new','experienced_not_target') AND candidates.interview_at IS NULL THEN EXCLUDED.status ELSE candidates.status END,consent=true,updated_at=NOW() RETURNING id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
+  const row = (await sql`INSERT INTO candidates(chat_id,username,first_name,last_name,phone,city,slot_id,interview_at,source_id,status) VALUES(${chatId},${message.from?.username || null},${message.from?.first_name || app.full_name},${message.from?.last_name || null},${app.phone || null},${app.city},NULL,NULL,${app.source_id},${experienced ? 'experienced_not_target' : 'new'}) ON CONFLICT(chat_id) DO UPDATE SET username=EXCLUDED.username,first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,phone=COALESCE(EXCLUDED.phone,candidates.phone),city=EXCLUDED.city,source_id=EXCLUDED.source_id,status=CASE WHEN candidates.status IN ('new','experienced_not_target') AND candidates.interview_at IS NULL THEN EXCLUDED.status ELSE candidates.status END,consent=true,updated_at=NOW() RETURNING id,chat_id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
   await sql`UPDATE applications SET candidate_id=${row.id} WHERE id=${app.id}`;
   if (!['new','experienced_not_target'].includes(row.status)) {
     const reply = 'Спасибо, анкета получена. Ваш текущий этап отбора сохранён — повторное заполнение первой анкеты его не изменило. Продолжайте по последним инструкциям бота.';
