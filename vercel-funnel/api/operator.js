@@ -4,6 +4,7 @@ import {candidateProgress} from '../lib/candidate-progress.js';
 import {initFunnel} from '../lib/funnel-store.js';
 import {ensureActiveGroupRemoval, ensureProductivityOutcomeStore, PRODUCTIVITY_PASS_BUTTONS, PRODUCTIVITY_PASS_MESSAGE, PRODUCTIVITY_RESERVE_BUTTONS, PRODUCTIVITY_RESERVE_MESSAGE, PRODUCTIVITY_TOPICS, sendProductivityOutcome} from '../lib/productivity-outcomes-064.js';
 import { reconcileDriveSync067 } from '../lib/drive-sync-067.js';
+import { previewOfflineTestingMinsk20260914Followup, sendOfflineTestingMinsk20260914Followup } from '../lib/offline-testing-minsk-20260914-followup.js';
 
 async function recordProductivityResult(candidateId, result) {
   const id = Number(candidateId);
@@ -96,6 +97,8 @@ export default async function handler(req,res){
       return json(res,200,{ok:true});
     }
     if(req.method==='POST'){
+      if(v.action==='preview_offline_testing_minsk_20260914_followup') return json(res,200,{ok:true,...await previewOfflineTestingMinsk20260914Followup()});
+      if(v.action==='send_offline_testing_minsk_20260914_followup') return json(res,200,{ok:true,...await sendOfflineTestingMinsk20260914Followup()});
       if(v.action==='reconcile_stale_funnel_081'){
         const {reconcileStaleFunnel081}=await import('../lib/stale-funnel-followups-081.js');
         return json(res,200,{ok:true,...await reconcileStaleFunnel081(v.apply===true)});

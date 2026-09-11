@@ -10,6 +10,7 @@ import {isCandidateTestKeyword} from '../lib/telegram-event-policy.js';
 import {handleAttentionBacklogChoice084} from '../lib/unprocessed-backlog-083.js';
 import {ensureActiveGroupRemoval, ensureProductivityOutcomeStore, PRODUCTIVITY_PASS_CONFIRMATION, PRODUCTIVITY_PASS_NOT_RELEVANT, PRODUCTIVITY_RESERVE_CONFIRMATION, PRODUCTIVITY_RESERVE_DECLINED, sendReserveTopicNotice} from '../lib/productivity-outcomes-064.js';
 import { removeFromCandidateGroup } from '../lib/candidate-group-removal-078.js';
+import { handleOfflineTestingMinsk20260914FollowupChoice } from '../lib/offline-testing-minsk-20260914-followup.js';
 
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
 const CANDIDATE_GROUP_COMMAND = /^\/candidate_group(?:@stazherskaya_bot)?(?:\s|$)/i;
@@ -771,7 +772,7 @@ export default async function handler(req, res) {
     if (callback) {
       await init();
       if((await sql`SELECT id FROM candidates WHERE chat_id=${String(callback.from.id)} AND status='test_1_incomplete_removed'`).rows[0]){await telegramApi('answerCallbackQuery',{callback_query_id:callback.id,text:'Ваше участие в текущем отборе завершено.',show_alert:true});return complete();}
-      if (!await handlePrimaryEntry(callback) && !await handlePrimaryRebookMenu(callback) && !await handleFunnelCallback(callback) && !await handleReservePreviewChoice(callback) && !await handleExperiencedCollaborationChoice(callback) && !await handleAttentionChoice084(callback) && !await handleProductivityPassedChoice(callback) && !await handleProductivityReserveChoice(callback) && !await handleOfflineInterviewChoice(callback) && !await handleNadezhdaFinalistChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
+      if (!await handlePrimaryEntry(callback) && !await handlePrimaryRebookMenu(callback) && !await handleFunnelCallback(callback) && !await handleReservePreviewChoice(callback) && !await handleExperiencedCollaborationChoice(callback) && !await handleAttentionChoice084(callback) && !await handleProductivityPassedChoice(callback) && !await handleProductivityReserveChoice(callback) && !await handleOfflineTestingMinsk20260914FollowupChoice(callback) && !await handleOfflineInterviewChoice(callback) && !await handleNadezhdaFinalistChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
       return complete();
     }
     const message = update.message;
