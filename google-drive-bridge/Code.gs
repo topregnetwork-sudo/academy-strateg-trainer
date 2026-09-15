@@ -210,6 +210,74 @@ function updateInterviewAppointment048_(payload) {
   return {ok:true,appointment048:true,timeline049:!!timeline,timeline:timeline,id:appointmentFile.getId(),url:appointmentFile.getUrl(),changed:changed,preserved:preserved,bookingKey:payload.bookingKey};
 }
 
+// 001: use Drive's native OCR only for photos already staged in the offline-test folder.
+function ocrOfflinePhoto001_(payload) {
+  const stagingId = '1KCuonU8y5T1CG9dgwS0ev2-I2KSKRL5n';
+  const source = DriveApp.getFileById(String(payload.fileId || ''));
+  const mime = source.getMimeType();
+  if (!/^image\/(jpeg|png|gif|bmp)$/.test(mime) && mime !== 'application/pdf')
+    throw new Error('OCR supports only a staged image or PDF');
+  let staged = false;
+  const parents = source.getParents();
+  while (parents.hasNext()) if (parents.next().getId() === stagingId) staged = true;
+  if (!staged) throw new Error('OCR source is outside offline test');
+  const image = source.getBlob();
+  if (image.getBytes().length > 5 * 1024 * 1024) throw new Error('OCR source exceeds multipart upload limit');
+  const boundary = 'academy_ocr_' + Utilities.getUuid().replace(/-/g, '');
+  const metadata = JSON.stringify({ name: 'temporary-ocr-' + source.getId(),
+    mimeType: 'application/vnd.google-apps.document', parents: [stagingId] });
+  const prefix = '--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + metadata +
+    '\r\n--' + boundary + '\r\nContent-Type: ' + mime + '\r\n\r\n';
+  const suffix = '\r\n--' + boundary + '--\r\n';
+  const bytes = Utilities.newBlob(prefix).getBytes().concat(image.getBytes(), Utilities.newBlob(suffix).getBytes());
+  const response = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name', {
+    method: 'post', payload: bytes, contentType: 'multipart/related; boundary=' + boundary,
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true
+  });
+  if (response.getResponseCode() !== 200 && response.getResponseCode() !== 201)
+    throw new Error('Google Drive OCR conversion failed (' + response.getResponseCode() + ')');
+  const result = JSON.parse(response.getContentText());
+  if (!result.id) throw new Error('Google Drive OCR did not return a document');
+  try {
+    let text = '';
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try { text = DocumentApp.openById(result.id).getBody().getText(); }
+      catch (error) { if (attempt === 2) throw error; Utilities.sleep(500); }
+      if (text) break;
+    }
+    return { ok: true, sourceFileId: source.getId(), text: text };
+  } finally {
+    DriveApp.getFileById(result.id).setTrashed(true);
+  }
+}
+
+function assignOfflinePhoto001_(payload) {
+  const stagingId = '1KCuonU8y5T1CG9dgwS0ev2-I2KSKRL5n';
+  const trainerRootId = '1fpKRJQZIdFeqYCVQ6aWfN_4_xuLyMX4D';
+  const source = DriveApp.getFileById(String(payload.fileId || ''));
+  const destination = DriveApp.getFolderById(String(payload.destinationFolderId || ''));
+  if (!/^image\//.test(source.getMimeType()) && source.getMimeType() !== 'application/pdf') throw new Error('Offline assignment requires an image or PDF');
+  let owned = false, alreadyAssigned = false;
+  const sourceParents = source.getParents();
+  while (sourceParents.hasNext()) {
+    const id = sourceParents.next().getId();
+    if (id === stagingId) owned = true;
+    if (id === destination.getId()) alreadyAssigned = true;
+  }
+  if (!owned && !alreadyAssigned) throw new Error('Source is outside offline staging or target folder');
+  let inTrainer = false;
+  const cityParents = destination.getParents();
+  while (cityParents.hasNext()) {
+    const cityFolder = cityParents.next();
+    const rootParents = cityFolder.getParents();
+    while (rootParents.hasNext()) if (rootParents.next().getId() === trainerRootId) inTrainer = true;
+  }
+  if (!inTrainer) throw new Error('Target candidate folder is outside Trainer root');
+  if (!alreadyAssigned) source.moveTo(destination);
+  destination.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  return {ok:true,fileId:source.getId(),folderId:destination.getId(),folderUrl:folderUrl_(destination),alreadyAssigned:alreadyAssigned};
+}
+
 function validateTimeline049_(fields) {
   Object.keys(fields).forEach(function(address){
     const value=fields[address];
@@ -258,7 +326,9 @@ function doPost(event) {
     const payload = JSON.parse(event.postData && event.postData.contents || '{}');
     const expected = PropertiesService.getScriptProperties().getProperty('BRIDGE_SECRET');
     if (!expected || payload.secret !== expected) return json_({ ok: false, error: 'Unauthorized' });
-    if (payload.action === 'capabilities') return json_({ok:true,bridgeVersion:'052-tuning-1',interviewSheet047:true,interviewSheet048:true,appointment048:true,timeline049:true,migration052:true});
+    if (payload.action === 'capabilities') return json_({ok:true,bridgeVersion:'052-tuning-1',interviewSheet047:true,interviewSheet048:true,appointment048:true,timeline049:true,migration052:true,offlineOcr001:true});
+    if (payload.action === 'ocr_offline_photo_001') return json_(ocrOfflinePhoto001_(payload));
+    if (payload.action === 'assign_offline_photo_001') return json_(assignOfflinePhoto001_(payload));
     if (payload.action === 'interview_appointment_048') {
       lock = LockService.getScriptLock();
       if (!lock.tryLock(12000)) throw new Error('Drive занят, повторите адресное событие');
