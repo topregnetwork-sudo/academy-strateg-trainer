@@ -10,15 +10,6 @@
     { "source": "/media/trainer-story-1.mp4", "destination": "https://github.com/topregnetwork-sudo/academy-strateg-trainer/releases/download/trainer-media-v1/trainer-story-1.mp4" },
     { "source": "/media/trainer-story-2.mp4", "destination": "https://github.com/topregnetwork-sudo/academy-strateg-trainer/releases/download/trainer-media-v1/trainer-story-2.mp4" }
   ],
-  "redirects": [
-    { "source": "/o/1", "destination": "https://drive.google.com/drive/folders/1hAzcIEWkZm1bAhvEvZonSJIqDw7ujTuZ", "permanent": false },
-    { "source": "/o/2", "destination": "https://drive.google.com/drive/folders/1PN6WTy6xlWg_qLIvlV7wquDFco8QbogH", "permanent": false },
-    { "source": "/o/3", "destination": "https://drive.google.com/drive/folders/1GvTtJge5-gKNAWmvg6XCUK6gsgevjkLq", "permanent": false },
-    { "source": "/o/4", "destination": "https://drive.google.com/drive/folders/1JiO8vECBDpyk2PFut-P8RMPDQ4ZofKTH", "permanent": false },
-    { "source": "/o/5", "destination": "https://drive.google.com/drive/folders/1IQ-_jmzguDEd4tyrOljJGOFyFdW7cfQu", "permanent": false },
-    { "source": "/o/6", "destination": "https://drive.google.com/drive/folders/16MyLjnVtOE3bKXqh31QPRDHlFUTpndlS", "permanent": false },
-    { "source": "/o/7", "destination": "https://drive.google.com/drive/folders/1Ry6no6OgKLXLfV1xvEvtqh3LzbMz0UmV", "permanent": false }
-  ],
   "headers": [
     { "source": "/media/(.*).mp4", "headers": [{ "key": "Content-Type", "value": "video/mp4" }, { "key": "Cache-Control", "value": "public, max-age=3600, s-maxage=86400" }] }
   ]
