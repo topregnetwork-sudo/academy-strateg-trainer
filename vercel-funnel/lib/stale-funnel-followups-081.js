@@ -135,7 +135,7 @@ export async function runFollowup081(candidateId, step, phase = 'remind') {
 
 export async function reconcileStaleFunnel081(apply = false) {
   await init();
-  const rows = (await sql`SELECT id,status FROM candidates WHERE consent=true AND status IN ('new','questionnaire','productivity_invited','productivity_failed') ORDER BY id`).rows;
+  const rows = (await sql`SELECT id,status FROM candidates WHERE consent=true AND status IN ('new','questionnaire','productivity_failed') ORDER BY id`).rows;
   const result = { primary: { due: 0, sent: 0, closed: 0 }, q2: { due: 0, sent: 0, closed: 0 }, test1: { due: 0, sent: 0, closed: 0 }, reserve: { due: 0, sent: 0, closed: 0 }, unreachableClosed: 0, attention: 0, errors: [] };
   if (apply) {
     const closable = (await sql`SELECT candidate_id,step FROM candidate_followups081 WHERE state='reminded' AND close_due_at<=NOW() ORDER BY candidate_id`).rows;
@@ -152,18 +152,6 @@ export async function reconcileStaleFunnel081(apply = false) {
     }
   }
   for (const candidate of rows) try {
-    if (candidate.status === 'productivity_invited') {
-      result.reserve.due++;
-      if (apply) {
-        const moved = (await sql`UPDATE candidates SET status='productivity_failed',updated_at=NOW() WHERE id=${candidate.id} AND status='productivity_invited' RETURNING id`).rows[0];
-        if (moved) {
-          await sql`INSERT INTO funnel_stage_events(candidate_id,project_id,from_status,to_status,trigger,actor) SELECT ${candidate.id},id,'productivity_invited','productivity_failed','stale_followup_081','system' FROM funnel_projects WHERE project_key='academy-trainer'`;
-          try { await sendProductivityOutcome(candidate.id, 'productivity_failed'); result.reserve.sent++; }
-          catch (error) { if (botBlocked(error)) { if (await closeBlockedReserve(candidate.id, 'productivity_failed', error)) result.reserve.closed++; } else throw error; }
-        }
-      }
-      continue;
-    }
     if (candidate.status === 'productivity_failed') {
       const has = (await sql`SELECT candidate_message_sent_at FROM candidate_productivity_outreach WHERE candidate_id=${candidate.id} LIMIT 1`).rows[0];
       if (!has?.candidate_message_sent_at) {

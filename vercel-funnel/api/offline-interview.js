@@ -365,6 +365,11 @@ export async function handleOfflineInterviewChoice(callback) {
     return true;
   }
   await sql`UPDATE offline_interview_invites SET status='booked',updated_at=NOW() WHERE candidate_id=${candidate.id} AND event_date=${EVENT_DATE}::date`;
+  await sql`UPDATE candidates SET status='productivity_booked',updated_at=NOW() WHERE id=${candidate.id} AND status IN ('test_1_completed','productivity_invited')`;
+  await sql`INSERT INTO funnel_stage_events(candidate_id,project_id,from_status,to_status,trigger,actor)
+    SELECT ${candidate.id},id,'productivity_invited','productivity_booked','offline_interview_booked','candidate'
+    FROM funnel_projects WHERE project_key='academy-trainer'
+    AND EXISTS (SELECT 1 FROM candidates WHERE id=${candidate.id} AND status='productivity_booked')`;
   const {scheduleMinskReminder}=await import('../lib/review-reminders.js');
   try{await scheduleMinskReminder(slot);}catch(e){console.error('[review-timer]',candidate.id,e.message);}
   if(process.env.INTERVIEW_APPOINTMENT_048==='false'){
