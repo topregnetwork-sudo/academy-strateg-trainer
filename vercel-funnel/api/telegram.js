@@ -10,6 +10,7 @@ import {isCandidateTestKeyword} from '../lib/telegram-event-policy.js';
 import {handleAttentionBacklogChoice084} from '../lib/unprocessed-backlog-083.js';
 import {ensureActiveGroupRemoval, ensureProductivityOutcomeStore, PRODUCTIVITY_PASS_CONFIRMATION, PRODUCTIVITY_PASS_NOT_RELEVANT, PRODUCTIVITY_RESERVE_CONFIRMATION, PRODUCTIVITY_RESERVE_DECLINED, sendReserveTopicNotice} from '../lib/productivity-outcomes-064.js';
 import { removeFromCandidateGroup } from '../lib/candidate-group-removal-078.js';
+import { isOfflinePhotoMessage, stageOfflinePhoto } from '../lib/offline-photo-intake.js';
 import { handleOfflineTestingMinsk20260914Choice, handleOfflineTestingMinsk20260914PreviewChoice } from '../lib/offline-testing-minsk-20260914.js';
 
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
@@ -778,6 +779,10 @@ export default async function handler(req, res) {
 
     if (message.chat?.type && message.chat.type !== 'private') {
       await init();
+      if (isOfflinePhotoMessage(message)) {
+        await stageOfflinePhoto(message, { sql, telegramApi });
+        return complete();
+      }
       if (message.left_chat_member) {
         const groupId = (await sql`SELECT value FROM app_settings WHERE key='candidate_group_chat_id' LIMIT 1`).rows[0]?.value;
         const cleaned = await cleanupRemovalService(message, { groupId, api: telegramApi });
