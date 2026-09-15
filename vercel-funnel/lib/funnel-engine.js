@@ -164,6 +164,20 @@ export async function sendSessionSummary(sessionId,key,slotId=null) {
   for(const destination of ['Минск','Челябинск'])for(let i=0;i<chunks.length;i++)await coordinate(`${key}:all:${i}:${destination}`,chunks[i],{inline_keyboard:[[{text:'Участники в панели',url:`${SITE}/operator.html?funnel_session=${sessionId}`}]]},destination);
 }
 export async function runFunnelTask(task) {
+  if (task.kind.startsWith('offline_photo_') && process.env.OFFLINE_PHOTO_AUTOMATION_001 === 'false')
+    return {done:true,paused:true};
+  if (task.kind === 'offline_photo_process_001') {
+    const {runOfflinePhotoProcess001} = await import('./offline-photo-automation-001.js');
+    return runOfflinePhotoProcess001(task.payload.messageId);
+  }
+  if (task.kind === 'offline_photo_album_001') {
+    const {runOfflinePhotoAlbum001} = await import('./offline-photo-automation-001.js');
+    return runOfflinePhotoAlbum001(task.payload.mediaGroupId, task.payload.senderId);
+  }
+  if (task.kind === 'offline_photo_brief_001') {
+    const {runOfflinePhotoBrief001} = await import('./offline-photo-automation-001.js');
+    return runOfflinePhotoBrief001(task.payload.date, task.payload.city);
+  }
   if(typeof task.payload==='string')task={...task,payload:JSON.parse(task.payload)};
   if(!task.payload||typeof task.payload!=='object')throw new Error('Некорректные параметры задачи');
   if(task.kind==='rolling_window_refresh_057'){

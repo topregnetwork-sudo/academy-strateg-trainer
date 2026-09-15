@@ -20,7 +20,7 @@ test('stages once through the existing Drive bridge and keeps sender provenance'
   let state = 'pending';
   const sql = async (strings, ...values) => {
     const query = strings.join('?'); queries.push({ query, values });
-    if (query.startsWith('SELECT state')) return { rows: [{ state }] };
+    if (query.startsWith('SELECT state')) return { rows: [{ state, drive_file_id:state==='staged'?'drive-id':null }] };
     if (query.startsWith('UPDATE offline_photo_intake_001 SET state')) state = 'staged';
     return { rows: [] };
   };

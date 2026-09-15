@@ -34,5 +34,5 @@ test('forwardable brief uses direct folder links and one spacer between name/lin
     { name: 'Афанасенко Екатерина', folderUrl: 'https://drive.google.com/drive/folders/1hAzcIEWkZm1bAhvEvZonSJIqDw7ujTuZ' }
   ] });
   assert.match(text, /14\.09\.2026, Минск/);
-  assert.match(text, /Афанасенко Екатерина\nhttps:\/\/drive\.google\.com\/drive\/folders\/[^\n]+\n\u00a0\nЛось Алексей\nhttps:/);
+  assert.match(text, /1\. Афанасенко Екатерина\nhttps:\/\/drive\.google\.com\/drive\/folders\/[^\n]+\n\u00a0\n2\. Лось Алексей\nhttps:/);
 });

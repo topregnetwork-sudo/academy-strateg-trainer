@@ -34,8 +34,8 @@ export async function stageOfflinePhoto(message, { sql, telegramApi, fetchImpl =
   await sql`INSERT INTO offline_photo_intake_001(chat_id,thread_id,message_id,sender_id,media_group_id,file_id,file_unique_id)
     VALUES(${chatId},${threadId},${messageId},${String(message.from?.id || '')},${String(message.media_group_id || '')},${photo.file_id},${photo.file_unique_id || ''})
     ON CONFLICT(chat_id,message_id) DO NOTHING`;
-  const existing = (await sql`SELECT state FROM offline_photo_intake_001 WHERE chat_id=${chatId} AND message_id=${messageId}`).rows[0];
-  if (existing?.state === 'staged') return true;
+  const existing = (await sql`SELECT state,drive_file_id FROM offline_photo_intake_001 WHERE chat_id=${chatId} AND message_id=${messageId}`).rows[0];
+  if (existing?.drive_file_id && ['staged','recognizing','recognized_unmatched','assignment_pending','assigned','attention'].includes(existing.state)) return true;
   try {
     const file = await telegramApi('getFile', { file_id: photo.file_id });
     if (!file?.file_path) throw new Error('Telegram did not return a file path');

@@ -4,6 +4,21 @@ import { ensureBriefDeliveryStore, summarizeDeliveryStates, sanitizeWebhookInfo 
 
 const MAX_DAYS = 14;
 const VERSION = 'telegram-diagnostic-1';
+const BRIDGE_URL = 'https://script.google.com/macros/s/AKfycbyUI5L871jnAwoExsqOTFbcBL5K37UYv_Z0RzpA3ZuTaE_Ovp69jpgNbZGkK_vkosa6Xg/exec';
+
+async function offlineBridgeHealth() {
+  const secret = process.env.GOOGLE_DRIVE_BRIDGE_SECRET || process.env.OPERATOR_ACCESS_KEY;
+  if (!secret) return {api:'not_configured'};
+  try {
+    const response = await fetch(process.env.GOOGLE_DRIVE_BRIDGE_URL || BRIDGE_URL, {
+      method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.timeout(12000),
+      body:JSON.stringify({secret,action:'capabilities'})
+    });
+    const result = await response.json().catch(() => null);
+    return {api:response.ok && result?.ok ? 'ok' : 'error',
+      bridgeVersion:result?.ok ? String(result.bridgeVersion || '') : null};
+  } catch { return {api:'error'}; }
+}
 
 function moscowDate(value) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value));
@@ -87,6 +102,7 @@ export default async function handler(req, res) {
     if (updateStatus.attention || staleProcessing) addWarning(warnings, 'Есть необработанные или зависшие Telegram updates.');
     if (Object.entries(taskStatus).some(([key, count]) => /:attention$/.test(key) && count)) addWarning(warnings, 'Есть фоновые задачи в состоянии attention.');
 
+    const offlineBridge = req.query?.offline_bridge === '1' ? await offlineBridgeHealth() : undefined;
     return json(res, 200, {
       ok: true,
       version: VERSION,
@@ -100,6 +116,7 @@ export default async function handler(req, res) {
       message_status_7d: messageStatus,
       telegram_updates_7d: { states: updateStatus, error_classes: updateErrors, stale_processing_upper_bound: staleProcessing },
       funnel_tasks_7d: taskStatus,
+      ...(offlineBridge ? {offline_bridge:offlineBridge} : {}),
       warnings
     });
   } catch (error) {

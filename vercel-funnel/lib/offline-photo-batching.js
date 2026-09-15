@@ -5,7 +5,7 @@ const CITY_ALIASES = new Map([
 
 export function normalizeOfflineCity(value) {
   const city = String(value || '').trim().replace(/\s+/g, ' ');
-  if (!city) return null;
+  if (!city || /^(?:не указан|не указано|город не указан|unknown|n\/a|[-—])$/i.test(city)) return null;
   return CITY_ALIASES.get(city.toLocaleLowerCase('ru')) || city;
 }
 
@@ -61,12 +61,12 @@ export function renderOfflineBrief({ date, city, candidates }) {
   if (!event || !Array.isArray(candidates) || !candidates.length) throw new Error('A verified event and candidate folders are required');
   const [year, month, day] = event.date.split('-');
   const heading = `Прошедшие офлайн-тестирование ${day}.${month}.${year}, ${event.city}. Фото можно посмотреть по ссылке напротив имени.`;
-  const pairs = [...candidates].sort((a, b) => a.name.localeCompare(b.name, 'ru')).map(candidate => {
+  const pairs = [...candidates].sort((a, b) => a.name.localeCompare(b.name, 'ru')).map((candidate,index) => {
     const name = String(candidate.name || '').trim();
     const url = String(candidate.folderUrl || '').trim();
     if (!name || !/^https:\/\/drive\.google\.com\/drive\/folders\/[A-Za-z0-9_-]+(?:\?.*)?$/.test(url))
       throw new Error('Only verified candidate names and direct Drive folder URLs may enter the brief');
-    return `${name}\n${url}`;
+    return `${index+1}. ${name}\n${url}`;
   });
   return `${heading}\n\n${pairs.join('\n\u00a0\n')}`;
 }

@@ -5,12 +5,13 @@ import {scheduleFollowup081} from '../lib/stale-funnel-followups-081.js';
 import { handleFunnelCallback } from '../lib/funnel-engine.js';
 import { schedulePrimary } from '../lib/funnel-primary.js';
 import {entryKeyboard,handlePrimaryEntry,handlePrimaryRebookMenu,offerPrimaryRebook,requirePrimaryAccess} from '../lib/primary-evidence.js';
-import {effect,initFunnel} from '../lib/funnel-store.js';
+import {effect,initFunnel,createTask} from '../lib/funnel-store.js';
 import {isCandidateTestKeyword} from '../lib/telegram-event-policy.js';
 import {handleAttentionBacklogChoice084} from '../lib/unprocessed-backlog-083.js';
 import {ensureActiveGroupRemoval, ensureProductivityOutcomeStore, PRODUCTIVITY_PASS_CONFIRMATION, PRODUCTIVITY_PASS_NOT_RELEVANT, PRODUCTIVITY_RESERVE_CONFIRMATION, PRODUCTIVITY_RESERVE_DECLINED, sendReserveTopicNotice} from '../lib/productivity-outcomes-064.js';
 import { removeFromCandidateGroup } from '../lib/candidate-group-removal-078.js';
 import { isOfflinePhotoMessage, stageOfflinePhoto } from '../lib/offline-photo-intake.js';
+import { offlineTaskId } from '../lib/offline-photo-task-id.js';
 import { handleOfflineTestingMinsk20260914Choice, handleOfflineTestingMinsk20260914PreviewChoice } from '../lib/offline-testing-minsk-20260914.js';
 
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
@@ -781,6 +782,13 @@ export default async function handler(req, res) {
       await init();
       if (isOfflinePhotoMessage(message)) {
         await stageOfflinePhoto(message, { sql, telegramApi });
+        if (process.env.OFFLINE_PHOTO_AUTOMATION_001 !== 'false') {
+          await createTask('offline_photo_process_001', {messageId:String(message.message_id)},
+            new Date(Date.now()+3*60000), offlineTaskId('process', message.message_id));
+          if (message.media_group_id) await createTask('offline_photo_album_001',
+            {mediaGroupId:String(message.media_group_id),senderId:String(message.from?.id || '')},
+            new Date(Date.now()+12*60000), offlineTaskId('album', `${message.media_group_id}:${message.from?.id || ''}`));
+        }
         return complete();
       }
       if (message.left_chat_member) {
