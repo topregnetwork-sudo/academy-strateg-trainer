@@ -26,8 +26,12 @@ export function offlineCityEvidence(text) {
 }
 
 export function identifyOfflineCandidate(text, candidates) {
-  const lines = String(text || '').split(/\r?\n/).map(clean).filter(Boolean);
-  const observedPhones = [...new Set((String(text || '').match(/\+?\d[\d\s\-()]{8,20}\d/g) || [])
+  const rawLines = String(text || '').split(/\r?\n/);
+  const lines = rawLines.map(clean).filter(Boolean);
+  // Graphs and scored tests contain long columns of numbers. Only treat a
+  // number as a phone when its own line is labelled as a phone or starts with +.
+  const phoneLines = rawLines.filter(line => /(?:тел(?:ефон)?|phone|моб(?:ильный)?)/iu.test(line) || /^\s*\+/.test(line));
+  const observedPhones = [...new Set((phoneLines.join('\n').match(/\+?\d[\d \t\-()]{8,20}\d/g) || [])
     .map(digits).filter(phone => phone.length >= 9 && phone.length <= 15))];
   if (observedPhones.length > 1) return null;
   const possible = (candidates || []).filter(candidate => {

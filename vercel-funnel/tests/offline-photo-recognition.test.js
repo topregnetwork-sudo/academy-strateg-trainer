@@ -15,9 +15,18 @@ test('one handwritten form matches both a unique name and phone', () => {
 });
 
 test('conflicting phone and ambiguous event evidence cannot assign a candidate', () => {
-  assert.equal(identifyOfflineCandidate('Афанасенко Екатерина Витальевна\n375-29-1234567',candidates),null);
+  assert.equal(identifyOfflineCandidate('Афанасенко Екатерина Витальевна\nТелефон 375-29-1234567',candidates),null);
   assert.equal(offlineDateEvidence('14.09.2026 и 15.09.2026'),null);
   assert.equal(offlineCityEvidence('Минск и Челябинск'),null);
+});
+
+test('numeric score columns do not masquerade as phone numbers', () => {
+  const text='Евгения Ивановна Красовская\nДаты показанных тестов\n16.09.2026\n+100\n+90\n+80\n+70\n+60\n50\n40';
+  const candidate=identifyOfflineCandidate(text,[
+    {id:216,fullName:'Красовская Евгения Ивановна',phone:'+375291111111'},
+    {id:114,fullName:'Телелюхина Яна',phone:'+79000000000'}
+  ]);
+  assert.equal(candidate?.id,216);
 });
 
 test('a scheduler task for the same Telegram album stays idempotent', () => {
