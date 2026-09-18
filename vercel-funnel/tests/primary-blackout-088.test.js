@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {candidateBlackoutMessage,renderPrimaryBlackoutPreview} from '../lib/primary-blackout-088.js';
+import {candidateBlackoutMessage,nextAllowedPrimary,renderPrimaryBlackoutPreview} from '../lib/primary-blackout-088.js';
 
 const candidate = {
   id: 77,
@@ -25,4 +25,17 @@ test('preview is explicitly read-only and includes stable identifiers', () => {
   assert.match(text,/Кандидатов: <b>1<\/b>/);
   assert.match(text,/только чтение/);
   assert.match(text,/не изменены/);
+});
+
+test('one-off blackout skips only 18 and 19 September', async () => {
+  const schedule={
+    'fri-1800':['2026-09-18T15:00:00.000Z','2026-09-25T15:00:00.000Z'],
+    'sat-0600':['2026-09-19T03:00:00.000Z','2026-09-26T03:00:00.000Z'],
+    'mon-0800':['2026-09-21T05:00:00.000Z'],
+  };
+  const indexes={};
+  const next=(slot)=>schedule[slot][indexes[slot]=(indexes[slot]??-1)+1];
+  assert.equal(await nextAllowedPrimary('fri-1800',next,null,new Date('2026-09-18T00:00:00Z')),'2026-09-25T15:00:00.000Z');
+  assert.equal(await nextAllowedPrimary('sat-0600',next,null,new Date('2026-09-18T00:00:00Z')),'2026-09-26T03:00:00.000Z');
+  assert.equal(await nextAllowedPrimary('mon-0800',next,null,new Date('2026-09-18T00:00:00Z')),'2026-09-21T05:00:00.000Z');
 });

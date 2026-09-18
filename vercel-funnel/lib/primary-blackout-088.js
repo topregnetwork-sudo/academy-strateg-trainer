@@ -1,6 +1,17 @@
 export const PRIMARY_BLACKOUT_PREVIEW = /^\/primary_blackout_preview(?:@stazherskaya_bot)?(?:\s|$)/i;
 export const BLACKOUT_DATES = ['2026-09-18', '2026-09-19'];
 
+export async function nextAllowedPrimary(slotId, nextInterview, sql, now = new Date()) {
+  let cursor = now;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const at = nextInterview(slotId, cursor);
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(at));
+    if (!BLACKOUT_DATES.includes(day)) return at;
+    cursor = new Date(new Date(at).getTime() + 60000);
+  }
+  throw new Error('Не удалось найти доступную дату после разового исключения');
+}
+
 const esc = value => String(value ?? '')
   .replaceAll('&', '&amp;')
   .replaceAll('<', '&lt;')
@@ -22,7 +33,7 @@ export function candidateBlackoutMessage(candidate) {
 
 export async function primaryBlackoutPreview(sql) {
   const candidates = (await sql`
-    SELECT id,first_name,last_name,username,city,status,slot_id,interview_at,
+    SELECT id,chat_id,first_name,last_name,username,city,status,slot_id,interview_at,
            reminded_30m,no_show_followup_sent,updated_at
     FROM candidates
     WHERE (interview_at AT TIME ZONE 'Europe/Moscow')::date
@@ -58,4 +69,3 @@ export function renderPrimaryBlackoutPreview(data) {
   lines.push('', '⚠️ Это только чтение. Даты, записи, статусы, задачи и сообщения не изменены.');
   return lines.join('\n');
 }
-
