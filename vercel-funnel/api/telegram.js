@@ -13,6 +13,7 @@ import { removeFromCandidateGroup } from '../lib/candidate-group-removal-078.js'
 import { isOfflinePhotoMessage, stageOfflinePhoto } from '../lib/offline-photo-intake.js';
 import { offlineTaskId } from '../lib/offline-photo-task-id.js';
 import { handleOfflineTestingMinsk20260914Choice, handleOfflineTestingMinsk20260914PreviewChoice } from '../lib/offline-testing-minsk-20260914.js';
+import {PRIMARY_BLACKOUT_PREVIEW,primaryBlackoutPreview,renderPrimaryBlackoutPreview} from '../lib/primary-blackout-088.js';
 
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
 const CANDIDATE_GROUP_COMMAND = /^\/candidate_group(?:@stazherskaya_bot)?(?:\s|$)/i;
@@ -380,6 +381,25 @@ async function configureCandidateGroup(message) {
   }
   await sql`INSERT INTO app_settings(key,value,updated_at) VALUES('candidate_group_chat_id',${chatId},NOW()) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=NOW()`;
   await telegram(chatId, '✅ Группа кандидатов зарегистрирована. Участники этой группы будут исключены из сообщений о повторной записи на собеседование.');
+  return true;
+}
+
+async function previewPrimaryBlackout(message) {
+  if (!PRIMARY_BLACKOUT_PREVIEW.test(message.text || '')) return false;
+  const chatId = String(message.chat.id);
+  const threadId = message.message_thread_id ? Number(message.message_thread_id) : undefined;
+  let member;
+  try {
+    member = await telegramApi('getChatMember', { chat_id: chatId, user_id: message.from?.id });
+  } catch (error) {
+    console.error('[primary-blackout-088] admin verification failed', { chatId, userId: message.from?.id, message: String(error) });
+  }
+  if (!['creator','administrator'].includes(member?.status)) {
+    await telegram(chatId, '⚠️ Предпросмотр доступен только администратору рабочей группы.', { message_thread_id: threadId });
+    return true;
+  }
+  const preview = await primaryBlackoutPreview(sql);
+  await telegram(chatId, renderPrimaryBlackoutPreview(preview), { message_thread_id: threadId, disable_web_page_preview: true });
   return true;
 }
 
@@ -800,9 +820,9 @@ export default async function handler(req, res) {
         return complete();
       }
       if (await handleNewCandidateGroupMembers(message)) return complete();
-      if (!TOPIC_COMMAND.test(message.text || '') && !CANDIDATE_GROUP_COMMAND.test(message.text || '')) return complete();
+      if (!TOPIC_COMMAND.test(message.text || '') && !CANDIDATE_GROUP_COMMAND.test(message.text || '') && !PRIMARY_BLACKOUT_PREVIEW.test(message.text || '')) return complete();
       try {
-        if (!await configureCandidateGroup(message)) await configureTrainerTopic(message);
+        if (!await previewPrimaryBlackout(message) && !await configureCandidateGroup(message)) await configureTrainerTopic(message);
       } catch (error) {
         console.error('[telegram] trainer topic setup failed', { chatId: String(message.chat.id), threadId: message.message_thread_id, message: String(error), stack: error?.stack });
         const extra = message.message_thread_id ? { message_thread_id: Number(message.message_thread_id) } : {};
