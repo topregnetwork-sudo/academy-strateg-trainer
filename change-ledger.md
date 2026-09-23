@@ -358,3 +358,6 @@ n8n не удаляется и не отключается как источни
 - Production release: `dpl_7842CKMspjFaBTVzfiCXwLAkryjH`. После исполнения одноразовый endpoint удалён из исходников; повторное применение защищено идентификатором изменения.
 
 Откат кода: `git revert 33f1393 f6dfa3a 1970e5e && git push origin main`. Уже доставленное Telegram-сообщение и архив истории автоматически не удалять.
+# OWNER-CITY-CAMPAIGN-089 — 23 сентября 2026
+
+Baseline `97629ef`; rollback `rollback/trainer-owner-city-campaign-before-089`. Добавлены два owner-only deep-link маршрута без выбора города: отдельные Минск и Челябинск campaign/session IDs, собственные журналы, короткая анкета из двух вопросов и city-specific переход в Batman-бот. Используется существующая настройка утреннего Zoom. Общий `/start`, кандидаты, статусы, записи, вместимость, сообщения, группы и массовые отправки не меняются. Полный контракт: `docs/changes/OWNER-CITY-CAMPAIGN-089.md`.

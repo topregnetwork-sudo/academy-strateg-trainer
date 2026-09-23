@@ -14,6 +14,7 @@ import { isOfflinePhotoMessage, stageOfflinePhoto } from '../lib/offline-photo-i
 import { offlineTaskId } from '../lib/offline-photo-task-id.js';
 import { handleOfflineTestingMinsk20260914Choice, handleOfflineTestingMinsk20260914PreviewChoice } from '../lib/offline-testing-minsk-20260914.js';
 import {PRIMARY_BLACKOUT_PREVIEW,nextAllowedPrimary,primaryBlackoutPreview,renderPrimaryBlackoutPreview} from '../lib/primary-blackout-088.js';
+import {handleOwnerCityCampaignStart,handleOwnerCityCampaignCallback} from '../lib/owner-city-campaign-089.js';
 
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
 const CANDIDATE_GROUP_COMMAND = /^\/candidate_group(?:@stazherskaya_bot)?(?:\s|$)/i;
@@ -404,6 +405,7 @@ async function previewPrimaryBlackout(message) {
 }
 
 async function handlePrivateStart(message) {
+  if (await handleOwnerCityCampaignStart(message, { sql, telegram })) return;
   const chatId = String(message.chat.id);
   if (/^\/start\s+questionnaire_done$/i.test(message.text || '')) {
     const candidate = (await sql`SELECT id,status FROM candidates WHERE chat_id=${chatId} LIMIT 1`).rows[0];
@@ -791,6 +793,7 @@ export default async function handler(req, res) {
     const callback = update.callback_query;
     if (callback) {
       await init();
+      if (await handleOwnerCityCampaignCallback(callback, { sql, telegram, telegramApi })) return complete();
       if((await sql`SELECT id FROM candidates WHERE chat_id=${String(callback.from.id)} AND status='test_1_incomplete_removed'`).rows[0]){await telegramApi('answerCallbackQuery',{callback_query_id:callback.id,text:'Ваше участие в текущем отборе завершено.',show_alert:true});return complete();}
       if (!await handlePrimaryEntry(callback) && !await handlePrimaryRebookMenu(callback) && !await handleFunnelCallback(callback) && !await handleReservePreviewChoice(callback) && !await handleExperiencedCollaborationChoice(callback) && !await handleAttentionChoice084(callback) && !await handleProductivityPassedChoice(callback) && !await handleProductivityReserveChoice(callback) && !await handleOfflineTestingMinsk20260914PreviewChoice(callback) && !await handleOfflineTestingMinsk20260914Choice(callback) && !await handleOfflineInterviewChoice(callback) && !await handleNadezhdaFinalistChoice(callback) && !await handleOfflineOutcomeChoice(callback) && !await handleRescheduleChoice(callback)) await handleSlotChoice(callback);
       return complete();
