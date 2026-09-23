@@ -14,7 +14,7 @@ import { isOfflinePhotoMessage, stageOfflinePhoto } from '../lib/offline-photo-i
 import { offlineTaskId } from '../lib/offline-photo-task-id.js';
 import { handleOfflineTestingMinsk20260914Choice, handleOfflineTestingMinsk20260914PreviewChoice } from '../lib/offline-testing-minsk-20260914.js';
 import {PRIMARY_BLACKOUT_PREVIEW,nextAllowedPrimary,primaryBlackoutPreview,renderPrimaryBlackoutPreview} from '../lib/primary-blackout-088.js';
-import {handleOwnerCityCampaignStart,handleOwnerCityCampaignCallback} from '../lib/owner-city-campaign-089.js';
+import {handleOwnerCityCampaignStart,handleOwnerCityCampaignCallback,handleOwnerCityKeyword} from '../lib/owner-city-campaign-089.js';
 
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
 const CANDIDATE_GROUP_COMMAND = /^\/candidate_group(?:@stazherskaya_bot)?(?:\s|$)/i;
@@ -405,7 +405,7 @@ async function previewPrimaryBlackout(message) {
 }
 
 async function handlePrivateStart(message) {
-  if (await handleOwnerCityCampaignStart(message, { sql, telegram })) return;
+  if (await handleOwnerCityCampaignStart(message, { sql, telegram, telegramApi })) return;
   const chatId = String(message.chat.id);
   if (/^\/start\s+questionnaire_done$/i.test(message.text || '')) {
     const candidate = (await sql`SELECT id,status FROM candidates WHERE chat_id=${chatId} LIMIT 1`).rows[0];
@@ -840,6 +840,7 @@ export default async function handler(req, res) {
 
     await init();
     await savePrivateIncoming(message);
+    if (await handleOwnerCityKeyword(message, { sql, telegram })) return complete();
     const closed=(await sql`SELECT id,status FROM candidates WHERE chat_id=${String(message.chat.id)} AND status='test_1_incomplete_removed'`).rows[0];
     if(closed){await closedCandidateReply(message,closed);return complete();}
     if (await handleNotRelevant(message)) return complete();

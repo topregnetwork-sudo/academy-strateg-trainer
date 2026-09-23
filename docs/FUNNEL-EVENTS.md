@@ -2,7 +2,7 @@
 
 ## OWNER.CITY.CAMPAIGN — 089
 
-Owner-only bounded E2E использует два независимых deep-link входа: Минск и Челябинск. У каждого свой campaign ID, Zoom session ID, короткая анкета, Batman payload и delivery/evidence row. City chooser отсутствует. Общий `/start`, candidate status и массовые маршруты не меняются. Контракт и rollback: `docs/changes/OWNER-CITY-CAMPAIGN-089.md`.
+Owner-only bounded E2E использует два независимых deep-link входа: Минск и Челябинск. У каждого свой campaign ID, Zoom session ID, active assignment, анонс и delivery/evidence row. Первое сообщение содержит только Zoom-приглашение. После фактического Zoom или просмотра записи человек пишет точное `28 сентября` и получает анонс только своего города. City chooser и анкета отсутствуют. Общий `/start`, candidate status и массовые маршруты не меняются. Контракт и rollback: `docs/changes/OWNER-CITY-CAMPAIGN-089.md`.
 
 ## REVIEW.CHELYABINSK —046
 Поправка пользователя до запуска: Челябинск получает «Изменить время» и «Отменить запись». Отмена конкретной записи возвращает productivity_invited (не cancelled), освобождает место, точное событие review_booking_cancelled отправляет подтверждение/сводку635 и обновляет доступные кнопки приглашений этой встречи. Старое напоминание не отправляется без исходной записи/версии. Это заменяет фразу об отключённом изменении времени ниже. Минск не менять.

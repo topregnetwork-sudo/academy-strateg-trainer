@@ -1,11 +1,10 @@
 const OWNER_USERNAME = 'topregstrateg';
-const BATMAN_BOT = 'https://t.me/batman_strateg_bot';
-
+const KEYWORD = '28 сентября';
+const FLOW_VERSION = 'zoom_keyword_v2';
 const CAMPAIGNS = {
-  minsk: { city: 'Минск', campaignId: 'trainer_owner_minsk_20260923_089', zoomSessionId: 'trainer_batman_minsk_morning_20260923_089', batmanStart: 'trainer_minsk_089' },
-  chelyabinsk: { city: 'Челябинск', campaignId: 'trainer_owner_chelyabinsk_20260923_089', zoomSessionId: 'trainer_batman_chelyabinsk_morning_20260923_089', batmanStart: 'trainer_chelyabinsk_089' },
+  minsk: { city: 'Минск', campaignId: 'trainer_owner_minsk_20260923_089', zoomSessionId: 'trainer_batman_minsk_morning_20260923_089', invitedOwnerPrice: '20 рублей' },
+  chelyabinsk: { city: 'Челябинск', campaignId: 'trainer_owner_chelyabinsk_20260923_089', zoomSessionId: 'trainer_batman_chelyabinsk_morning_20260923_089', invitedOwnerPrice: 'PENDING_OWNER' },
 };
-
 let initialized;
 async function ensureStore(sql) {
   if (!initialized) initialized = (async () => {
@@ -14,13 +13,18 @@ async function ensureStore(sql) {
       questionnaire_state TEXT NOT NULL DEFAULT 'intro', answer_invite_owners BOOLEAN, answer_responsible BOOLEAN,
       intro_message_id TEXT, question_one_message_id TEXT, question_two_message_id TEXT, completion_message_id TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      PRIMARY KEY(chat_id,campaign_id)
-    )`;
+      PRIMARY KEY(chat_id,campaign_id))`;
+    await sql`ALTER TABLE owner_city_campaign_entries089
+      ADD COLUMN IF NOT EXISTS flow_version TEXT,
+      ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS corrected_message_id TEXT,
+      ADD COLUMN IF NOT EXISTS keyword_received_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS announcement_message_id TEXT,
+      ADD COLUMN IF NOT EXISTS invited_owner_price TEXT`;
     await sql`ALTER TABLE owner_city_campaign_entries089 ENABLE ROW LEVEL SECURITY`;
   })().catch(error => { initialized = null; throw error; });
   return initialized;
 }
-
 function ownerAllowed(actor) { return String(actor?.username || '').toLowerCase() === OWNER_USERNAME; }
 async function zoomUrl(sql) {
   const setting = (await sql`SELECT value FROM app_settings WHERE key='zoom_meeting_url' LIMIT 1`).rows[0];
@@ -30,97 +34,62 @@ function campaignByStart(text) {
   const match = String(text || '').match(/^\/start\s+owner_city_089_(minsk|chelyabinsk)$/i);
   return match ? CAMPAIGNS[match[1].toLowerCase()] : null;
 }
-
-export async function handleOwnerCityCampaignStart(message, { sql, telegram }) {
+const isKeyword = text => String(text || '').trim().toLowerCase() === KEYWORD;
+const inviteText = campaign => `🧪 <b>Тест · Zoom-приглашение · ${campaign.city}</b>\n\nПриглашаем вас на Zoom-знакомство с направлением Batman Академии Стратег. Это отдельная городская кампания «${campaign.city}».\n\nПосле фактического участия в Zoom или просмотра записи самостоятельно напишите в этот чат точное кодовое слово: <b>28 сентября</b>. Тогда бот покажет анонс мероприятия только вашего города.\n\nСтатус Trainer не меняется. Массовая отправка не выполняется.`;
+function announcementText(campaign) {
+  const price = campaign.invitedOwnerPrice === 'PENDING_OWNER' ? 'Стоимость для приглашённых собственников бизнеса пока не подтверждена владельцем.' : `Стоимость для приглашённых собственников бизнеса: <b>${campaign.invitedOwnerPrice}</b>.`;
+  return `📅 <b>Мероприятие Академии Стратег · ${campaign.city}</b>\n\nДата: <b>28 сентября</b>.\n\nДля участника Zoom или посмотревшего запись посещение мероприятия — <b>бесплатно</b>.\n${price}\n\nЭто анонс только кампании «${campaign.city}».`;
+}
+async function disableOldKeyboard(chatId, messageId, telegramApi) {
+  if (!messageId) return;
+  try { await telegramApi('editMessageReplyMarkup', { chat_id: chatId, message_id: Number(messageId), reply_markup: { inline_keyboard: [] } }); }
+  catch (error) { if (!/message is not modified|message to edit not found/i.test(String(error?.message || error))) throw error; }
+}
+export async function handleOwnerCityCampaignStart(message, { sql, telegram, telegramApi }) {
   const campaign = campaignByStart(message?.text);
   if (!campaign) return false;
   const chatId = String(message.chat?.id || '');
-  if (!ownerAllowed(message.from)) {
-    await telegram(chatId, 'Этот тестовый вход доступен только владельцу проекта.');
-    return true;
-  }
+  if (!ownerAllowed(message.from)) { await telegram(chatId, 'Этот тестовый вход доступен только владельцу проекта.'); return true; }
   await ensureStore(sql);
-  const existing = (await sql`SELECT intro_message_id FROM owner_city_campaign_entries089 WHERE chat_id=${chatId} AND campaign_id=${campaign.campaignId} LIMIT 1`).rows[0];
-  if (existing?.intro_message_id) return true;
   const zoom = await zoomUrl(sql);
   if (!zoom) throw new Error(`owner_city_campaign_zoom_missing:${campaign.campaignId}`);
-  await sql`INSERT INTO owner_city_campaign_entries089(chat_id,campaign_id,city,zoom_session_id)
-    VALUES(${chatId},${campaign.campaignId},${campaign.city},${campaign.zoomSessionId})
-    ON CONFLICT(chat_id,campaign_id) DO NOTHING`;
-  const key = campaign.city === 'Минск' ? 'minsk' : 'chelyabinsk';
-  const text = `🧪 <b>Тестовый маршрут · ${campaign.city}</b>\n\nЭто отдельная городская кампания знакомства с ролью Batman. Здесь только маршрут «${campaign.city}»: своё Zoom-собеседование, свой журнал и последующий переход в Batman.\n\nСтатус Trainer не меняется. Массовая отправка не выполняется.`;
-  const messageId = await telegram(chatId, text, { reply_markup: { inline_keyboard: [
-    [{ text: `Подключиться к Zoom · ${campaign.city}`, url: zoom }],
-    [{ text: 'Ответить на 2 коротких вопроса', callback_data: `owner_city_089_q1_${key}` }],
-  ] } });
-  await sql`UPDATE owner_city_campaign_entries089 SET intro_message_id=${String(messageId)},updated_at=NOW() WHERE chat_id=${chatId} AND campaign_id=${campaign.campaignId}`;
+  await sql`UPDATE owner_city_campaign_entries089 SET active=FALSE,updated_at=NOW() WHERE chat_id=${chatId} AND active=TRUE`;
+  const row = (await sql`INSERT INTO owner_city_campaign_entries089(chat_id,campaign_id,city,zoom_session_id,questionnaire_state,flow_version,active,invited_owner_price)
+    VALUES(${chatId},${campaign.campaignId},${campaign.city},${campaign.zoomSessionId},'zoom_invited',${FLOW_VERSION},TRUE,${campaign.invitedOwnerPrice})
+    ON CONFLICT(chat_id,campaign_id) DO UPDATE SET questionnaire_state='zoom_invited',flow_version=${FLOW_VERSION},active=TRUE,invited_owner_price=${campaign.invitedOwnerPrice},updated_at=NOW()
+    RETURNING intro_message_id,corrected_message_id`).rows[0];
+  await disableOldKeyboard(chatId, row?.intro_message_id, telegramApi);
+  if (row?.corrected_message_id) return true;
+  const messageId = await telegram(chatId, inviteText(campaign), { reply_markup: { inline_keyboard: [[{ text: `Подключиться к Zoom · ${campaign.city}`, url: zoom }]] } });
+  await sql`UPDATE owner_city_campaign_entries089 SET corrected_message_id=${String(messageId)},updated_at=NOW() WHERE chat_id=${chatId} AND campaign_id=${campaign.campaignId}`;
   return true;
 }
-
-function callbackMatch(data) {
-  const match = String(data || '').match(/^owner_city_089_(q1|invite_yes|invite_no|responsible_yes|responsible_no)_(minsk|chelyabinsk)$/);
-  return match ? { action: match[1], key: match[2], campaign: CAMPAIGNS[match[2]] } : null;
+function oldCallback(data) {
+  const match = String(data || '').match(/^owner_city_089_(?:q1|invite_yes|invite_no|responsible_yes|responsible_no)_(minsk|chelyabinsk)$/);
+  return match ? CAMPAIGNS[match[1]] : null;
 }
-
-export async function handleOwnerCityCampaignCallback(callback, { sql, telegram, telegramApi }) {
-  const parsed = callbackMatch(callback?.data);
-  if (!parsed) return false;
+export async function handleOwnerCityCampaignCallback(callback, { sql, telegramApi }) {
+  const campaign = oldCallback(callback?.data);
+  if (!campaign) return false;
   const chatId = String(callback.message?.chat?.id || callback.from?.id || '');
-  if (!ownerAllowed(callback.from)) {
-    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Кнопка доступна только владельцу проекта.', show_alert: true });
-    return true;
-  }
+  if (!ownerAllowed(callback.from)) { await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Кнопка доступна только владельцу проекта.', show_alert: true }); return true; }
   await ensureStore(sql);
-  const row = (await sql`SELECT * FROM owner_city_campaign_entries089 WHERE chat_id=${chatId} AND campaign_id=${parsed.campaign.campaignId} LIMIT 1`).rows[0];
-  if (!row) {
-    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Сначала откройте персональный вход этой кампании.', show_alert: true });
-    return true;
-  }
-  if (parsed.action === 'q1') {
-    if (!row.question_one_message_id) {
-      const text = `<b>${parsed.campaign.city} · вопрос 1 из 2</b>\n\nГотовы ли вы приглашать именно предпринимателей и собственников бизнеса на подтверждённые мероприятия Академии — без массового спама и обещаний результата?`;
-      const messageId = await telegram(chatId, text, { reply_markup: { inline_keyboard: [
-        [{ text: 'Да, готов', callback_data: `owner_city_089_invite_yes_${parsed.key}` }],
-        [{ text: 'Нет', callback_data: `owner_city_089_invite_no_${parsed.key}` }],
-      ] } });
-      await sql`UPDATE owner_city_campaign_entries089 SET questionnaire_state='question_one',question_one_message_id=${String(messageId)},updated_at=NOW() WHERE chat_id=${chatId} AND campaign_id=${parsed.campaign.campaignId}`;
-    }
-    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id });
-    return true;
-  }
-  if (parsed.action === 'invite_no') {
-    await sql`UPDATE owner_city_campaign_entries089 SET questionnaire_state='declined',answer_invite_owners=false,updated_at=NOW() WHERE chat_id=${chatId} AND campaign_id=${parsed.campaign.campaignId}`;
-    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Ответ сохранён. Trainer-статус не изменён.', show_alert: true });
-    return true;
-  }
-  if (parsed.action === 'invite_yes') {
-    if (!row.question_two_message_id) {
-      const text = `<b>${parsed.campaign.city} · вопрос 2 из 2</b>\n\nГотовы ли вы сначала разобраться в предложении, говорить с людьми уважительно и фиксировать реальный следующий шаг, не считая клик или просмотр результатом?`;
-      const messageId = await telegram(chatId, text, { reply_markup: { inline_keyboard: [
-        [{ text: 'Да, согласен', callback_data: `owner_city_089_responsible_yes_${parsed.key}` }],
-        [{ text: 'Нет', callback_data: `owner_city_089_responsible_no_${parsed.key}` }],
-      ] } });
-      await sql`UPDATE owner_city_campaign_entries089 SET questionnaire_state='question_two',answer_invite_owners=true,question_two_message_id=${String(messageId)},updated_at=NOW() WHERE chat_id=${chatId} AND campaign_id=${parsed.campaign.campaignId}`;
-    }
-    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id });
-    return true;
-  }
-  if (parsed.action === 'responsible_no') {
-    await sql`UPDATE owner_city_campaign_entries089 SET questionnaire_state='declined',answer_responsible=false,updated_at=NOW() WHERE chat_id=${chatId} AND campaign_id=${parsed.campaign.campaignId}`;
-    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Ответ сохранён. Trainer-статус не изменён.', show_alert: true });
-    return true;
-  }
-  if (row.completion_message_id) {
-    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Анкета уже сохранена. Переход в Batman находится в сообщении ниже.', show_alert: true });
-    return true;
-  }
-  const text = `✅ <b>${parsed.campaign.city}: короткая анкета сохранена</b>\n\nЭто тестовая фиксация готовности познакомиться с ролью. Она не активирует Batman, не присваивает btm_id и не меняет ваш Trainer-статус.\n\nСледующий отдельный шаг — открыть Batman-бот.`;
-  const messageId = await telegram(chatId, text, { reply_markup: { inline_keyboard: [[
-    { text: 'Перейти в Batman-бот', url: `${BATMAN_BOT}?start=${parsed.campaign.batmanStart}` },
-  ]] } });
-  await sql`UPDATE owner_city_campaign_entries089 SET questionnaire_state='completed',answer_responsible=true,completion_message_id=${String(messageId)},updated_at=NOW() WHERE chat_id=${chatId} AND campaign_id=${parsed.campaign.campaignId}`;
-  await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Ответы сохранены.' });
+  await disableOldKeyboard(chatId, callback.message?.message_id, telegramApi);
+  await sql`UPDATE owner_city_campaign_entries089 SET questionnaire_state='superseded_no_questionnaire',flow_version=${FLOW_VERSION},updated_at=NOW() WHERE chat_id=${chatId} AND campaign_id=${campaign.campaignId}`;
+  await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Анкета отменена. После Zoom или просмотра записи напишите: 28 сентября', show_alert: true });
   return true;
 }
-
-export { CAMPAIGNS };
+export async function handleOwnerCityKeyword(message, { sql, telegram }) {
+  if (!isKeyword(message?.text) || !ownerAllowed(message.from)) return false;
+  const chatId = String(message.chat?.id || '');
+  await ensureStore(sql);
+  const row = (await sql`SELECT campaign_id,announcement_message_id FROM owner_city_campaign_entries089 WHERE chat_id=${chatId} AND active=TRUE AND flow_version=${FLOW_VERSION} ORDER BY updated_at DESC LIMIT 1`).rows[0];
+  if (!row) return false;
+  const campaign = Object.values(CAMPAIGNS).find(item => item.campaignId === row.campaign_id);
+  if (!campaign) throw new Error(`owner_city_campaign_unknown:${row.campaign_id}`);
+  if (row.announcement_message_id) return true;
+  const messageId = await telegram(chatId, announcementText(campaign));
+  await sql`UPDATE owner_city_campaign_entries089 SET questionnaire_state='event_announced',keyword_received_at=COALESCE(keyword_received_at,NOW()),announcement_message_id=${String(messageId)},updated_at=NOW() WHERE chat_id=${chatId} AND campaign_id=${campaign.campaignId} AND announcement_message_id IS NULL`;
+  return true;
+}
+export { CAMPAIGNS, FLOW_VERSION, KEYWORD };
