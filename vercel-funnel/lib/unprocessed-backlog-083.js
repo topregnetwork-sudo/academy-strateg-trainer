@@ -3,6 +3,7 @@ import { removeFromCandidateGroup } from './candidate-group-removal-078.js';
 import { createTask, effect } from './funnel-store.js';
 import { slots } from '../api/_core.js';
 import crypto from 'node:crypto';
+import { latestOutgoingMessage083 } from './unprocessed-backlog-query-083.js';
 
 const declineRe = /\b(?:не\s*актуальн|отмена|отказ|не\s*интересно|нет,\s*спасибо)\b/iu;
 const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
@@ -17,11 +18,7 @@ async function latestIncoming(candidateId) {
 }
 
 async function latestOutgoing(candidateId, kinds) {
-  return (await sql`
-    SELECT kind,text,created_at FROM messages
-    WHERE candidate_id=${Number(candidateId)} AND direction='out' AND kind IN ${sql(kinds)}
-    ORDER BY created_at DESC,id DESC LIMIT 1
-  `).rows[0] || null;
+  return latestOutgoingMessage083(sql, candidateId, kinds);
 }
 
 async function move(candidate, status, trigger) {
