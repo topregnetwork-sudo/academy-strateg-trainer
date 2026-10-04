@@ -1,4 +1,4 @@
-import { body, init, isPrimarySlotAllowed, json, nextInterview, slots, telegram, telegramApi, sql } from './_core.js';
+import { body, init, isPrimarySlotAllowed, json, nextInterview, slots, telegram, telegramApi, sql, transaction } from './_core.js';
 import { handleOfflineInterviewChoice } from './offline-interview.js';
 import { cleanupRemovalService } from './_removal-service.js';
 import {scheduleFollowup081} from '../lib/stale-funnel-followups-081.js';
@@ -10,6 +10,7 @@ import {isCandidateTestKeyword} from '../lib/telegram-event-policy.js';
 import {handleAttentionBacklogChoice084} from '../lib/unprocessed-backlog-083.js';
 import {ensureActiveGroupRemoval, ensureProductivityOutcomeStore, PRODUCTIVITY_PASS_CONFIRMATION, PRODUCTIVITY_PASS_NOT_RELEVANT, PRODUCTIVITY_RESERVE_CONFIRMATION, PRODUCTIVITY_RESERVE_DECLINED, sendReserveTopicNotice} from '../lib/productivity-outcomes-064.js';
 import { removeFromCandidateGroup } from '../lib/candidate-group-removal-078.js';
+import {claimTrainerApplication} from '../lib/trainer-application-single-bind.js';
 
 const TOPIC_COMMAND = /^\/trainer_topic(?:@stazherskaya_bot)?(?:\s|$)/i;
 const CANDIDATE_GROUP_COMMAND = /^\/candidate_group(?:@stazherskaya_bot)?(?:\s|$)/i;
@@ -37,6 +38,29 @@ const EXPERIENCED_COLLABORATION_BUTTONS = {
     [{ text: 'Нет, спасибо', callback_data: 'experienced_collaboration_no' }],
   ] },
 };
+
+function trainerApplicationClaimStore(runTransaction = transaction) {
+  return {
+    withApplicationLock(code, work) {
+      return runTransaction(async query => {
+        const app = (await query`SELECT * FROM applications WHERE code=${code} FOR UPDATE`).rows[0];
+        return work({
+          app,
+          async getCandidate(candidateId) {
+            return (await query`SELECT * FROM candidates WHERE id=${candidateId} LIMIT 1`).rows[0];
+          },
+          async upsertCandidate(lockedApp, input) {
+            const experienced = lockedApp.trainer_experience_level === 'professional';
+            return (await query`INSERT INTO candidates(chat_id,username,first_name,last_name,phone,city,slot_id,interview_at,source_id,status) VALUES(${input.chatId},${input.username || null},${input.firstName || lockedApp.full_name},${input.lastName || null},${lockedApp.phone || null},${lockedApp.city},NULL,NULL,${lockedApp.source_id},${experienced ? 'experienced_not_target' : 'new'}) ON CONFLICT(chat_id) DO UPDATE SET username=EXCLUDED.username,first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,phone=COALESCE(EXCLUDED.phone,candidates.phone),city=EXCLUDED.city,source_id=EXCLUDED.source_id,status=CASE WHEN candidates.status IN ('new','experienced_not_target') AND candidates.interview_at IS NULL THEN EXCLUDED.status ELSE candidates.status END,consent=true,updated_at=NOW() RETURNING id,chat_id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
+          },
+          async bindApplication(applicationId, candidateId) {
+            return Boolean((await query`UPDATE applications SET candidate_id=${candidateId} WHERE id=${applicationId} AND candidate_id IS NULL RETURNING id`).rows[0]);
+          },
+        });
+      });
+    },
+  };
+}
 
 const EXPERIENCED_COLLABORATION_YES = `Спасибо! Мы зафиксировали ваш интерес к сотрудничеству с Академией Стратег.
 
@@ -399,24 +423,35 @@ async function handlePrivateStart(message) {
     return;
   }
   const match = message.text?.match(/^\/start\s+trainer_app_([a-zA-Z0-9]{20})$/);
-  const app = match ? (await sql`SELECT * FROM applications WHERE code=${match[1]}`).rows[0] : null;
-  if (!app) {
+  if (!match) {
     await telegram(chatId, 'Здравствуйте! Вернитесь на страницу вакансии Академии Стратег и сначала заполните анкету.');
     return;
   }
-  if (app.candidate_id) {
-    const linked = (await sql`SELECT id,chat_id,status,interview_at FROM candidates WHERE id=${app.candidate_id} LIMIT 1`).rows[0];
-    if (linked?.chat_id === chatId && linked.status === 'interview_booked' && linked.interview_at) {
-      const rebook=await offerPrimaryRebook(chatId,`start:${message.message_id||Date.now()}`);
-      if(rebook.ok)return;
-      await telegram(chatId, 'Вы уже записаны на собеседование. Подтверждение и ссылка Zoom находятся выше в этом чате.');
-      return;
-    }
+  const claim = await claimTrainerApplication({
+    code: match[1],
+    chatId,
+    username: message.from?.username,
+    firstName: message.from?.first_name,
+    lastName: message.from?.last_name,
+  }, trainerApplicationClaimStore());
+  if (claim.kind === 'missing') {
+    await telegram(chatId, 'Здравствуйте! Вернитесь на страницу вакансии Академии Стратег и сначала заполните анкету.');
+    return;
+  }
+  if (claim.kind === 'claimed_elsewhere') {
+    await telegram(chatId, 'Эта персональная ссылка уже использована в другом Telegram-аккаунте. Откройте чат в том аккаунте, где вы начали, либо заполните новую анкету.');
+    return;
+  }
+  const app = claim.app;
+  const row = claim.candidate;
+  if (claim.kind === 'same_chat' && row.status === 'interview_booked' && row.interview_at) {
+    const rebook=await offerPrimaryRebook(chatId,`start:${message.message_id||Date.now()}`);
+    if(rebook.ok)return;
+    await telegram(chatId, 'Вы уже записаны на собеседование. Подтверждение и ссылка Zoom находятся выше в этом чате.');
+    return;
   }
 
   const experienced = app.trainer_experience_level === 'professional';
-  const row = (await sql`INSERT INTO candidates(chat_id,username,first_name,last_name,phone,city,slot_id,interview_at,source_id,status) VALUES(${chatId},${message.from?.username || null},${message.from?.first_name || app.full_name},${message.from?.last_name || null},${app.phone || null},${app.city},NULL,NULL,${app.source_id},${experienced ? 'experienced_not_target' : 'new'}) ON CONFLICT(chat_id) DO UPDATE SET username=EXCLUDED.username,first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,phone=COALESCE(EXCLUDED.phone,candidates.phone),city=EXCLUDED.city,source_id=EXCLUDED.source_id,status=CASE WHEN candidates.status IN ('new','experienced_not_target') AND candidates.interview_at IS NULL THEN EXCLUDED.status ELSE candidates.status END,consent=true,updated_at=NOW() RETURNING id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
-  await sql`UPDATE applications SET candidate_id=${row.id} WHERE id=${app.id}`;
   if (!['new','experienced_not_target'].includes(row.status)) {
     const reply = 'Спасибо, анкета получена. Ваш текущий этап отбора сохранён — повторное заполнение первой анкеты его не изменило. Продолжайте по последним инструкциям бота.';
     const messageId = await telegram(chatId, reply);
