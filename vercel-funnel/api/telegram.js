@@ -1,4 +1,4 @@
-import { body, init, json, nextInterview, slots, telegram, telegramApi, sql } from './_core.js';
+import { body, init, isPrimarySlotAllowed, json, nextInterview, slots, telegram, telegramApi, sql } from './_core.js';
 import { handleOfflineInterviewChoice } from './offline-interview.js';
 import { cleanupRemovalService } from './_removal-service.js';
 import {scheduleFollowup081} from '../lib/stale-funnel-followups-081.js';
@@ -434,40 +434,47 @@ async function handlePrivateStart(message) {
   await scheduleFollowup081(row.id,'primary').catch(e=>console.error('[followup081]',row.id,e.message));
 }
 
-async function handleSlotChoice(callback) {
+export async function handleSlotChoice(callback, dependencies = {}) {
+  const query = dependencies.sql || sql;
+  const send = dependencies.telegram || telegram;
+  const answer = dependencies.telegramApi || telegramApi;
   const match = callback.data?.match(/^trainer_slot_([a-zA-Z0-9]{20})_([a-z]{3}-[0-9]{4})$/);
-  if (!match || !slots[match[2]]) return false;
-  const chatId = String(callback.message?.chat?.id || callback.from?.id || '');
-  const app = (await sql`SELECT * FROM applications WHERE code=${match[1]} LIMIT 1`).rows[0];
-  if (!app || app.trainer_experience_level === 'professional' || !app.candidate_id) {
-    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Запись для этой анкеты недоступна.' });
+  if (!match) return false;
+  if (!isPrimarySlotAllowed(match[2])) {
+    await answer('answerCallbackQuery', { callback_query_id: callback.id, text: 'Это время больше недоступно. Выберите актуальный вариант.', show_alert: true });
     return true;
   }
-  const candidate = (await sql`SELECT * FROM candidates WHERE id=${app.candidate_id} AND chat_id=${chatId} LIMIT 1`).rows[0];
+  const chatId = String(callback.message?.chat?.id || callback.from?.id || '');
+  const app = (await query`SELECT * FROM applications WHERE code=${match[1]} LIMIT 1`).rows[0];
+  if (!app || app.trainer_experience_level === 'professional' || !app.candidate_id) {
+    await answer('answerCallbackQuery', { callback_query_id: callback.id, text: 'Запись для этой анкеты недоступна.' });
+    return true;
+  }
+  const candidate = (await query`SELECT * FROM candidates WHERE id=${app.candidate_id} AND chat_id=${chatId} LIMIT 1`).rows[0];
   if (!candidate) {
-    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Не удалось найти анкету.' });
+    await answer('answerCallbackQuery', { callback_query_id: callback.id, text: 'Не удалось найти анкету.' });
     return true;
   }
   if (candidate.status === 'interview_booked' && candidate.interview_at) {
-    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Вы уже записаны.' });
+    await answer('answerCallbackQuery', { callback_query_id: callback.id, text: 'Вы уже записаны.' });
     return true;
   }
   const slotId = match[2], at = nextInterview(slotId), date = interviewDate(at);
-  const row = (await sql`UPDATE candidates SET slot_id=${slotId},interview_at=${at},status='interview_booked',consent=true,reminded_30m=false,no_show_followup_sent=false,updated_at=NOW() WHERE id=${candidate.id} RETURNING id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
-  await sql`UPDATE applications SET slot_id=${slotId} WHERE id=${app.id}`;
-  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'in','button_click',${`Нажал кнопку выбора времени: ${slots[slotId]}`},'received',${String(callback.message?.message_id || '')})`;
+  const row = (await query`UPDATE candidates SET slot_id=${slotId},interview_at=${at},status='interview_booked',consent=true,reminded_30m=false,no_show_followup_sent=false,updated_at=NOW() WHERE id=${candidate.id} RETURNING id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
+  await query`UPDATE applications SET slot_id=${slotId} WHERE id=${app.id}`;
+  await query`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'in','button_click',${`Нажал кнопку выбора времени: ${slots[slotId]}`},'received',${String(callback.message?.message_id || '')})`;
   const zoom = await getZoomMeetingUrl();
   const reply = `✅ <b>Вы записаны на собеседование</b>\n\nДата: <b>${date}</b>\nВремя: <b>${slots[slotId]}</b>\n\n${zoom ? 'Ссылка Zoom — по кнопке ниже.' : 'Координатор пришлёт ссылку Zoom в этот чат.'}\n\nЗа 30 минут до встречи придёт напоминание.`;
   let messageId;
   try {
-    messageId = await telegram(chatId, reply, zoom ? { reply_markup: entryKeyboard() } : {});
+    messageId = await send(chatId, reply, zoom ? { reply_markup: entryKeyboard() } : {});
   } catch (error) {
-    await sql`UPDATE candidates SET slot_id=NULL,interview_at=NULL,status='new',reminded_30m=false,updated_at=NOW() WHERE id=${candidate.id}`;
-    await sql`UPDATE applications SET slot_id=NULL WHERE id=${app.id}`;
+    await query`UPDATE candidates SET slot_id=NULL,interview_at=NULL,status='new',reminded_30m=false,updated_at=NOW() WHERE id=${candidate.id}`;
+    await query`UPDATE applications SET slot_id=NULL WHERE id=${app.id}`;
     throw error;
   }
-  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${row.id},'out','booking_confirmation',${reply},'delivered',${String(messageId || '')})`;
-  await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Время сохранено' });
+  await query`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${row.id},'out','booking_confirmation',${reply},'delivered',${String(messageId || '')})`;
+  await answer('answerCallbackQuery', { callback_query_id: callback.id, text: 'Время сохранено' });
   try { await schedulePrimary(row); } catch (e) { console.error('[primary-timer]', row.id, e.message); }
   try {
     await deliverHrBrief(row, await getHrDestination());
@@ -477,31 +484,38 @@ async function handleSlotChoice(callback) {
   return true;
 }
 
-async function handleRescheduleChoice(callback) {
+export async function handleRescheduleChoice(callback, dependencies = {}) {
+  const query = dependencies.sql || sql;
+  const send = dependencies.telegram || telegram;
+  const answer = dependencies.telegramApi || telegramApi;
   const match = callback.data?.match(/^trainer_rebook_([a-z]{3}-[0-9]{4})$/);
-  if (!match || !slots[match[1]]) return false;
+  if (!match) return false;
+  if (!isPrimarySlotAllowed(match[1])) {
+    await answer('answerCallbackQuery', { callback_query_id: callback.id, text: 'Это время больше недоступно. Выберите актуальный вариант.', show_alert: true });
+    return true;
+  }
   const chatId = String(callback.message?.chat?.id || callback.from?.id || '');
-  const candidate = (await sql`SELECT * FROM candidates WHERE chat_id=${chatId} AND status='interview_booked' AND no_show_followup_sent=true LIMIT 1`).rows[0];
+  const candidate = (await query`SELECT * FROM candidates WHERE chat_id=${chatId} AND status='interview_booked' AND no_show_followup_sent=true LIMIT 1`).rows[0];
   if (!candidate) {
-    await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Перенос для этой записи уже недоступен.' });
+    await answer('answerCallbackQuery', { callback_query_id: callback.id, text: 'Перенос для этой записи уже недоступен.' });
     return true;
   }
   const slotId = match[1], at = nextInterview(slotId), date = interviewDate(at);
-  const row = (await sql`UPDATE candidates SET slot_id=${slotId},interview_at=${at},status='interview_booked',consent=true,reminded_30m=false,no_show_followup_sent=false,updated_at=NOW() WHERE id=${candidate.id} RETURNING id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
-  await sql`UPDATE applications SET slot_id=${slotId} WHERE candidate_id=${candidate.id}`;
-  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'in','button_click',${`Нажал кнопку нового времени: ${slots[slotId]}`},'received',${String(callback.message?.message_id || '')})`;
+  const row = (await query`UPDATE candidates SET slot_id=${slotId},interview_at=${at},status='interview_booked',consent=true,reminded_30m=false,no_show_followup_sent=false,updated_at=NOW() WHERE id=${candidate.id} RETURNING id,first_name,last_name,username,phone,city,slot_id,interview_at,source_id,status`).rows[0];
+  await query`UPDATE applications SET slot_id=${slotId} WHERE candidate_id=${candidate.id}`;
+  await query`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'in','button_click',${`Нажал кнопку нового времени: ${slots[slotId]}`},'received',${String(callback.message?.message_id || '')})`;
   const zoom = await getZoomMeetingUrl();
   const reply = `✅ <b>Новое время собеседования сохранено</b>\n\nДата: <b>${date}</b>\nВремя: <b>${slots[slotId]}</b>\n\n${zoom ? 'Ссылка Zoom — по кнопке ниже.' : 'Координатор пришлёт ссылку Zoom в этот чат.'}\n\nЗа 30 минут до встречи придёт напоминание.`;
   let messageId;
   try {
-    messageId = await telegram(chatId, reply, zoom ? { reply_markup: entryKeyboard() } : {});
+    messageId = await send(chatId, reply, zoom ? { reply_markup: entryKeyboard() } : {});
   } catch (error) {
-    await sql`UPDATE candidates SET slot_id=${candidate.slot_id},interview_at=${candidate.interview_at},status='interview_booked',reminded_30m=true,no_show_followup_sent=true,updated_at=NOW() WHERE id=${candidate.id}`;
-    await sql`UPDATE applications SET slot_id=${candidate.slot_id} WHERE candidate_id=${candidate.id}`;
+    await query`UPDATE candidates SET slot_id=${candidate.slot_id},interview_at=${candidate.interview_at},status='interview_booked',reminded_30m=true,no_show_followup_sent=true,updated_at=NOW() WHERE id=${candidate.id}`;
+    await query`UPDATE applications SET slot_id=${candidate.slot_id} WHERE candidate_id=${candidate.id}`;
     throw error;
   }
-  await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','reschedule_confirmation',${reply},'delivered',${String(messageId || '')})`;
-  await telegramApi('answerCallbackQuery', { callback_query_id: callback.id, text: 'Новое время сохранено' });
+  await query`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','reschedule_confirmation',${reply},'delivered',${String(messageId || '')})`;
+  await answer('answerCallbackQuery', { callback_query_id: callback.id, text: 'Новое время сохранено' });
   try { await schedulePrimary(row); } catch (e) { console.error('[primary-timer]', row.id, e.message); }
   try { await deliverHrBrief(row, await getHrDestination()); }
   catch (error) { console.error('[telegram] rescheduled HR brief delivery failed', { candidateId: row.id, message: String(error) }); }

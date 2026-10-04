@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { telegram } from '../api/_core.js';
+import { slots } from './primary-schedule.js';
 import { createTask, effect, initFunnel, sql } from './funnel-store.js';
 import { removeFromCandidateGroup } from './candidate-group-removal-078.js';
 import { sendProductivityOutcome } from './productivity-outcomes-064.js';
@@ -42,7 +43,7 @@ function active(item, step) {
 function copy(item, step) {
   if (step === 'primary') return {
     text: 'Здравствуйте! Вы оставили заявку на роль тренера Академии Стратег. Пожалуйста, выберите удобное время первого собеседования по кнопке ниже. Если вакансия для вас больше не актуальна, напишите в ответ: «не актуально».',
-    extra: { reply_markup: { inline_keyboard: Object.entries({ 'mon-0800':'Понедельник, 08:00 МСК','tue-0800':'Вторник, 08:00 МСК','wed-0800':'Среда, 08:00 МСК','thu-1800':'Четверг, 18:00 МСК','fri-1800':'Пятница, 18:00 МСК','sat-0600':'Суббота, 06:00 МСК' }).map(([slot, label]) => [{ text: label, callback_data: `trainer_slot_${item.application?.code}_${slot}` }]) } },
+    extra: { reply_markup: { inline_keyboard: Object.entries(slots).map(([slot, label]) => [{ text: label, callback_data: `trainer_slot_${item.application?.code}_${slot}` }]) } },
   };
   if (step === 'q2') return {
     text: 'Здравствуйте! Напоминаем: для продолжения отбора нужно заполнить Анкету 2. Откройте её по кнопке ниже. Если вакансия для вас больше не актуальна, напишите в ответ: «не актуально».',
