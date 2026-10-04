@@ -1,6 +1,6 @@
 # PRIMARY-SCHEDULE-MON-FRI-090
 
-Status: `CODE_COMPLETE / NOT_DEPLOYED / INDEPENDENT_ACCEPTANCE_REQUIRED`
+Status: `DEPLOYED / AUTOMATED_READBACK_PASS / OWNER_FRESH_MENU_PROOF_PENDING`
 Date: 2026-10-04
 Scope: Trainer primary Zoom schedule only
 Baseline production commit: `c6ba7dfab8602f29bc3ad0fbf5c005860c004c11`
@@ -55,7 +55,21 @@ Unchanged:
 - the callback allowlist is evaluated before chat lookup, database read/write or candidate message send; a stale `sat-0600` callback is explicitly acknowledged once with an unavailable-time alert and exits with zero SQL and zero candidate-message effects;
 - the sequential full legacy suite reports `54/70 PASS`; its 16 failures are pre-existing Node 24 `mock.module` incompatibilities or stale baseline assertions in untouched tests. No previously tracked test file was changed; the focused preservation suite above is green.
 
-Production, environment variables, webhook, messages and real candidate rows were not changed.
+During local implementation and independent acceptance, production, environment variables, webhook, messages and real candidate rows were not changed. The later approved schedule-only deployment is recorded below.
+
+## Production release
+
+- deployment: `dpl_FZG6Cmnyd6gq4oSxyC4xSNVYUYWT`;
+- deployed runtime commit: `f79507c0ca2408710eb27b96deef59c9f4f3ae5e`;
+- canonical documentation commit: `3028c162a4db71958807a19ff2108b794133a40d` before this release-record update;
+- the deployed Vercel subtree is byte-identical to the independently accepted canonical code tree;
+- production alias: `https://academy-strateg-trainer.vercel.app`;
+- provider status: `READY` and production alias assigned;
+- automated readback: landing `200`; application, Telegram and progression GET probes `405` as expected for method-protected endpoints; operator without key `401`; Telegram diagnostic `200`;
+- runtime code, environment variables, webhook, Telegram messages and candidate data were not changed after the approved deployment;
+- rollback target remains exactly `c6ba7dfab8602f29bc3ad0fbf5c005860c004c11`.
+
+The remaining release proof is one owner-controlled physical run that opens a fresh schedule menu after deployment and confirms that it contains only the five approved Monday-Friday buttons. Historical Telegram messages are intentionally not rewritten and may still display the former Saturday button; pressing that stale button must show the unavailable-time alert without changing data or sending a candidate message.
 
 ## Rollback
 
