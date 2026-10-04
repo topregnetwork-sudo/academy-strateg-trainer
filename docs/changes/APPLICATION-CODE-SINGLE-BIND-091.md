@@ -1,6 +1,6 @@
 # APPLICATION-CODE-SINGLE-BIND-091
 
-Status: `CODE_COMPLETE / NOT_DEPLOYED / INDEPENDENT_ACCEPTANCE_REQUIRED`
+Status: `DEPLOYED / AUTOMATED_READBACK_PASS / OWNER_RUN04_PHYSICAL_PROOF_PENDING`
 Date: 2026-10-04
 Scope: Trainer Form 1 application-code ownership only
 Baseline and rollback commit: `f0930f039fcb2c4176c13a4cf924f669cd4d00b4`
@@ -47,7 +47,25 @@ One valid Form 1 application code could be replayed by two Telegram identities. 
 - cross-chat replay with a pre-existing loser profile: profile, status and source preserved byte-for-byte;
 - JavaScript syntax and `git diff --check`: `PASS`;
 - source scan confirms one transactional `FOR UPDATE`, one guarded `candidate_id IS NULL` bind and no former last-writer-wins update;
-- production, Telegram, database rows, webhook and deployment were not changed.
+- during local implementation and independent acceptance, production, Telegram, database rows, webhook and deployment were not changed; the later approved release is recorded below.
+
+## Production release
+
+- accepted runtime commit: `9891507dc27d1ad17cf70fb62bb748f7cea9b715`;
+- accepted preview deployment: `dpl_9DCnNX3Wc9xUQFoqpz8EqRZCNfwJ`;
+- production deployment: `dpl_7p5hjq8hQyoXGBpeiUa6Hs9R6hrd`;
+- production deployment URL: `https://academy-strateg-trainer-fvpqi89j8-topregnetwork-sudos-projects.vercel.app`;
+- production alias: `https://academy-strateg-trainer.vercel.app`;
+- provider state: `READY`, target `production`, alias assigned;
+- provider Git metadata identifies exact SHA `9891507dc27d1ad17cf70fb62bb748f7cea9b715` and the accepted branch;
+- automated readback: landing `200`; application, Telegram and progression GET probes `405` as expected; operator without key `401`; Telegram diagnostic `200`;
+- Telegram diagnostic: API `ok`, webhook present, pending updates `0`;
+- the historical webhook-error timestamp and five `attention_backlog_close_084` tasks are byte-for-byte identical on the previous deployment and therefore are not a 091 regression;
+- no candidate messages were sent, no RUN04 application was created, and no candidate/application row was intentionally changed by this release;
+- exact rollback deployment: `dpl_FZG6Cmnyd6gq4oSxyC4xSNVYUYWT`;
+- exact rollback source baseline: `f0930f039fcb2c4176c13a4cf924f669cd4d00b4`.
+
+The remaining proof is an owner-controlled fresh RUN04 physical passage. The new application link must be opened only in the intended Telegram account; readback must confirm one owner, one candidate and one weekday booking. A second Telegram account may then replay that already claimed link only under an explicitly approved contained test and must receive the safe already-used reply without changing ownership or candidate state.
 
 ## Rollback
 
