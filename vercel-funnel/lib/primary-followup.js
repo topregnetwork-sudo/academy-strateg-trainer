@@ -1,11 +1,41 @@
 import {sql,transaction,telegram,slots} from '../api/_core.js';
 import {initPrimaryEvidence,PRIMARY_ENTRY_BEFORE_MINUTES,PRIMARY_ENTRY_AFTER_MINUTES} from './primary-evidence.js';
 import {initFunnel,effect} from './funnel-store.js';
+import {PRIMARY_NO_ENTRY_AFTER_MINUTES} from './primary-timing.js';
 
 export const followupText='Здравствуйте! Вы были записаны на собеседование с Академией Стратег. Если сегодня не получилось подключиться, выберите новое удобное время ниже.\n\nЕсли вакансия для вас больше не актуальна, напишите в ответ: <b>не актуально</b>.';
 export const noResponseText='Мы не получили ответа после пропущенного первого собеседования, поэтому завершаем текущий маршрут отбора.\n\nСпасибо за интерес к Академии Стратег. Если позже захотите вернуться к разговору, напишите нам в этот бот.';
 const keyboard={inline_keyboard:Object.entries(slots).map(([id,title])=>[{text:title,callback_data:`trainer_rebook_${id}`}])};
 const botBlocked=error=>/bot was blocked by the user/i.test(String(error?.message||error||''));
+
+async function claimPrimaryNoEntry({id,at,slot}){
+  return transaction(async tx=>{
+    // The candidate row is the single appointment boundary lock shared with
+    // handlePrimaryEntry. Acquire it in a statement of its own: under PostgreSQL
+    // READ COMMITTED a subquery evaluated before a lock wait could otherwise keep
+    // a stale snapshot. The second statement therefore rechecks evidence only
+    // after this transaction owns the exact appointment row.
+    const c=(await tx`SELECT c.id,c.chat_id FROM candidates c WHERE c.id=${id} AND c.status='interview_booked' AND c.consent=true AND c.no_show_followup_sent=false
+      AND c.interview_at=${at}::timestamptz AND c.slot_id=${slot}
+      AND c.interview_at<=NOW()-(${PRIMARY_NO_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute') AND c.interview_at>=NOW()-INTERVAL '6 hours'
+      FOR UPDATE OF c`).rows[0];
+    if(!c)return null;
+    const eligible=(await tx`SELECT 1 AS eligible WHERE
+      NOT EXISTS(SELECT 1 FROM candidate_zoom_entries e JOIN candidates c ON c.id=e.candidate_id WHERE c.id=${id} AND c.interview_at=${at}::timestamptz AND c.slot_id=${slot} AND e.interview_at=c.interview_at AND e.slot_id=c.slot_id AND e.clicked_at BETWEEN e.interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND e.interview_at+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute'))
+      AND NOT EXISTS(SELECT 1 FROM candidate_zoom_session_entries e JOIN candidates c ON c.id=e.candidate_id WHERE c.id=${id} AND c.interview_at=${at}::timestamptz AND c.slot_id=${slot} AND e.interview_at=c.interview_at AND e.slot_id=c.slot_id AND e.clicked_at BETWEEN e.interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND e.interview_at+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute'))
+      AND NOT EXISTS(SELECT 1 FROM messages m JOIN candidates c ON c.id=m.candidate_id WHERE c.id=${id} AND c.interview_at=${at}::timestamptz AND c.slot_id=${slot} AND m.kind='primary_zoom_link' AND m.created_at BETWEEN c.interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND c.interview_at+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute'))`).rows[0];
+    if(!eligible)return null;
+    return (await tx`UPDATE candidates SET no_show_followup_sent=true,updated_at=NOW() WHERE id=${id} AND interview_at=${at}::timestamptz AND slot_id=${slot} AND no_show_followup_sent=false RETURNING id,chat_id`).rows[0]||null;
+  });
+}
+
+async function releaseDefiniteNoEntryFailure({id,at,slot}){
+  await transaction(async tx=>{
+    await tx`SELECT id FROM candidates WHERE id=${id} FOR UPDATE`;
+    await tx`UPDATE candidates SET no_show_followup_sent=false,updated_at=NOW() WHERE id=${id} AND interview_at=${at}::timestamptz AND slot_id=${slot} AND no_show_followup_sent=true
+      AND NOT EXISTS(SELECT 1 FROM messages WHERE candidate_id=${id} AND kind='no_show_followup' AND delivery_status='delivered')`;
+  });
+}
 
 async function closePrimaryNoResponse(candidate, reason='primary_no_response_082') {
   const changed=(await sql`UPDATE candidates SET status='reserve_no_response',consent=FALSE,updated_at=NOW() WHERE id=${candidate.id} AND status='interview_booked' RETURNING id`).rows[0];
@@ -22,7 +52,7 @@ export async function runPrimaryFollowup({at,slot}){
   await initPrimaryEvidence();await initFunnel();
   const due=(await sql`SELECT c.id FROM candidates c WHERE c.status='interview_booked' AND c.consent=true AND c.no_show_followup_sent=false
     AND c.interview_at=${at}::timestamptz AND c.slot_id=${slot}
-    AND c.interview_at<=NOW()-INTERVAL '60 minutes' AND c.interview_at>=NOW()-INTERVAL '6 hours'
+    AND c.interview_at<=NOW()-(${PRIMARY_NO_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute') AND c.interview_at>=NOW()-INTERVAL '6 hours'
     AND NOT EXISTS(SELECT 1 FROM candidate_zoom_entries e WHERE e.candidate_id=c.id AND e.interview_at=c.interview_at AND e.slot_id=c.slot_id AND e.clicked_at BETWEEN e.interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND e.interview_at+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute'))
     AND NOT EXISTS(SELECT 1 FROM candidate_zoom_session_entries e WHERE e.candidate_id=c.id AND e.interview_at=c.interview_at AND e.slot_id=c.slot_id AND e.clicked_at BETWEEN e.interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND e.interview_at+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute'))
     AND NOT EXISTS(SELECT 1 FROM messages m WHERE m.candidate_id=c.id AND m.kind='primary_zoom_link' AND m.created_at BETWEEN c.interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND c.interview_at+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute'))
@@ -30,30 +60,24 @@ export async function runPrimaryFollowup({at,slot}){
   let sent=0,failed=0;
   for(const {id} of due){
     try{
-      // Recheck immediately before send: another event may have moved the booking or recorded a click.
-      const c=(await sql`SELECT c.id,c.chat_id FROM candidates c WHERE c.id=${id} AND c.status='interview_booked' AND c.consent=true AND c.no_show_followup_sent=false
-        AND c.interview_at=${at}::timestamptz AND c.slot_id=${slot}
-        AND NOT EXISTS(SELECT 1 FROM candidate_zoom_entries e WHERE e.candidate_id=c.id AND e.interview_at=c.interview_at AND e.slot_id=c.slot_id AND e.clicked_at BETWEEN e.interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND e.interview_at+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute'))
-        AND NOT EXISTS(SELECT 1 FROM candidate_zoom_session_entries e WHERE e.candidate_id=c.id AND e.interview_at=c.interview_at AND e.slot_id=c.slot_id AND e.clicked_at BETWEEN e.interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND e.interview_at+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute'))
-        AND NOT EXISTS(SELECT 1 FROM messages m WHERE m.candidate_id=c.id AND m.kind='primary_zoom_link' AND m.created_at BETWEEN c.interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND c.interview_at+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute'))`).rows[0];
+      const c=await claimPrimaryNoEntry({id,at,slot});
       if(!c)continue;
       const messageId=await effect(`primary-no-entry:${id}:${new Date(at).toISOString()}:${slot}`,()=>telegram(c.chat_id,followupText,{reply_markup:keyboard}));
-      // A failed history write rolls back the flag; effect retains the actual delivery for a safe retry.
-      await transaction(async tx=>{
-        await tx`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) SELECT ${id},'out','no_show_followup',${followupText},'delivered',${String(messageId)} WHERE NOT EXISTS(SELECT 1 FROM messages WHERE candidate_id=${id} AND kind='no_show_followup' AND telegram_message_id=${String(messageId)})`;
-        await tx`UPDATE candidates SET no_show_followup_sent=true,updated_at=NOW() WHERE id=${id} AND interview_at=${at}::timestamptz AND slot_id=${slot}`;
-      });
+      await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) SELECT ${id},'out','no_show_followup',${followupText},'delivered',${String(messageId)} WHERE NOT EXISTS(SELECT 1 FROM messages WHERE candidate_id=${id} AND kind='no_show_followup' AND telegram_message_id=${String(messageId)})`;
       sent++;
-    }catch(e){failed++;console.error('[primary-no-entry]',id,e.message);}
+    }catch(e){
+      if(e?.definite)await releaseDefiniteNoEntryFailure({id,at,slot});
+      failed++;console.error('[primary-no-entry]',id,e.message);
+    }
   }
   return {due:due.length,sent,failed};
 }
 
 export async function reconcilePrimaryNoEntry082(apply=false){
   await initPrimaryEvidence();await initFunnel();
-  const due=(await sql`SELECT c.id,c.chat_id FROM candidates c
+  const due=(await sql`SELECT c.id,c.chat_id,c.interview_at,c.slot_id FROM candidates c
     WHERE c.status='interview_booked' AND c.consent=true AND c.no_show_followup_sent=false
-      AND c.interview_at<=NOW()-INTERVAL '10 minutes'
+      AND c.interview_at<=NOW()-(${PRIMARY_NO_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute')
       AND NOT EXISTS(SELECT 1 FROM candidate_zoom_entries e WHERE e.candidate_id=c.id AND e.interview_at=c.interview_at AND e.slot_id=c.slot_id AND e.clicked_at BETWEEN e.interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND e.interview_at+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute'))
       AND NOT EXISTS(SELECT 1 FROM candidate_zoom_session_entries e WHERE e.candidate_id=c.id AND e.interview_at=c.interview_at AND e.slot_id=c.slot_id AND e.clicked_at BETWEEN e.interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND e.interview_at+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute'))
       AND NOT EXISTS(SELECT 1 FROM messages m WHERE m.candidate_id=c.id AND m.kind='primary_zoom_link' AND m.created_at BETWEEN c.interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND c.interview_at+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute'))
@@ -76,15 +100,15 @@ export async function reconcilePrimaryNoEntry082(apply=false){
   if(!apply)return result;
   for(const c of due){
     try{
-      const messageId=await effect(`primary-no-entry-082:${c.id}`,()=>telegram(c.chat_id,followupText,{reply_markup:keyboard}));
-      await transaction(async tx=>{
-        await tx`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id)
-          SELECT ${c.id},'out','no_show_followup',${followupText},'delivered',${String(messageId||'')}
-          WHERE NOT EXISTS(SELECT 1 FROM messages WHERE candidate_id=${c.id} AND kind='no_show_followup' AND telegram_message_id=${String(messageId||'')})`;
-        await tx`UPDATE candidates SET no_show_followup_sent=true,updated_at=NOW() WHERE id=${c.id} AND status='interview_booked'`;
-      });
+      const claimed=await claimPrimaryNoEntry({id:c.id,at:c.interview_at,slot:c.slot_id});
+      if(!claimed)continue;
+      const messageId=await effect(`primary-no-entry-082:${c.id}`,()=>telegram(claimed.chat_id,followupText,{reply_markup:keyboard}));
+      await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id)
+        SELECT ${c.id},'out','no_show_followup',${followupText},'delivered',${String(messageId||'')}
+        WHERE NOT EXISTS(SELECT 1 FROM messages WHERE candidate_id=${c.id} AND kind='no_show_followup' AND telegram_message_id=${String(messageId||'')})`;
       result.sent++;
     }catch(error){
+      if(error?.definite)await releaseDefiniteNoEntryFailure({id:c.id,at:c.interview_at,slot:c.slot_id});
       if(botBlocked(error)){
         if(await closePrimaryNoResponse(c,'primary_bot_blocked_082'))result.blockedClosed++;
       }else{

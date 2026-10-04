@@ -1,5 +1,7 @@
 # PRIMARY-FOLLOWUP-039
 
+Status: `EVOLVED_BY_PRIMARY-NO-ENTRY-PLUS11-092`. Исторический релиз +60 сохранён как evidence, но больше не задаёт текущее время догонялки и повторной записи.
+
 Baseline aa369a6; rollback/primary-followup-before-039 pushed before edits.
 
 Only event PRIMARY.NO_ENTRY_FOLLOWUP changes: +60 minutes from scheduled start, no click for this appointment, still booked/consenting, not already notified. Keywords and group membership are not absence criteria. Preserve message, reschedule/decline buttons, all-city reminders/briefs at minus30, first-ever click duration, applications/tests/manual decisions and visual layout.

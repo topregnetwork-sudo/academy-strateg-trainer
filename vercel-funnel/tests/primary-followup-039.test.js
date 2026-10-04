@@ -6,23 +6,38 @@ const query=(conn)=>(s,...v)=>conn.query(s.reduce((a,b,i)=>a+(i?'$'+i:'')+b,''),
 await db.exec(`CREATE TABLE candidates(id bigint PRIMARY KEY,chat_id text,status text,consent boolean,no_show_followup_sent boolean,interview_at timestamptz,slot_id text,updated_at timestamptz);
 CREATE TABLE candidate_zoom_entries(candidate_id bigint PRIMARY KEY,clicked_at timestamptz,interview_at timestamptz,slot_id text);
 CREATE TABLE candidate_zoom_session_entries(candidate_id bigint,clicked_at timestamptz,interview_at timestamptz,slot_id text);
-CREATE TABLE messages(candidate_id bigint,direction text,kind text,text text,delivery_status text,telegram_message_id text);
-INSERT INTO candidates SELECT n,n::text,'interview_booked',true,false,NOW()-INTERVAL '61 minutes','mon-0800',NOW() FROM generate_series(1,7) n;
+CREATE TABLE messages(candidate_id bigint,direction text,kind text,text text,delivery_status text,telegram_message_id text,created_at timestamptz default now());
+INSERT INTO candidates SELECT n,n::text,'interview_booked',true,false,NOW()-INTERVAL '11 minutes','mon-0800',NOW() FROM generate_series(1,7) n;
+INSERT INTO candidates VALUES(8,'8','interview_booked',true,false,NOW()-INTERVAL '9 minutes','mon-0800',NOW());
+INSERT INTO candidates VALUES(9,'9','interview_booked',true,false,NOW()-INTERVAL '12 minutes','mon-0800',NOW());
 INSERT INTO candidate_zoom_entries SELECT id,interview_at,interview_at,slot_id FROM candidates WHERE id=2;
 INSERT INTO candidate_zoom_entries SELECT id,interview_at-INTERVAL '7 days',interview_at,slot_id FROM candidates WHERE id=3;
 INSERT INTO candidate_zoom_session_entries SELECT id,interview_at,interview_at,slot_id FROM candidates WHERE id=4;
+INSERT INTO candidate_zoom_session_entries SELECT id,interview_at+INTERVAL '10 minutes',interview_at,slot_id FROM candidates WHERE id=9;
 UPDATE candidates SET status='productivity_passed' WHERE id=5;
 UPDATE candidates SET consent=false WHERE id=6;
 UPDATE candidates SET interview_at=interview_at+INTERVAL '1 day' WHERE id=7;`);
 await mock.module('../api/_core.js',{namedExports:{sql:query(db),transaction:fn=>db.transaction(tx=>fn(query(tx))),telegram:async(chat)=>{sent.push(chat);return sent.length;},slots:{'mon-0800':'Пн 08:00'}}});
-await mock.module('../lib/primary-evidence.js',{namedExports:{initPrimaryEvidence:async()=>{}}});
+await mock.module('../lib/primary-evidence.js',{namedExports:{initPrimaryEvidence:async()=>{},PRIMARY_ENTRY_BEFORE_MINUTES:60,PRIMARY_ENTRY_AFTER_MINUTES:10}});
 await mock.module('../lib/funnel-store.js',{namedExports:{initFunnel:async()=>{},effect:async(k,fn)=>{if(effects.has(k))return effects.get(k);const r=await fn();effects.set(k,r);return r;}}});
 const {runPrimaryFollowup}=await import('../lib/primary-followup.js');
-test('only exact missed appointment; early click does not count; real clicks/advanced/declined/future excluded; repeated event safe',async()=>{
- const at=(await db.query('SELECT interview_at FROM candidates WHERE id=1')).rows[0].interview_at.toISOString();
- assert.deepEqual(await runPrimaryFollowup({at,slot:'mon-0800'}),{due:2,sent:2,failed:0});
- assert.deepEqual(sent,['1','3']);
+test('092 waits through +10, sends once at +11, ignores unrelated click, suppresses qualified clicks, and preserves states',async()=>{
+ let at=(await db.query('SELECT interview_at FROM candidates WHERE id=8')).rows[0].interview_at.toISOString();
  assert.deepEqual(await runPrimaryFollowup({at,slot:'mon-0800'}),{due:0,sent:0,failed:0});
- assert.equal((await db.query('SELECT * FROM messages')).rows.length,2);
+ await db.exec(`UPDATE candidates SET interview_at=NOW()-INTERVAL '11 minutes' WHERE id=8`);
+ at=(await db.query('SELECT interview_at FROM candidates WHERE id=8')).rows[0].interview_at.toISOString();
+ assert.deepEqual(await runPrimaryFollowup({at,slot:'mon-0800'}),{due:1,sent:1,failed:0});
+ assert.deepEqual(await runPrimaryFollowup({at,slot:'mon-0800'}),{due:0,sent:0,failed:0});
+ const boundaryAt=(await db.query('SELECT interview_at FROM candidates WHERE id=9')).rows[0].interview_at.toISOString();
+ assert.deepEqual(await runPrimaryFollowup({at:boundaryAt,slot:'mon-0800'}),{due:0,sent:0,failed:0});
+
+ const sharedAt=(await db.query('SELECT interview_at FROM candidates WHERE id=1')).rows[0].interview_at.toISOString();
+ assert.deepEqual(await runPrimaryFollowup({at:sharedAt,slot:'mon-0800'}),{due:2,sent:2,failed:0});
+ assert.deepEqual(sent,['8','1','3']);
+ assert.deepEqual(await runPrimaryFollowup({at:sharedAt,slot:'mon-0800'}),{due:0,sent:0,failed:0});
+ assert.equal((await db.query('SELECT * FROM messages')).rows.length,3);
+ assert.equal((await db.query('SELECT status FROM candidates WHERE id=8')).rows[0].status,'interview_booked');
+ assert.equal((await db.query('SELECT status FROM candidates WHERE id=5')).rows[0].status,'productivity_passed');
+ assert.equal((await db.query('SELECT consent FROM candidates WHERE id=6')).rows[0].consent,false);
  assert.deepEqual(await runPrimaryFollowup({}),{due:0,sent:0,failed:0});await db.close();
 });

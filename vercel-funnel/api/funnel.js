@@ -3,7 +3,7 @@ import { init, body, json, operator, telegram } from './_core.js';
 import { initFunnel, sql, transaction, sessionById, candidateById, createTask, armTask } from '../lib/funnel-store.js';
 import { ACTIONS, DEFAULT_TEMPLATES, assert, validateMessage, validateSession, eligibility, renderText } from '../lib/funnel-model.js';
 import { available, messageKeyboard, stableId } from '../lib/funnel-engine.js';
-import { migratePrimaryTimers } from '../lib/funnel-primary.js';
+import { migrateNoEntryTimers, migratePrimaryTimers } from '../lib/funnel-primary.js';
 
 export default async function handler(req,res) {
   if(!operator(req))return json(res,401,{error:'Неверный код доступа'});
@@ -21,6 +21,7 @@ export default async function handler(req,res) {
     if(req.method!=='POST')return json(res,405,{error:'Method not allowed'});
     const v=await body(req);
     if(v.action==='migrate_timers')return json(res,200,{ok:true,...await migratePrimaryTimers()});
+    if(v.action==='migrate_primary_no_entry_092')return json(res,200,{ok:true,...await migrateNoEntryTimers({at:v.at,slot:v.slot})});
     if(v.action==='save_template'){
       const config=validateMessage(v.config);assert(typeof v.name==='string'&&v.name.trim()&&v.name.length<=100,'Укажите название');
       const row=await transaction(async tx=>{

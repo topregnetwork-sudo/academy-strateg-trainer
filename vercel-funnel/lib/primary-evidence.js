@@ -1,11 +1,12 @@
 import {sql,transaction,telegram,telegramApi,slots} from '../api/_core.js';
 import {initFunnel,createTask,effect} from './funnel-store.js';
+import {PRIMARY_ENTRY_CUTOFF_AFTER_MINUTES,PRIMARY_NO_ENTRY_AFTER_MINUTES} from './primary-timing.js';
 import crypto from 'node:crypto';
 export function evidenceId(key){const s=crypto.createHash('sha256').update(key).digest('hex').slice(0,32);return `${s.slice(0,8)}-${s.slice(8,12)}-${s.slice(12,16)}-${s.slice(16,20)}-${s.slice(20)}`;}
 // The reminder is sent 30 minutes before the meeting. Keep the button active
 // through the reminder window and close it shortly after the start time.
 export const PRIMARY_ENTRY_BEFORE_MINUTES=60;
-export const PRIMARY_ENTRY_AFTER_MINUTES=10;
+export const PRIMARY_ENTRY_AFTER_MINUTES=PRIMARY_ENTRY_CUTOFF_AFTER_MINUTES;
 const lateEntryText='Вы опоздали и не смогли принять участие в первом собеседовании полностью. Рекомендуем повторно ознакомиться с материалами. После завершения окна текущей встречи выберите новое время и подключитесь с начала.';
 
 let ready;
@@ -24,8 +25,8 @@ export function entryKeyboard(){return {inline_keyboard:[[{text:'Открыть 
 const rebookText='Если вы не смогли попасть на первое собеседование, выберите новое удобное время ниже. Прежняя запись заменится только после выбора нового слота.';
 export async function offerPrimaryRebook(chatId,eventKey){
   await initPrimaryEvidence();await initFunnel();
-  const c=(await sql`SELECT * FROM candidates WHERE chat_id=${String(chatId)} AND status='interview_booked' AND consent=true AND interview_at<=NOW()-INTERVAL '60 minutes' LIMIT 1`).rows[0];
-  if(!c)return {ok:false,reason:'Новое время станет доступно через 60 минут после начала пропущенного собеседования.'};
+  const c=(await sql`SELECT * FROM candidates WHERE chat_id=${String(chatId)} AND status='interview_booked' AND consent=true AND interview_at<=NOW()-(${PRIMARY_NO_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute') LIMIT 1`).rows[0];
+  if(!c)return {ok:false,reason:`Новое время станет доступно через ${PRIMARY_NO_ENTRY_AFTER_MINUTES} минут после начала пропущенного собеседования.`};
   const messageId=await effect(`primary-self-rebook-059:${c.id}:${new Date(c.interview_at).toISOString()}:${eventKey}`,()=>telegram(c.chat_id,rebookText,{reply_markup:rebookKeyboard()}));
   await transaction(async tx=>{
     await tx`UPDATE candidates SET no_show_followup_sent=true,updated_at=NOW() WHERE id=${c.id} AND status='interview_booked' AND interview_at=${c.interview_at}`;
@@ -65,26 +66,40 @@ export async function requirePrimaryAccess(candidate){
   await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) VALUES(${candidate.id},'out','primary_access_required',${text},'delivered',${String(messageId)})`;
   return false;
 }
-export async function handlePrimaryEntry(callback){
+export async function handlePrimaryEntry(callback,{now=()=>new Date()}={}){
   if(callback.data!=='primary_zoom_enter')return false;
   await initPrimaryEvidence();
   const chat=callback.message?.chat;
-  const c=chat?.type==='private'&&String(chat.id)===String(callback.from?.id)?(await sql`SELECT * FROM candidates WHERE chat_id=${String(callback.from.id)} AND consent=true LIMIT 1`).rows[0]:null;
-  const allowed=c&&c.interview_at&&!['new','experienced_not_target','cancelled','rejected','selection_closed','academy_contact','productivity_failed'].includes(c.status);
-  const start=c?.interview_at?Date.parse(c.interview_at):NaN;
-  const active=Number.isFinite(start)&&Date.now()>=start-PRIMARY_ENTRY_BEFORE_MINUTES*60*1000&&Date.now()<=start+PRIMARY_ENTRY_AFTER_MINUTES*60*1000;
-  if(!allowed||!active){
-    if(!allowed){await telegramApi('answerCallbackQuery',{callback_query_id:callback.id,text:'Доступна только ваша действующая запись на первое собеседование.',show_alert:true});return true;}
+  const privateOwner=chat?.type==='private'&&String(chat.id)===String(callback.from?.id);
+  const attemptedAt=now();
+  if(!(attemptedAt instanceof Date)||!Number.isFinite(attemptedAt.getTime()))throw new Error('Primary entry timestamp is invalid');
+  const decision=privateOwner?await transaction(async tx=>{
+    // Serialize the cutoff decision with the no-entry worker. Whichever path owns
+    // this appointment row first records the only permitted outcome.
+    const c=(await tx`SELECT * FROM candidates WHERE chat_id=${String(callback.from.id)} AND consent=true LIMIT 1 FOR UPDATE`).rows[0];
+    const allowed=c&&c.interview_at&&!['new','experienced_not_target','cancelled','rejected','selection_closed','academy_contact','productivity_failed'].includes(c.status);
+    const start=c?.interview_at?Date.parse(c.interview_at):NaN;
+    const active=Number.isFinite(start)&&attemptedAt.getTime()>=start-PRIMARY_ENTRY_BEFORE_MINUTES*60*1000&&attemptedAt.getTime()<=start+PRIMARY_ENTRY_AFTER_MINUTES*60*1000;
+    if(!allowed)return {kind:'unavailable'};
+    if(c.no_show_followup_sent)return {kind:'followup'};
+    if(!active)return {kind:'closed',candidate:c};
+    const zoom=(await tx`SELECT value FROM app_settings WHERE key='zoom_meeting_url'`).rows[0]?.value||process.env.ZOOM_MEETING_URL;
+    if(!zoom)throw new Error('Primary Zoom URL is missing');
+    const qualified=(await tx`INSERT INTO candidate_zoom_session_entries(candidate_id,interview_at,slot_id,clicked_at) VALUES(${c.id},${c.interview_at}::timestamptz,${c.slot_id},${attemptedAt}) ON CONFLICT(candidate_id,interview_at,slot_id) DO UPDATE SET clicked_at=candidate_zoom_session_entries.clicked_at RETURNING clicked_at`).rows[0];
+    if(qualified)await tx`INSERT INTO candidate_zoom_entries(candidate_id,interview_at,slot_id,clicked_at) VALUES(${c.id},${c.interview_at},${c.slot_id},${qualified.clicked_at}) ON CONFLICT DO NOTHING`;
+    return {kind:'entry',candidate:c,qualified,zoom};
+  }):{kind:'unavailable'};
+  if(decision.kind!=='entry'){
+    if(decision.kind==='unavailable'){await telegramApi('answerCallbackQuery',{callback_query_id:callback.id,text:'Доступна только ваша действующая запись на первое собеседование.',show_alert:true});return true;}
+    if(decision.kind==='followup'){await telegramApi('answerCallbackQuery',{callback_query_id:callback.id,text:'Время входа завершено. Выберите новое время в сообщении бота.',show_alert:true});return true;}
     await telegramApi('answerCallbackQuery',{callback_query_id:callback.id,text:'Время входа в это собеседование завершено.',show_alert:true});
     await initFunnel();
+    const c=decision.candidate;
     const messageId=await effect(`primary-entry-window-closed:${c.id}:${new Date(c.interview_at).toISOString()}`,()=>telegram(c.chat_id,lateEntryText));
     await sql`INSERT INTO messages(candidate_id,direction,kind,text,delivery_status,telegram_message_id) SELECT ${c.id},'out','primary_entry_window_closed',${lateEntryText},'delivered',${String(messageId||'')} WHERE NOT EXISTS(SELECT 1 FROM messages WHERE candidate_id=${c.id} AND kind='primary_entry_window_closed')`;
     return true;
   }
-  const zoom=(await sql`SELECT value FROM app_settings WHERE key='zoom_meeting_url'`).rows[0]?.value||process.env.ZOOM_MEETING_URL;
-  if(!zoom)throw new Error('Primary Zoom URL is missing');
-  const qualified=(await sql`INSERT INTO candidate_zoom_session_entries(candidate_id,interview_at,slot_id) SELECT ${c.id},${c.interview_at}::timestamptz,${c.slot_id} WHERE NOW() BETWEEN ${c.interview_at}::timestamptz-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute') AND ${c.interview_at}::timestamptz+(${PRIMARY_ENTRY_AFTER_MINUTES} * INTERVAL '1 minute') ON CONFLICT(candidate_id,interview_at,slot_id) DO UPDATE SET clicked_at=candidate_zoom_session_entries.clicked_at RETURNING clicked_at`).rows[0];
-  if(qualified)await sql`INSERT INTO candidate_zoom_entries(candidate_id,interview_at,slot_id,clicked_at) VALUES(${c.id},${c.interview_at},${c.slot_id},${qualified.clicked_at}) ON CONFLICT DO NOTHING`;
+  const {candidate:c,qualified,zoom}=decision;
   await telegramApi('answerCallbackQuery',{callback_query_id:callback.id,text:'Ссылка на первое собеседование — в сообщении ниже.'});
   await initFunnel();
   const text='Подключитесь к первому собеседованию по кнопке ниже в назначенное вам время.';

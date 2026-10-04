@@ -5,7 +5,7 @@ const db=new PGlite(),sent=[],tasks=new Map(),effects=new Map(),answers=[];
 await db.exec(`CREATE TABLE candidates(id bigint PRIMARY KEY,chat_id text,first_name text,last_name text,city text,status text,consent boolean,interview_at timestamptz,slot_id text,username text,no_show_followup_sent boolean default false,updated_at timestamptz default now());
 CREATE TABLE app_settings(key text PRIMARY KEY,value text);
 CREATE TABLE candidate_questionnaire_two(candidate_id bigint,sent_at timestamptz);
-CREATE TABLE messages(candidate_id bigint,direction text,kind text,text text,delivery_status text,telegram_message_id text);
+CREATE TABLE messages(candidate_id bigint,direction text,kind text,text text,delivery_status text,telegram_message_id text,created_at timestamptz default now());
 CREATE TABLE offline_interview_bookings(candidate_id bigint,event_date date,slot_time text,status text);
 CREATE TABLE applications(id bigint,candidate_id bigint,full_name text,trainer_experience_level text,created_at timestamptz);
 CREATE TABLE candidate_drive(candidate_id bigint,folder_url text);
@@ -31,14 +31,16 @@ test('entry: gate before click, retain legacy, authenticate private owner, recor
  await db.exec(`UPDATE candidates SET interview_at=NOW() WHERE id=1`);
  await handlePrimaryEntry(cb);const at=(await primaryAccess(1)).clickedAt;assert.ok(at);
  await handlePrimaryEntry(cb);assert.equal((await primaryAccess(1)).clickedAt.getTime(),at.getTime());
- assert.equal(tasks.size,1);assert.equal(sent.filter(s=>s.text.startsWith('Подключитесь')).length,3);
+ assert.equal(tasks.size,1);assert.equal(sent.filter(s=>s.text.startsWith('Подключитесь')).length,1);
  assert.equal((await db.query('SELECT status FROM candidates WHERE id=1')).rows[0].status,'interview_booked');
  await reportPrimaryEntry(1);await reportPrimaryEntry(1);assert.equal(sent.filter(s=>s.chat==='staff').length,1);assert.match(sent.at(-1).text,/не подтверждение присутствия/);
 });
 test('self-service rebooking opens only after missed appointment and keeps standard rebook buttons',async()=>{
  await db.exec(`UPDATE candidates SET status='interview_booked',interview_at=NOW()+INTERVAL '1 day',no_show_followup_sent=false WHERE id=1`);
  assert.equal((await offerPrimaryRebook('101','future')).ok,false);
- await db.exec(`UPDATE candidates SET interview_at=NOW()-INTERVAL '61 minutes' WHERE id=1`);
+ await db.exec(`UPDATE candidates SET interview_at=NOW()-INTERVAL '9 minutes' WHERE id=1`);
+ const early=await offerPrimaryRebook('101','plus9');assert.equal(early.ok,false);assert.match(early.reason,/11 минут/);
+ await db.exec(`UPDATE candidates SET interview_at=NOW()-INTERVAL '11 minutes' WHERE id=1`);
  const result=await offerPrimaryRebook('101','missed');assert.equal(result.ok,true);
  const message=sent.at(-1);assert.equal(message.extra.reply_markup.inline_keyboard[0][0].callback_data,'trainer_rebook_mon-0800');
  assert.equal((await db.query('SELECT no_show_followup_sent FROM candidates WHERE id=1')).rows[0].no_show_followup_sent,true);
