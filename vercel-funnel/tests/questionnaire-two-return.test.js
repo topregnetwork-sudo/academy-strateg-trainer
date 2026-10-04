@@ -10,32 +10,45 @@ const copies = {
   js: ['questionnaire-2.js', 'vercel-funnel/public/questionnaire-2.js', 'cloudflare-worker/public/questionnaire-2.js']
 };
 
-test('Form 2 saved state exposes a prominent deep link to the same Trainer bot', () => {
+test('Form 2 has no intermediary completion page and keeps the same Trainer bot route', () => {
   const html = read(copies.html[0]);
-  assert.match(html, /<section id="done"[^>]*hidden[\s\S]*?<a class="return-button" href="https:\/\/t\.me\/stazherskaya_bot\?start=questionnaire_done">Вернуться в бот<\/a>/);
+  const script = read(copies.js[0]);
+  assert.doesNotMatch(html, /id="done"|Анкета получена|Вернуться в бот/);
   assert.match(html, /questionnaire-2\.css\?v=20261002-1/);
-  assert.match(html, /questionnaire-2\.js\?v=20261002-1/);
-  assert.match(read(copies.css[0]), /\.return-button\{[^}]*display:inline-flex[^}]*background:var\(--brand\)[^}]*\}/);
+  assert.match(html, /questionnaire-2\.js\?v=20261004-direct-bot-2/);
+  assert.match(script, /botUrl='https:\/\/t\.me\/stazherskaya_bot'/);
+  assert.match(script, /botFallbackUrl=botUrl\+'\?start=questionnaire_done'/);
   assert.match(read('vercel-funnel/api/telegram.js'), /if \(\/\^\\\/start\\s\+questionnaire_done\$\/i\.test\(message\.text \|\| ''\)\)/);
 });
 
-test('a saved Form 2 reveals the return button before the completion-notice request settles', () => {
+test('a saved Form 2 waits for the bot confirmation event and then redirects directly', () => {
   const script = read(copies.js[0]);
   const submit = script.match(/form\.addEventListener\('submit',[\s\S]*?\);load\(\);/u)?.[0];
   assert.ok(submit, 'Form 2 submit handler is present');
   const saveIndex = submit.indexOf("rpc('submit_candidate_questionnaire_two'");
-  const doneIndex = submit.indexOf("show('done')");
-  const progressIndex = submit.indexOf("progress('questionnaire_2_completed')");
-  assert.ok(saveIndex >= 0 && doneIndex > saveIndex, 'done state follows a successful answer save');
-  assert.ok(progressIndex > doneIndex, 'the Telegram completion notice is attempted after the return CTA is exposed');
-  assert.match(submit, /void progress\('questionnaire_2_completed'\)\.catch\(/);
-  assert.doesNotMatch(submit, /await progress\('questionnaire_2_completed'\)/);
+  const progressIndex = submit.indexOf("await progress('questionnaire_2_completed')");
+  const redirectIndex = submit.indexOf('redirectToBot()', progressIndex);
+  assert.ok(saveIndex >= 0 && progressIndex > saveIndex, 'answers are saved before the bot event');
+  assert.ok(redirectIndex > progressIndex, 'Telegram opens after the bot event succeeds');
+  assert.match(submit, /redirectToBot\(true\)/, 'failed bot event falls back to the verified start route');
+  assert.doesNotMatch(submit, /show\('done'\)/);
+});
+
+test('an already submitted personal link opens the Trainer bot without a success page', () => {
+  const script = read(copies.js[0]);
+  assert.match(script, /if\(data\.submitted_at\)\{redirectToBot\(\);return\}/);
+});
+
+test('the bot owns the confirmation message and next instruction', () => {
+  const progression = read('vercel-funnel/api/progression.js');
+  assert.match(progression, /const QUESTIONNAIRE_COMPLETED = '✅ <b>Анкета 2 получена<\/b>/);
+  assert.match(progression, /telegram\(item\.chat_id, message\)/);
 });
 
 test('GitHub Pages, Vercel and Cloudflare questionnaire assets stay in parity', () => {
   for (const paths of Object.values(copies)) {
-    const expected = read(paths[0]);
-    for (const path of paths.slice(1)) assert.equal(read(path), expected, `${path} must match ${paths[0]}`);
+    const expected = read(paths[0]).replace(/\r\n/g, '\n');
+    for (const path of paths.slice(1)) assert.equal(read(path).replace(/\r\n/g, '\n'), expected, `${path} must match ${paths[0]}`);
   }
 });
 
