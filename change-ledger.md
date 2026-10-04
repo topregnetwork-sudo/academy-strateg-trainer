@@ -354,3 +354,11 @@ n8n не удаляется и не отключается как источни
 Добавлен защищённый exact maintenance action для переноса уже существующей детерминированной no-entry задачи одного указанного appointment/slot без создания второй задачи. RUN04 live-пакет описан в `docs/changes/PRIMARY-NO-ENTRY-PLUS11-092.md`; он не выполнялся. Production, Telegram, база и scheduler не изменялись.
 
 Решение границы сериализовано по строке действующей записи: no-entry сначала получает блокировку, затем отдельным запросом на свежем READ COMMITTED snapshot перепроверяет evidence; завершённое допустимое нажатие подавляет +11 догонялку, а зафиксированная неявка не может одновременно выдать Zoom. Локальная приёмка: 20/20 целевых и соседних 090/091 тестов PASS, включая детерминированное ожидание follower на row lock до commit evidence, syntax и diff-check PASS. Общий serial test audit по-прежнему содержит старые несвязанные stale assertions; изменённые 092 пути проходят полностью.
+
+# PRIMARY-NO-ENTRY-PLUS11-092 — production action-time
+
+Дата: 4 октября 2026. Runtime commit `3d5dc9fb51de1382f2ce26f15adaaa8d8eb23c84`; production deployment `dpl_AAdjLe9Mbro6CT6vD9ui9A8pb8Xd`; rollback `b6773c9db953f5998180d1cf5be26650865b3664` / `rollback/trainer-no-entry-plus11-before-092`.
+
+После точного provider/API preflight опубликован только принятый пакет 092. Защищённое действие `migrate_primary_no_entry_092` вызвано один раз для RUN04 `2026-10-05T05:00:00.000Z`, `mon-0800`: существующая задача `aeb2a300-e20f-ae64-12cf-c18ee202f7d2` сохранила ID, payload, `pending` и `error=NULL`, а срок изменился с `06:00Z` на `05:11Z` (08:11 МСК). Новая задача не создавалась.
+
+T-30 задача `8354306e-4182-40c4-dacd-004902edfd3a` осталась `pending`, `error=NULL`, due `04:30Z` (07:30 МСК). Provider postflight подтвердил: один кандидат, одна активная запись, одна application; ноль no-show flags, legacy/session click rows, Zoom-link/no-show messages, entry-report tasks и no-show effects. Сообщений кандидату при deployment и maintenance не отправлялось. Production aliases, закрытые API guards и Telegram webhook readback прошли. Физические доказательства T-30 брифа, valid-click уведомления и граничного поведения 08:10/08:11 остаются следующими RUN04 checkpoints.
