@@ -4,6 +4,7 @@ import {candidateProgress} from '../lib/candidate-progress.js';
 import {initFunnel} from '../lib/funnel-store.js';
 import {ensureActiveGroupRemoval, ensureProductivityOutcomeStore, PRODUCTIVITY_PASS_BUTTONS, PRODUCTIVITY_PASS_MESSAGE, PRODUCTIVITY_RESERVE_BUTTONS, PRODUCTIVITY_RESERVE_MESSAGE, PRODUCTIVITY_TOPICS, sendProductivityOutcome} from '../lib/productivity-outcomes-064.js';
 import { reconcileDriveSync067 } from '../lib/drive-sync-067.js';
+import { PRIMARY_ENTRY_BEFORE_MINUTES, PRIMARY_ENTRY_CUTOFF_AFTER_MINUTES } from '../lib/primary-timing.js';
 
 async function recordProductivityResult(candidateId, result) {
   const id = Number(candidateId);
@@ -49,7 +50,8 @@ export default async function handler(req,res){
         SELECT c.*,m.text AS last_message,d.folder_url,d.folder_name,
           s.file_url AS interview_sheet_url,po.message_pending AS productivity_message_pending,
           po.reserve_choice,po.reserve_choice_at,po.reserve_group_removal_state,po.reserve_group_removed_at,po.reserve_group_removal_error,po.active_group_removal_state,po.active_group_removed_at,po.active_group_removal_error,po.reserve_reminded_at,po.reserve_response_due_at,po.reserve_closed_no_response_at,
-          pb.starts_at AS productivity_at,pb.slot_key AS productivity_slot_id,pb.session_key AS productivity_session_id
+          pb.starts_at AS productivity_at,pb.slot_key AS productivity_slot_id,pb.session_key AS productivity_session_id,
+          pe.primary_zoom_clicked_at,q2.questionnaire_two_submitted_at
         FROM candidates c
         LEFT JOIN LATERAL (SELECT text FROM messages WHERE candidate_id=c.id ORDER BY created_at DESC LIMIT 1) m ON true
         LEFT JOIN candidate_drive d ON d.candidate_id=c.id
@@ -59,6 +61,25 @@ export default async function handler(req,res){
           ORDER BY updated_at DESC LIMIT 1
         ) s ON true
         LEFT JOIN candidate_productivity_outreach po ON po.candidate_id=c.id
+        LEFT JOIN LATERAL (
+          SELECT submitted_at AS questionnaire_two_submitted_at
+          FROM candidate_questionnaire_two
+          WHERE candidate_id=c.id
+          ORDER BY created_at DESC LIMIT 1
+        ) q2 ON true
+        LEFT JOIN LATERAL (
+          SELECT MIN(e.clicked_at) AS primary_zoom_clicked_at
+          FROM (
+            SELECT candidate_id,clicked_at,interview_at,slot_id FROM candidate_zoom_entries
+            UNION ALL
+            SELECT candidate_id,clicked_at,interview_at,slot_id FROM candidate_zoom_session_entries
+          ) e
+          WHERE e.candidate_id=c.id
+            AND e.interview_at=c.interview_at
+            AND e.slot_id=c.slot_id
+            AND e.clicked_at BETWEEN e.interview_at-(${PRIMARY_ENTRY_BEFORE_MINUTES} * INTERVAL '1 minute')
+              AND e.interview_at+(${PRIMARY_ENTRY_CUTOFF_AFTER_MINUTES} * INTERVAL '1 minute')
+        ) pe ON true
         LEFT JOIN LATERAL (
           SELECT appointment.starts_at,appointment.slot_key,appointment.session_key
           FROM (

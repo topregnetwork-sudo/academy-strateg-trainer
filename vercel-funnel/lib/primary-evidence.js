@@ -1,11 +1,11 @@
 import {sql,transaction,telegram,telegramApi,slots} from '../api/_core.js';
 import {initFunnel,createTask,effect} from './funnel-store.js';
-import {PRIMARY_ENTRY_CUTOFF_AFTER_MINUTES,PRIMARY_NO_ENTRY_AFTER_MINUTES} from './primary-timing.js';
+import {PRIMARY_ENTRY_BEFORE_MINUTES,PRIMARY_ENTRY_CUTOFF_AFTER_MINUTES,PRIMARY_NO_ENTRY_AFTER_MINUTES} from './primary-timing.js';
 import crypto from 'node:crypto';
 export function evidenceId(key){const s=crypto.createHash('sha256').update(key).digest('hex').slice(0,32);return `${s.slice(0,8)}-${s.slice(8,12)}-${s.slice(12,16)}-${s.slice(16,20)}-${s.slice(20)}`;}
 // The reminder is sent 30 minutes before the meeting. Keep the button active
 // through the reminder window and close it shortly after the start time.
-export const PRIMARY_ENTRY_BEFORE_MINUTES=60;
+export {PRIMARY_ENTRY_BEFORE_MINUTES};
 export const PRIMARY_ENTRY_AFTER_MINUTES=PRIMARY_ENTRY_CUTOFF_AFTER_MINUTES;
 const lateEntryText='Вы опоздали и не смогли принять участие в первом собеседовании полностью. Рекомендуем повторно ознакомиться с материалами. После завершения окна текущей встречи выберите новое время и подключитесь с начала.';
 
