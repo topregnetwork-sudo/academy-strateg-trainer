@@ -46,7 +46,7 @@ test('081 operator audit is read-only until apply is explicitly true', () => {
 
 test('081 board has no waiting-productivity column and joins it to booked productivity', () => {
   const board = read('../public/operator-board.js');
-  assert.match(board, /productivity_booked',name:'Записан на продуктивность',statuses:\['test_1_passed','productivity_invited','productivity_booked'\]/);
+  assert.match(board, /productivity_booked',name:'Интервью на продуктивность',statuses:\['test_1_passed','productivity_invited','productivity_booked'\]/);
   assert.match(board, /\['decision','collaboration','reserve_answer','productivity_wait'\]/);
 });
 

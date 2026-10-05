@@ -21,7 +21,7 @@ export async function initFunnel() {
       ('primary','Первичное собеседование',2,'{"statuses":["interview_booked","interviewed"]}'),
       ('data','Анкета 2 и Тест 1',3,'{"statuses":["questionnaire","test_1_completed"]}'),
       ('productivity_wait','Ждёт продуктивность',4,'{"statuses":["test_1_passed","productivity_invited"]}'),
-      ('productivity_booked','Записан на продуктивность',5,'{"statuses":["productivity_booked"]}'),
+      ('productivity_booked','Интервью на продуктивность',5,'{"statuses":["productivity_booked"]}'),
       ('decision','Решение по продуктивности',6,'{"statuses":["productivity_passed","productivity_failed"]}'),
       ('final','Финальный отбор',7,'{"statuses":["finalist","selection_closed"]}'),
       ('closed','Завершено / после отбора',8,'{"statuses":["academy_contact","training","internship","hired","rejected","cancelled","test_1_incomplete_removed"]}')
@@ -50,7 +50,7 @@ export async function initFunnel() {
       AND NOT EXISTS(SELECT 1 FROM funnel_stage_definitions d WHERE d.project_id=p.id AND d.stage_key=v.stage_key AND d.mode='system' AND d.stage_name=v.stage_name)`;
     const requiredStages = [
       { key: 'new', name: 'Новая заявка', position: 1, statuses: ['new'] },
-      { key: 'productivity_booked', name: 'Записан на продуктивность', position: 4, statuses: ['test_1_passed', 'productivity_invited', 'productivity_booked'] },
+      { key: 'productivity_booked', name: 'Интервью на продуктивность', position: 4, statuses: ['test_1_passed', 'productivity_invited', 'productivity_booked'] },
       { key: 'offline_testing', name: 'Офлайн-тестирование', position: 7, statuses: ['offline_testing'] },
       { key: 'final', name: 'Финал / договорённости', position: 8, statuses: ['finalist', 'selection_closed'] },
       { key: 'reserve', name: 'Кадровый резерв', position: 9, statuses: ['productivity_failed', 'talent_pool'] },

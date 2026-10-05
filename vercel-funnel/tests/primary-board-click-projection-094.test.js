@@ -8,6 +8,7 @@ const operatorSource = fs.readFileSync(new URL('../api/operator.js', import.meta
 const coreSource = fs.readFileSync(new URL('../api/_core.js', import.meta.url), 'utf8');
 const boardSource = fs.readFileSync(new URL('../public/operator-board.js', import.meta.url), 'utf8');
 const operatorUiSource = fs.readFileSync(new URL('../public/operator.js', import.meta.url), 'utf8');
+const funnelStoreSource = fs.readFileSync(new URL('../lib/funnel-store.js', import.meta.url), 'utf8');
 const helperSource = boardSource.split('\n').find(line => line.startsWith('function primaryBoardGroupName'));
 const primaryBoardGroupName = vm.runInNewContext(`(${helperSource})`);
 const dataHelperSource = boardSource.split('\n').find(line => line.startsWith('function dataBoardGroupName'));
@@ -71,4 +72,13 @@ test('primary board distinguishes future, qualified click, and true no-click wit
 test('board uses the server-derived field and keeps clicked candidates in the primary stage', () => {
   assert.match(boardSource, /if\(candidate\.status==='interview_booked'\)return primaryBoardGroupName\(candidate\)/);
   assert.doesNotMatch(boardSource, /primary_zoom_clicked_at[\s\S]*status='interviewed'/);
+});
+
+test('productivity column is factual and invited candidates are not labelled as booked', () => {
+  assert.match(boardSource, /id:'productivity_booked',name:'Интервью на продуктивность',statuses:\['test_1_passed','productivity_invited','productivity_booked'\]/);
+  assert.match(boardSource, /productivity\.name='Интервью на продуктивность'/);
+  assert.match(funnelStoreSource, /key: 'productivity_booked', name: 'Интервью на продуктивность'[^\n]+statuses: \['test_1_passed', 'productivity_invited', 'productivity_booked'\]/);
+  assert.match(boardSource, /candidate\.status==='productivity_invited'\)return'Ожидают выбора времени'/);
+  assert.match(boardSource, /candidate\.status==='test_1_passed'\)return'Ожидают приглашения'/);
+  assert.doesNotMatch(boardSource, /id:'productivity_booked',name:'Записан на продуктивность'/);
 });

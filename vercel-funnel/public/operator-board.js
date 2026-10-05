@@ -3,7 +3,7 @@ let boardStages=[
   {id:'new',name:'Новая заявка',statuses:['new']},
   {id:'primary',name:'Первичное собеседование',statuses:['interview_booked','interviewed']},
   {id:'data',name:'Анкета 2 и Тест 1',statuses:['questionnaire','test_1_completed']},
-  {id:'productivity_booked',name:'Записан на продуктивность',statuses:['test_1_passed','productivity_invited','productivity_booked']},
+  {id:'productivity_booked',name:'Интервью на продуктивность',statuses:['test_1_passed','productivity_invited','productivity_booked']},
   {id:'productivity_passed_stage',name:'Прошёл продуктивность',statuses:['productivity_passed']},
   {id:'offline_testing',name:'Офлайн-тестирование',statuses:['offline_testing']},
   {id:'reserve',name:'Кадровый резерв',statuses:['productivity_failed','talent_pool']},
@@ -41,6 +41,11 @@ async function loadBoardStages(){
       reserve.name='Кадровый резерв';
       reserve.statuses=['productivity_failed','talent_pool'];
     }else boardStages.push({id:'reserve',name:'Кадровый резерв',statuses:['productivity_failed','talent_pool'],position:9});
+    const productivity=boardStages.find(s=>s.id==='productivity_booked');
+    if(productivity){
+      productivity.name='Интервью на продуктивность';
+      productivity.statuses=['test_1_passed','productivity_invited','productivity_booked'];
+    }
     const collaboration=boardStages.find(s=>s.id==='collaboration');
     if(collaboration){
       collaboration.name='Сотрудничество';
