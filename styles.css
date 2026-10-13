@@ -559,3 +559,39 @@ footer a {
     gap: 34px;
   }
 }
+
+/* TRAINER-FORM1-MOBILE-WIDTH-FIX-V1: contain the form, never hide overflow. */
+@media (max-width: 850px) {
+  .form-section {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .form-section > div,
+  .form-section > form,
+  .form-section form label,
+  .form-section .field-label {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .form-section > form,
+  .form-section form input,
+  .form-section form select,
+  .form-section form textarea,
+  .form-section .submit {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .form-section .field-label {
+    flex-wrap: wrap;
+  }
+  .form-section form label,
+  .form-section > div,
+  .form-section .submit {
+    overflow-wrap: anywhere;
+  }
+  .form-section .submit {
+    white-space: normal;
+  }
+}
+
